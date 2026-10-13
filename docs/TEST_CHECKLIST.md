@@ -17,6 +17,7 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 - [ ] `PoliceNavigation.spec` — road network on drivable surface, connectivity, planner, steering/corner/chase speed, stuck logic
 - [ ] `PoliceDispatch.spec` — single unit, no dispatch unwanted, spawn band, bust rules, combat gate
 - [ ] `SafeZoneRules.spec` — plaza zone geometry, hysteresis, PvP blocked in zones, police allowed, wanted unaffected
+- [ ] `VehicleValidation.spec` — limits, normal-driving trace, spikes, overspeed, teleports, grace, non-finite, ownership
 
 ## Solo playtest (Play, PC)
 - [ ] Press **V** or click **Spawn Car**: a car appears on the nearest free pad and you are seated
@@ -44,7 +45,7 @@ Server snippet for respawn checks (Studio command bar or MCP, Server context):
 `local p = game.Players:GetPlayers()[1]; p.Character.Humanoid.Health = 0; p.CharacterAdded:Wait(); task.wait(0.5); print(p.RespawnLocation.Name, p.Character.HumanoidRootPart.Position)`
 
 ## Wanted level (3B, solo, Studio dev panel — press F8 to toggle)
-All of these use **dev tools**, not real crimes; gameplay crime detection arrives with NPC police (3D).
+All of these use **dev tools**. The only gameplay crime detector is ramming a police car (tested in the NPC police section); speeding and evading have no detectors yet.
 - [ ] `WantedRules.spec` (14) and `DevCommandRules.spec` (5) pass
 - [ ] Dev panel appears in a Studio playtest (left side, "DEV (Studio)"), and `ReplicatedStorage.DevRemotes` exists
 - [ ] "Crime: Ramming" → 1 star, heat 25; clicking again within 2 s shows "failed: Cooldown" and heat stays 25
@@ -96,6 +97,18 @@ Watch the Output for `[Police]` lines, or read `Workspace.NpcVehicles` attribute
 - [ ] Stay in the plaza while wanted: the police unit still comes and busts you
 - [ ] After respawn in the plaza: ForceField + spawn protection; the combat cooldown still blocks Peaceful
 - [ ] Combat status changes don't affect zone protection (covered by spec; there's no PvP damage to test live)
+
+## Vehicle movement validation (3G, solo, MONITOR-ONLY)
+Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `Observations`, `Alerts`, `ValidationLog`, plus `[VehicleValidation]` lines in the Output. Nothing is ever corrected or punished.
+- [ ] `VehicleValidation.spec` (12) passes
+- [ ] Spawn a car: no observation (spawn grace)
+- [ ] Drive normally for a few minutes (top speed, braking, reverse, drift, crashes, flips, exit/enter, respawn): **0 observations**
+- [ ] Client teleports its car 300+ studs -> `Teleport` observation + ALERT
+- [ ] Client forces 230 studs/s for 2 s -> `SustainedOverspeed` + ALERT
+- [ ] Two 90-stud client jumps within 10 s -> ALERT on the repeat (one alone: observation only)
+- [ ] Server sets the car's network owner to nil for 3 s -> `OwnershipMismatch`
+- [ ] NPC police chase: no observations for the police car
+- [ ] Summary line every 30 s shows loop cost well under 1 ms
 
 ## Mobile (Device Simulator, phone landscape)
 - [ ] SAFE ZONE badge visible on iPhone 7 with the stars and the Combat button, no overlap

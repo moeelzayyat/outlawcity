@@ -21,6 +21,7 @@ local services: { Service } = {
 	require(Services.PoliceService) :: any,
 	require(script.Parent.Dev.DevToolsService) :: any,
 	require(Services.VehicleService) :: any,
+	require(Services.VehicleValidationService) :: any,
 }
 
 Remotes.createAll()

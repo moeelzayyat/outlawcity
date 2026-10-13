@@ -48,3 +48,9 @@ Mark each item with the date and result when finally run.
 - [ ] Two Combat players: no harm when either stands in the plaza; harm allowed once both are outside (needs real PvP damage first)
 - [ ] A wanted player in the plaza is protected from Combat players but still busted by NPC police
 - [ ] Spawn camping: players arriving at plaza spawns can't be attacked from outside the zone
+
+## Phase 3G — Vehicle movement validation (monitor-only)
+- [ ] Real network latency and packet loss don't cause Teleport or Overspeed false positives (laggy clients, varied ping)
+- [ ] Ownership handover when a second player enters someone else's car stays within the 1.5 s grace
+- [ ] Two cars colliding head-on at top speed between two clients produce no sustained alerts
+- [ ] The 5 Hz loop cost stays negligible with a full server of cars

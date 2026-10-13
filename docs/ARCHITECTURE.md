@@ -40,6 +40,9 @@ ServerScriptService
     Services/WantedService     per-player wanted state; reportCrime() entry point; 4 Hz decay loop; notices
     Services/CombatService     per-player combat status; RequestSetCombatStatus; canPlayerHarm / canPoliceBust
     Services/SafeZoneService   4 Hz position check; publishes InSafeZone
+    Services/VehicleValidationService  5 Hz monitor-only checks of player vehicles; diagnostics in ServerStorage.Diagnostics
+    Validation/VehicleValidationConfig  limits, tolerances, scoring (Mode = "Monitor")
+    Validation/VehicleValidationRules   pure checks: speed, displacement, finite values, ownership, scoring (unit-tested)
     Services/PoliceService     NPC police orchestration (ONE unit): dispatch, sighting -> WantedService, bust, termination, logs
     Police/PoliceConfig        NPC police tuning (MaxUnits = 1, sight, speeds, stuck, bust)
     Police/RoadNetwork         waypoint graph from CityLayout + A* (path planning, pure)
@@ -91,7 +94,7 @@ Workspace
 
 ## Boot order
 
-- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, SafeZone, Vehicle, Wanted, Combat, Police, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
+- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, SafeZone, Vehicle, VehicleValidation, Wanted, Combat, Police, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
 - Client `Main`: `VehicleInputController.init()` → `VehicleController.init()` → `VehicleCameraController.init()` → `VehicleHudController.init()` → `WantedHudController.init()`, `DevPanelController.init()` and `CombatStatusController.init()` (all spawned), then wires input action signals.
 - HUD placement: the top-right corner belongs to Roblox's player list; game buttons live in the top-centre row.
 - Dev tools (Phase 3+): Studio-only, created only when `RunService:IsStudio()` is true on the server, so they can never activate in published servers.
@@ -119,7 +122,7 @@ Replicated Player attributes (server-written only, names in `Shared.Player.Playe
 - **Rules engine** (`WantedRules`, pure): crimes add heat (per-crime heat + per-player cooldown), heat maps to stars through `WantedConfig.StarThresholds` (3 entries = 3 stars; adding entries extends to 5 without code changes), heat is capped at `MaxHeat`. Heat decays at `DecayRate`/s only after `DecayDelay` s with no crime **and** no police sighting ("Evading"). Reaching 0 heat is an escape from the episode's peak stars; reputation is awarded for peaks ≥ `EscapeMinStars`.
 - **Service** (`WantedService`, server): owns states, runs the 4 Hz step loop, publishes attributes, sends `OnWantedNotice`. Public API: `reportCrime(player, crimeType)` (the only way crimes enter), `resetWanted(player)` (busted/admin, no reward), `getStars(player)`, `setPoliceSightProvider(fn)` (NPC police plug in here in 3D). Wanted level persists through respawn (resetting the character does not clear it).
 - **Star threshold rule**: a star is held while heat ≥ its threshold and lost the instant heat drops below it. Heat sitting exactly on a threshold therefore loses that star on the first decay tick; the Evading notice reports the stars held *before* that tick. Dev "Set N stars" places heat mid-band so it doesn't drop immediately.
-- **Crime detection is separate**: detectors (3D police sightings/collisions, future robberies) live in their own modules and only call `reportCrime`. As of 3B **no gameplay detector exists**; every crime so far was injected through Studio dev tools.
+- **Crime detection is separate**: detectors (3D police sightings/collisions, future robberies) live in their own modules and only call `reportCrime`. **Implemented detectors: one** — `Crime/PoliceCollisionDetector` reports `RammingPolice` when a player-driven car hits an NPC police car at ≥ 25 studs/s toward it (3D). `SpeedingNearPolice` and `Evading` exist only as entries in `WantedConfig.Crimes`, with **no detector**; no other crimes exist. Everything else in testing is injected through Studio dev tools.
 
 There are no Teams: everyone is a civilian (`DESIGN.md`). The superseded team system lives only in git (tag `teams-superseded`).
 
@@ -180,3 +183,20 @@ Rules:
 - **Rules:** `SafeZoneRules` (shared, pure). `contains`, `zoneAt`, and `update(wasInside, zones, point, exitMargin)` with 2 studs of exit hysteresis, so standing on the edge doesn't flicker.
 - **Service:** `SafeZoneService` checks every player's HumanoidRootPart 4 times per second (when seated, that's the car's position) and sets `InSafeZone`. On-screen latency was 0.4–0.6 s in playtests. Transitions print `[SafeZone]` lines.
 - **Effect:** only through `CombatRules.canHarm`. Either participant in a zone means `SafeZone` denial for player-vs-player harm, wanted or not, whatever their combat status. NPC police ignore zones by rule. WantedService, the heat decay and escape rewards don't read zone state at all, so a zone never clears, freezes or rewards a wanted level. Combat status rules are also zone-independent, so the cooldown and wanted lock still apply inside.
+
+## Vehicle movement validation (Phase 3G, MONITOR-ONLY)
+
+- **Scope:** only player cars in `Workspace.Vehicles`, which are client-simulated. NPC police in `Workspace.NpcVehicles` are server-simulated and never judged, and anything with the `Npc` attribute is skipped.
+- **Trust:** the server only reads the replicated chassis position, velocity and network owner. No client message can mark movement as legitimate.
+- **Sampling:** each player vehicle is sampled 5 times a second (`SampleInterval = 0.2`).
+- **Checks** (`VehicleValidationRules`, pure). Each vehicle's limit comes from its own stats: `MaxSpeed = MaxForwardSpeed x 1.3 + 10` (Coupe 166, Police 172.5 studs/s).
+  - *Non-finite* position or velocity -> `InvalidState`. The last good baseline is kept.
+  - *Displacement* between samples (horizontal) above `MaxSpeed x dt x 1.5 + 12` -> `Teleport`. Above 150 studs it scores as extreme.
+  - *Horizontal speed* above `MaxSpeed` continuously for 1.0 s or more -> `SustainedOverspeed`. Single-frame collision spikes and falling are ignored.
+  - Network owner differing from `SimulatedBy` for 1.5 s or more -> `OwnershipMismatch`. Brief handovers are ignored.
+- **Scoring:** points per observation (Teleport 1, extreme Teleport 2, SustainedOverspeed 2, InvalidState 2, OwnershipMismatch 1). An **alert** needs 2 points within 10 s, so medium anomalies must repeat. Alerts and observations only print `[VehicleValidation]` lines and update `ServerStorage.Diagnostics` (attributes `Samples`, `Observations`, `Alerts`, `Loops`, `LoopSeconds`, `MaxLoopMs`, `ValidationLog`). These are server-only, never replicated. A 30 s summary line includes the loop cost.
+- **Authorized moves:**
+  - New vehicles get a 1 s grace period, which covers spawning.
+  - `VehicleValidationService.authorizeReposition(vehicle, seconds)` gives a grace window and a fresh baseline for any future server-side move. No current server code moves player cars.
+  - The client's own flip recovery lifts the car 4 studs vertically, which the horizontal checks ignore.
+- **No enforcement:** there are no resets, kicks or bans, and none are implemented. Turning on corrections needs owner approval after more normal-driving data. Future rewards for driving, escapes or arrests must come from server-validated gameplay events.
