@@ -36,3 +36,17 @@ Decisions live in pure modules that take plain tables, not `Player` instances, s
 - `CombatRules`: `canHarm(attacker, victim, context)`. Every future damage source must call this.
 - `SafeZoneRules`: point-in-zone tests and protection exceptions
 - `PoliceDispatchRules`: how many units each wanted level gets, and where they spawn
+
+## Owner-approved rules (2026-10-13)
+
+- Wanted: 3 stars for the MVP, extensible to 5. Heat decays only when no new crime and no police sighting for a while; reaching zero heat is an escape (reputation for 2★+). Wanted level survives respawn.
+- Busted: short jail of ~10–15 s, no fine (built after NPC busting works).
+- Peaceful / Combat:
+  - Everyone starts Peaceful; Combat is opt-in.
+  - Peaceful players can't attack anyone and can't be attacked by players — **unless they are wanted**, in which case Combat players may attack them outside safe zones.
+  - Wanted players can't switch to Peaceful; switching to Peaceful also waits out a 30 s combat cooldown.
+  - Toggling status never changes the wanted level.
+- Safe zones block all player-vs-player harm (wanted players included) but never cancel wanted levels and never protect wanted players from NPC police.
+- Spawn protection (5 s) blocks player-vs-player harm.
+- NPC police may pursue and bust any wanted player regardless of combat status.
+- Phase 3 has no weapons and no real PvP damage: combat rules are implemented and unit-tested only.

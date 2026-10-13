@@ -12,6 +12,8 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 - [ ] `PlayerAttributes.spec` — attribute names, frozen gameplay config, no team system left
 - [ ] `WantedRules.spec` — thresholds, 5-star extensibility, cooldowns, cap, invalid input, decay, sightings, escape, reset
 - [ ] `DevCommandRules.spec` — dev command validation, no public remote touches wanted state, DevRemotes only in Studio
+- [ ] `CombatRules.spec` — full PvP / police / safe-zone / spawn-protection matrix with mock players
+- [ ] `CombatStatusRules.spec` — Peaceful start, cooldown, wanted lock, activity, invalid requests
 
 ## Solo playtest (Play, PC)
 - [ ] Press **V** or click **Spawn Car**: a car appears on the nearest free pad and you are seated
@@ -53,8 +55,22 @@ All of these use **dev tools**, not real crimes; gameplay crime detection arrive
 - [ ] Tamper check (client context): set `CriminalReputation`/`WantedLevel` attributes locally and invoke dev commands with bad values → server values unchanged, commands rejected
 - [ ] Vehicle spawn/drive/camera still work while wanted
 
+- [ ] Dev "Set 3 stars" does not drop to 2 stars on the first decay tick (heat is placed mid-band)
+
+## Peaceful / Combat status (3C, solo)
+No weapons or damage exist: player-vs-player harm is verified only through `CombatRules.spec` with mock players.
+- [ ] `CombatRules.spec` (7) and `CombatStatusRules.spec` (9) pass
+- [ ] On join the top-left-of-centre button reads PEACEFUL (green); `CombatStatus` attribute = Peaceful
+- [ ] Click → COMBAT (red) with a live countdown from 30 s
+- [ ] Two clicks within 1 s → "Too fast"
+- [ ] Click during the countdown → "Wait for cooldown", stays COMBAT
+- [ ] Dev "Set 2 stars" → button reads "COMBAT (locked)"; after the countdown, asking for Peaceful → "Locked: wanted"; stars unchanged
+- [ ] While Peaceful, dev "Set 1 star" → button reads "PEACEFUL (wanted!)" (wanted players lose peaceful protection)
+- [ ] Clear wanted after the cooldown → Peaceful accepted
+- [ ] Client snippet with invalid targets (`123`, `"Admin"`, `"combat"`, long string, nil) → `InvalidStatus`
+
 ## Mobile (Device Simulator, phone landscape)
-- [ ] Wanted stars and banners visible under the Spawn Car button, not clipped (not yet checked)
+- [ ] Combat button, Spawn Car, wanted stars and banners visible, no overlap or clipping on iPhone 7 (666×374) while driving
 - [ ] Spawn Car button (top centre) reachable, not under the Roblox top bar or player list
 - [ ] GAS / BRAKE / DRIFT / EXIT visible only while driving, no overlap with the thumbstick
 - [ ] Thumbstick steers; GAS drives; BRAKE brakes and reverses; EXIT leaves the car

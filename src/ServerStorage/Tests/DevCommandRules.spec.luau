@@ -33,10 +33,13 @@ return {
 			Assert.truthy(type(err) == "string", "reason given")
 		end
 	end,
-	["SetStars maps to the exact threshold"] = function()
+	["SetStars lands mid-band, strictly above the threshold"] = function()
+		local WantedRules = require(ReplicatedStorage.Shared.Wanted.WantedRules)
 		Assert.equal(DevCommandRules.heatForStars(0), 0)
 		for stars, threshold in WantedConfig.StarThresholds do
-			Assert.equal(DevCommandRules.heatForStars(stars), threshold)
+			local heat = DevCommandRules.heatForStars(stars)
+			Assert.truthy(heat > threshold, `{stars} stars: heat {heat} above threshold {threshold}`)
+			Assert.equal(WantedRules.starsForHeat(heat, WantedConfig), stars)
 		end
 	end,
 	["no public remote can touch wanted state or reputation"] = function()

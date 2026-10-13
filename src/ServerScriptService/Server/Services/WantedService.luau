@@ -63,7 +63,7 @@ local function step(dt: number)
 		local before = state.Heat
 		local result = WantedRules.step(state, t, dt, isSeenByPolice(player), WantedConfig)
 		if result.EvadingStarted then
-			notify(player, "Evading", { Stars = state.Stars })
+			notify(player, "Evading", { Stars = result.EvadingStars })
 		end
 		if result.Escaped then
 			addReputation(player, result.Reputation)

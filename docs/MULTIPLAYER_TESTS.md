@@ -26,3 +26,11 @@ Mark each item with the date and result when finally run.
 - [ ] A player leaving while wanted cleans up with no errors; rejoining starts at 0 stars
 - [ ] 4 Hz decay loop cost stays negligible with a full server
 - [ ] Reputation from an escape is credited only to the escaping player
+
+## Phase 3C — Peaceful / Combat (needs real PvP damage to exist first)
+- [ ] Two Combat players outside safe zones can harm each other; either being Peaceful (and not wanted) blocks it
+- [ ] A Peaceful player cannot harm a wanted player
+- [ ] A Combat player can harm a wanted player who is in Peaceful mode, outside safe zones only
+- [ ] Spawn protection blocks harm in both directions for 5 s
+- [ ] Other players see each player's `CombatStatus` correctly (for future nameplate/UI)
+- [ ] Rate limit and cooldown hold per player with several players toggling at once

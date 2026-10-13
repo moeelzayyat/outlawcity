@@ -141,6 +141,29 @@ return {
 		run(state, now, C.DecayDelay - 1)
 		Assert.equal(state.Heat, heat)
 	end,
+	["heat exactly on a threshold loses that star on the first decay tick; notice keeps the prior stars"] = function()
+		local state = withHeat(C.StarThresholds[3])
+		local evadingResult
+		local now = 0
+		for _ = 1, math.floor((C.DecayDelay + 1) / DT) do
+			now += DT
+			local r = WantedRules.step(state, now, DT, false, C)
+			if r.EvadingStarted then
+				evadingResult = r
+				break
+			end
+		end
+		Assert.truthy(evadingResult, "evading started")
+		Assert.equal(evadingResult.EvadingStars, 3)
+		Assert.equal(state.Stars, 2)
+	end,
+	["heat above a threshold keeps the star until it drops below"] = function()
+		local state = withHeat(C.StarThresholds[3] + C.DecayRate)
+		run(state, 0, C.DecayDelay + 0.5)
+		Assert.equal(state.Stars, 3)
+		run(state, C.DecayDelay + 0.5, 1)
+		Assert.equal(state.Stars, 2)
+	end,
 	["reset clears everything with no escape reward"] = function()
 		local state = withHeat(C.StarThresholds[3])
 		WantedRules.applyCrime(state, "RammingPolice", 0, C)

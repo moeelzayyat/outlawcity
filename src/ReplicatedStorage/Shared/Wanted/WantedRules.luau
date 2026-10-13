@@ -12,6 +12,7 @@ local WantedRules = {}
 export type StepResult = {
 	StarsChanged: boolean,
 	EvadingStarted: boolean,
+	EvadingStars: number, -- stars held at the moment evading began (before that tick's decay)
 	Escaped: boolean,
 	EscapedFromStars: number,
 	Reputation: number,
@@ -106,11 +107,15 @@ function WantedRules.reset(state: State)
 end
 
 -- Advances time. Heat decays only after DecayDelay seconds with no crime and no police
--- sighting. Reaching zero heat ends the episode; it counts as an escape from PeakStars.
+-- sighting. Threshold rule: a star is held while heat >= its threshold and is lost the
+-- instant heat drops below it (so heat sitting exactly on a threshold loses that star on
+-- the first decay tick). Notices report the stars held before the tick (EvadingStars).
+-- Reaching zero heat ends the episode; it counts as an escape from PeakStars.
 function WantedRules.step(state: State, now: number, dt: number, seenByPolice: boolean, config: Config): StepResult
 	local result: StepResult = {
 		StarsChanged = false,
 		EvadingStarted = false,
+		EvadingStars = 0,
 		Escaped = false,
 		EscapedFromStars = 0,
 		Reputation = 0,
@@ -125,6 +130,7 @@ function WantedRules.step(state: State, now: number, dt: number, seenByPolice: b
 	local evading = now - quietSince >= config.DecayDelay
 	if evading and not state.Evading and state.Stars > 0 then
 		result.EvadingStarted = true
+		result.EvadingStars = state.Stars
 	end
 	state.Evading = evading
 	if not evading then

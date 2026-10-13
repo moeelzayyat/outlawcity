@@ -8,6 +8,9 @@ local PlayerAttributes = table.freeze({
 	WantedHeat = "WantedHeat", -- heat, 0..WantedConfig.MaxHeat (1 decimal)
 	WantedEvading = "WantedEvading", -- true while heat is decaying
 	CriminalReputation = "CriminalReputation", -- earned by escapes (session only until persistence)
+	CombatStatus = "CombatStatus", -- Types.CombatStatus
+	CombatCooldownUntil = "CombatCooldownUntil", -- server time before which Peaceful is refused (0 = none)
+	InSafeZone = "InSafeZone", -- set by the safe-zone system (3E); absent means false
 })
 
 return PlayerAttributes

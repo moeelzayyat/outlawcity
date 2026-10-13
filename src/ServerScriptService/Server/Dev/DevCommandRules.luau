@@ -44,12 +44,15 @@ function DevCommandRules.parse(name: any, value: any): (Command?, string?)
 	return nil, "Unknown command"
 end
 
--- Heat that produces exactly `stars` stars (0 for none).
+-- Heat in the middle of the `stars` band (0 for none), so a dev-set level does not lose a
+-- star on the very first decay tick the way heat sitting exactly on a threshold would.
 function DevCommandRules.heatForStars(stars: number): number
 	if stars <= 0 then
 		return 0
 	end
-	return WantedConfig.StarThresholds[stars]
+	local thresholds = WantedConfig.StarThresholds
+	local upper = thresholds[stars + 1] or WantedConfig.MaxHeat
+	return (thresholds[stars] + upper) / 2
 end
 
 return DevCommandRules

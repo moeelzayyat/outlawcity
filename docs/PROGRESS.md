@@ -20,7 +20,7 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 |---|---|
 | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
 | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 52 passed, 0 failed` (after 3B) |
+| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 70 passed, 0 failed` (after 3C) |
 | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
 | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
 | Chase camera | Playtest measurements above |
@@ -37,6 +37,12 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 | **3B Studio-only dev tools** | `DevToolsService` creates `ReplicatedStorage.DevRemotes` only when `RunService:IsStudio()`; F8 panel with crime, star, clear and police-sight buttons all exercised by mouse. `DevCommandRules.spec` (5 tests) incl. invalid input and "DevRemotes present only in Studio". Behaviour in a published server not testable from Studio: guarded by design + test, not observed |
 | **3B Security** | Client set `CriminalReputation=9999` and `WantedLevel=3` locally and fired `OnWantedNotice` at the server; server still read rep 25 / level 0. Bad dev commands (`GiveReputation`, `SetHeat 1e9`, `SetHeat NaN`, `SetStars 7`, unknown crime) all rejected. Spec asserts no public `Request*` remote names wanted/heat/crime/reputation/dev |
 | 3B regression | 52/52 tests; vehicle spawn while wanted, drive 71.8 studs/s after 1.5 s, chase camera; no console errors |
+| **3C pre-check: backup** | A *copy* of `backup.rbxl` (re-downloaded by the owner at 19:58:41Z, 124 KB, includes 3B) was opened in a separate Studio window: 41 scripts, City (199 parts), 6 civilian spawns, original spawn disabled; playtest 52/52 tests, car spawn + seat, dev command → 2★ HUD. Copy closed unsaved; original file hash/timestamp unchanged. Note: the owner's Studio window closed during this check (log shows a normal close request right after the cloud save); nothing was lost, owner reopened from the cloud and the place had all 41 scripts |
+| **3C pre-check: star thresholds** | Rule specified (star lost the instant heat drops below its threshold); Evading notice now reports the stars held before the decay tick; dev "Set N stars" places heat mid-band. 2 new `WantedRules.spec` tests + updated `DevCommandRules.spec` |
+| **3C pre-check: mobile HUD** | iPhone 7 simulator (666×374), driving + 3★ + Combat: no clipping, truncation or small targets; Combat button, Spawn Car, stars and driving buttons don't overlap |
+| **3C Combat status** | All players start Peaceful (playtest). Toggle by mouse: Peaceful → Combat with live "COMBAT 28s" countdown; second click within 1 s → "Too fast" (rate limit); Peaceful during cooldown → "Wait for cooldown"; at 2★ after cooldown → `Wanted`, status stays Combat and **stars stay 2** (toggling never clears wanted); invalid targets (`123`, `"Admin"`, `"combat"`, 100-char string, nil) → `InvalidStatus`; wanted cleared → Peaceful accepted |
+| **3C Combat rules** | `CombatRules.spec` (7 tests, full matrix with mock players): peaceful attackers never allowed (wanted victims included); peaceful victims protected unless wanted; Combat vs Combat allowed outside safe zones; safe zone blocks PvP incl. wanted victims; spawn protection blocks both ways; self-harm denied; NPC police bust wanted players regardless of status, zone, spawn protection; never non-wanted; malformed input denied. `CombatStatusRules.spec` (9 tests): start Peaceful, 30 s configurable cooldown, Combat anytime, Peaceful blocked by cooldown/wanted, activity extends cooldown, invalid/redundant requests, no wanted access. **No real PvP damage exists** — player-vs-player harm is verified only through these rules |
+| 3C regression | 70/70 tests; no console errors; vehicle spawn + seating on mobile simulator; wanted system unchanged apart from the threshold fix |
 
 ## Known issues / limitations
 
@@ -50,10 +56,13 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 8. The original template `Workspace.SpawnLocation` is disabled (owner-approved), not deleted.
 9. Spawn choice with several simultaneous joiners is only tested with mock positions — MULTIPLAYER UNVERIFIED.
 10. **No real crime detection yet.** Every wanted-level change in 3B testing came from Studio dev tools. Gameplay detectors (ramming police, speeding near police, evading) need NPC police (3D).
-11. When heat sits exactly on a star threshold, the first decay tick drops a star immediately, so the Evading notice can report one star fewer than the HUD showed a moment earlier (seen: set 3★ → notice said 2★). Cosmetic; candidate fix is to start the decay "grace" at the threshold.
+11. ~~Evading notice reported one star fewer at an exact threshold~~ — fixed in 3C pre-checks (rule documented in ARCHITECTURE).
 12. Wanted level survives death/respawn by design (prevents "reset to escape"). Owner may want to confirm.
 13. `CriminalReputation` is session-only until the persistence/economy phase.
-14. Wanted HUD not yet checked on the phone simulator (layout is a 102-px row under the Spawn Car button).
+14. ~~Wanted HUD not checked on phone~~ — checked on iPhone 7 simulator in 3C.
+15. `CombatService.canPlayerHarm` / `canPoliceBust` wrappers are only exercised indirectly (rules unit-tested with mocks); they get their first live caller in 3D (police bust).
+16. The Studio-only dev panel covers the left edge on small phones (toggle with F8). Never present in published servers.
+17. Combat status is session-only and survives respawn; it resets to Peaceful on rejoin.
 
 ## Fixed during development
 
@@ -67,7 +76,8 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
 ## Upcoming (approved order; each waits for the previous report)
 
 - ~~3B Wanted rules, status, HUD~~ — done (solo), awaiting owner approval
-- 3C Peaceful/Combat status rules (rules only, no damage) — **next, after approval**
+- ~~3C Peaceful/Combat status rules~~ — done (solo), awaiting owner approval
+- 3D One NPC police pursuit vehicle — **next, after approval**
 - 3D One NPC police pursuit vehicle (prototype, then more units)
 - 3E Safe-zone protection
 - 3F Studio-only test tools (throughout)

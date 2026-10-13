@@ -73,4 +73,25 @@ export type CrimeError = "InvalidCrime" | "Cooldown" | "NotInGame"
 -- Kinds sent through OnWantedNotice.
 export type WantedNoticeKind = "Evading" | "Escaped"
 
+-- Every player starts Peaceful; Combat is opt-in.
+export type CombatStatus = "Peaceful" | "Combat"
+
+-- Errors returned by RequestSetCombatStatus.
+export type CombatSwitchError = "InvalidStatus" | "AlreadyInStatus" | "Wanted" | "Cooldown" | "RateLimited" | "NotInGame"
+
+-- Plain view of anything that can harm or be harmed; built by CombatService (or mocks in tests).
+export type Combatant = {
+	Kind: "Player" | "NpcPolice",
+	UserId: number?,
+	Status: CombatStatus?,
+	WantedStars: number,
+	InSafeZone: boolean,
+	SpawnProtectedUntil: number,
+}
+
+export type HarmContext = { Now: number, Action: "Attack" | "Bust" }
+
+-- Why CombatRules.canHarm refused.
+export type HarmDenial = "Invalid" | "Self" | "NotWanted" | "AttackerPeaceful" | "VictimPeaceful" | "SafeZone" | "SpawnProtected"
+
 return {}

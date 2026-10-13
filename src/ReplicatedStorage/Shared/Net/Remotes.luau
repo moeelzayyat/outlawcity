@@ -17,6 +17,8 @@ Remotes.Definitions = table.freeze({
 	RequestExitVehicle = "RemoteEvent",
 	-- server -> client: (kind: Types.WantedNoticeKind, payload: { Stars?, FromStars?, Reputation? })
 	OnWantedNotice = "RemoteEvent",
+	-- (target: "Peaceful" | "Combat") -> (ok: boolean, err: Types.CombatSwitchError?, secondsUntilPeacefulAllowed: number)
+	RequestSetCombatStatus = "RemoteFunction",
 } :: { [string]: string })
 
 function Remotes.createAll(): Folder
