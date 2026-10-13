@@ -31,6 +31,7 @@ export type VehicleStats = {
 	LateralGrip: number,
 	HandbrakeLateralGrip: number,
 	MaxSteerAngle: number, -- visual front-wheel angle, radians
+	PlayerSpawnable: boolean?, -- false for NPC-only vehicles (default true)
 }
 
 export type VehicleInput = {
@@ -71,7 +72,7 @@ export type WantedState = {
 export type CrimeError = "InvalidCrime" | "Cooldown" | "NotInGame"
 
 -- Kinds sent through OnWantedNotice.
-export type WantedNoticeKind = "Evading" | "Escaped"
+export type WantedNoticeKind = "Evading" | "Escaped" | "Busted"
 
 -- Every player starts Peaceful; Combat is opt-in.
 export type CombatStatus = "Peaceful" | "Combat"

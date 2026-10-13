@@ -34,3 +34,11 @@ Mark each item with the date and result when finally run.
 - [ ] Spawn protection blocks harm in both directions for 5 s
 - [ ] Other players see each player's `CombatStatus` correctly (for future nameplate/UI)
 - [ ] Rate limit and cooldown hold per player with several players toggling at once
+
+## Phase 3D — NPC police (single unit)
+- [ ] With two wanted players, the unit chases the most-wanted one and the other's heat behaves per sightings
+- [ ] Other players see the police car move smoothly (server-simulated; replication not tested)
+- [ ] Another player's car in the road doesn't trap the unit (whiskers ignore vehicles; relies on stuck recovery)
+- [ ] A second player ramming the unit gets the RammingPolice crime, not the target
+- [ ] Busting one player never affects another's wanted level or position
+- [ ] A human driver (not the scripted test car) can be chased, lose the unit and escape

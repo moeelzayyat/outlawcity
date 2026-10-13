@@ -14,6 +14,8 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 - [ ] `DevCommandRules.spec` — dev command validation, no public remote touches wanted state, DevRemotes only in Studio
 - [ ] `CombatRules.spec` — full PvP / police / safe-zone / spawn-protection matrix with mock players
 - [ ] `CombatStatusRules.spec` — Peaceful start, cooldown, wanted lock, activity, invalid requests
+- [ ] `PoliceNavigation.spec` — road network on drivable surface, connectivity, planner, steering/corner/chase speed, stuck logic
+- [ ] `PoliceDispatch.spec` — single unit, no dispatch unwanted, spawn band, bust rules, combat gate
 
 ## Solo playtest (Play, PC)
 - [ ] Press **V** or click **Spawn Car**: a car appears on the nearest free pad and you are seated
@@ -68,6 +70,21 @@ No weapons or damage exist: player-vs-player harm is verified only through `Comb
 - [ ] While Peaceful, dev "Set 1 star" → button reads "PEACEFUL (wanted!)" (wanted players lose peaceful protection)
 - [ ] Clear wanted after the cooldown → Peaceful accepted
 - [ ] Client snippet with invalid targets (`123`, `"Admin"`, `"combat"`, long string, nil) → `InvalidStatus`
+
+## NPC police — single unit (3D, solo)
+Watch the Output for `[Police]` lines, or read `Workspace.NpcVehicles` attribute `EventLog` from the server. Unit tests alone don't prove navigation.
+- [ ] `PoliceNavigation.spec` (10) and `PoliceDispatch.spec` (8) pass
+- [ ] At 0 stars for 10 s: `Workspace.NpcVehicles` stays empty
+- [ ] Dev "Set 1 star": a blue/red-lit police cruiser appears on a road 160–450 studs away within ~0.5 s ("dispatched" log line)
+- [ ] Drive around the grid: the unit follows through intersections and 90° corners, slows for turns, doesn't hit buildings or barriers
+- [ ] Stop and wait: the unit stops ~10–15 studs away; after 2.5 s "BUSTED!" banner, stars clear, you respawn on a plaza pad, the unit leaves 3 s later
+- [ ] Get out of its sight (behind buildings or far away): "EVADING..." after ~8 s, then "ESCAPED!", the unit stops and despawns
+- [ ] While the unit can see you, heat doesn't drop (dev panel heat value stays)
+- [ ] Clear wanted (dev) while the unit is close: no bust, unit despawns
+- [ ] Blocked road: place an anchored wall across the road in front of the unit → it reverses, then re-enters elsewhere ("hard recovery" log) and continues
+- [ ] Drive your car into the unit at speed: "crime detected: … rammed police" log and heat +25 (real gameplay detection)
+- [ ] Try `RequestSpawnVehicle("Police")` from the client → `UnknownVehicle`
+- [ ] Physics FPS stays ~60 during a pursuit; status lines show step cost well under 1 ms
 
 ## Mobile (Device Simulator, phone landscape)
 - [ ] Combat button, Spawn Car, wanted stars and banners visible, no overlap or clipping on iPhone 7 (666×374) while driving

@@ -27,7 +27,7 @@ Manual multiplayer testing is not currently possible, so development continues o
 - Basic vehicle spawning on pads, one car per player, server-validated.
 
 ## Phase 3 — REVISED: civilian open world (APPROVED with revisions 2026-10-13, in progress)
-The owner replaced permanent teams with a GTA-style civilian open world (`DESIGN.md`); plan and approved decisions in `PHASE3_PLAN.md`. Order: 3A civilian spawning ✅ (solo) → 3B wanted rules/status/HUD ✅ (solo, dev-tool driven) → 3C Peaceful/Combat rules ✅ (solo, rules only) → 3D one NPC police pursuit vehicle → 3E safe zones → 3F Studio-only tools (throughout) → 3G vehicle speed/teleport validation → short jail (10–15 s) once busting works. Each stage is reported before the next begins.
+The owner replaced permanent teams with a GTA-style civilian open world (`DESIGN.md`); plan and approved decisions in `PHASE3_PLAN.md`. Order: 3A civilian spawning ✅ (solo) → 3B wanted rules/status/HUD ✅ (solo, dev-tool driven) → 3C Peaceful/Combat rules ✅ (solo, rules only) → 3D one NPC police pursuit vehicle ✅ (solo prototype; more units need approval) → 3D one NPC police pursuit vehicle → 3E safe zones → 3F Studio-only tools (throughout) → 3G vehicle speed/teleport validation → short jail (10–15 s) once busting works. Each stage is reported before the next begins.
 
 ### Superseded: Police vs Criminal teams (original Phase 3)
 Items 1–2 were built and solo-tested before the change of direction, and the code is tagged `teams-superseded` in git. Items 3–8 were never started. Original order:

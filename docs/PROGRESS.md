@@ -11,7 +11,7 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 | Camera operates correctly | ✅ | Chase cam 20 studs behind, 8.6 up, looking forward (dot 0.97); FOV widens with speed; restores on exit |
 | Car navigates city and highway | ✅ | Drove 400 studs across 2 grid intersections; up connector onto highway; 650 studs along highway; barrier hit at 109 studs/s stops cleanly, car stays upright |
 | No critical Studio errors | ✅ | Output shows only test summary and Studio-assistant notices |
-| Recoverable backup | ⚠️ partial | Every script is in git; the map is rebuildable from `CityLayout`. **Place file save/publish not verified by the agent** — owner to save/publish so Roblox version history has a restore point |
+| Recoverable backup | ✅ (updated 3C) | Owner saved to Roblox cloud and downloaded `backup.rbxl` (19:58:41Z, 124 KB, includes 3B); a copy was opened in Studio and played (41 scripts, 52/52 tests). Every script is also in git and the map is rebuildable from `CityLayout`. A fresh backup is requested before each major stage (see stage rows) |
 | Multiplayer behaviour | MULTIPLAYER UNVERIFIED | see `MULTIPLAYER_TESTS.md` |
 
 ## Completed (each verified in a solo Studio playtest unless noted)
@@ -20,7 +20,7 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 |---|---|
 | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
 | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 70 passed, 0 failed` (after 3C) |
+| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 88 passed, 0 failed` (after 3D) |
 | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
 | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
 | Chase camera | Playtest measurements above |
@@ -43,10 +43,23 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 | **3C Combat status** | All players start Peaceful (playtest). Toggle by mouse: Peaceful → Combat with live "COMBAT 28s" countdown; second click within 1 s → "Too fast" (rate limit); Peaceful during cooldown → "Wait for cooldown"; at 2★ after cooldown → `Wanted`, status stays Combat and **stars stay 2** (toggling never clears wanted); invalid targets (`123`, `"Admin"`, `"combat"`, 100-char string, nil) → `InvalidStatus`; wanted cleared → Peaceful accepted |
 | **3C Combat rules** | `CombatRules.spec` (7 tests, full matrix with mock players): peaceful attackers never allowed (wanted victims included); peaceful victims protected unless wanted; Combat vs Combat allowed outside safe zones; safe zone blocks PvP incl. wanted victims; spawn protection blocks both ways; self-harm denied; NPC police bust wanted players regardless of status, zone, spawn protection; never non-wanted; malformed input denied. `CombatStatusRules.spec` (9 tests): start Peaceful, 30 s configurable cooldown, Combat anytime, Peaceful blocked by cooldown/wanted, activity extends cooldown, invalid/redundant requests, no wanted access. **No real PvP damage exists** — player-vs-player harm is verified only through these rules |
 | 3C regression | 70/70 tests; no console errors; vehicle spawn + seating on mobile simulator; wanted system unchanged apart from the threshold fix |
+| **3D pre-work** | Backup docs corrected; duplicate 3D entry removed; current backup confirmed from the Studio log: cloud save at 20:12:28Z and `OutlawCity_3C.rbxl` (130 KB) downloaded, taken after 3C was complete (not opened — no second Studio while the owner's is open) |
+| **3D unit tests** | `PoliceNavigation.spec` (10): every node and every edge on drivable surface, network connected, shortest paths use real edges and reach the highway via a connector, planner skips passed nodes and ends at the target, steering signs, corner slowdown, chase speed, stuck → reverse → hard recovery, no false stuck. `PoliceDispatch.spec` (8): one unit max, Police car not player-spawnable, no dispatch at 0 stars, dispatch at 1–3, spawn band 160–450, bust timing/range/speed/permission, gap resets, combat gate. **88/88**. Unit tests alone do not prove navigation; see playtests |
+| **3D: no pursuit of unwanted player** | 6 s at 0 stars → 0 units (playtest) |
+| **3D: activation** | Dev "Set 1 star" → unit dispatched 0.17 s later, 202 studs away on a road node |
+| **3D: pursuit through intersections and corners** | Scripted moving target (35 studs/s) north on x=−300 then a 90° right turn east along z=−100: unit crossed 2 intersections at 95 studs/s, slowed 95→30 for its own 90° turn, took the target's corner and the (−100,−100) intersection, then held a steady **25-stud** gap for 15 s. First version trailed at ~65 studs (aimed at a 1 s-old position) → fixed with predicted target + chase-speed rule (bug 18) |
+| **3D: avoids buildings** | Server-side contact counter on the unit's chassis: **0** contacts with buildings, barriers or curbs across the chase runs (~4 min of driving) |
+| **3D: blocked/stuck recovery** | Wall dropped across the road 30 studs ahead: unit reversed twice (soft), then hard-recovered by re-entering at a node out of sight, drove 230 studs and busted the player. First version sat at the wall for 30 s with no recovery (obstacle braking hid the stall) → fixed (bug 19). Recovery frequency in normal chases: 0–1 soft, 0 hard per pursuit |
+| **3D: sight loss → decay → escape ends pursuit** | Unit sighted player; heat held at 25 for 3 s while seen; player moved out of sight → Evading at 8.3 s, Escaped at 12.2 s, pursuit ended, unit despawned at 13.8 s. Also seen incidentally when the unit was blocked and never saw the player (3★ escaped after ~27 s) |
+| **3D: bust stationary wanted player** | 4 busts in playtests: unit stops ~10–14 studs away, bust after 2.5 s → stars 0, "BUSTED!" banner, player respawned on a civilian pad, unit despawned after 3 s |
+| **3D: no bust at zero stars** | Stars cleared when the unit was < 30 studs away (closest 20): no bust, pursuit ended, unit despawned |
+| **3D: real crime detection** | `PoliceCollisionDetector` fired once in playtest: "rammed police at 27 studs/s" — the *scripted* test car was pushed into the unit, so this is a real gameplay detector triggered by a test contact, not a human ramming. Other crimes (speeding near police, evading) are not detected yet; wanted levels in these tests came from dev tools |
+| **3D: performance** | Server physics 60 FPS idle and during pursuit; police step ≈ 0.09–0.12 ms average, 0.44 ms max per frame; ~60 physics updates/s, AI tick 4/s, re-plan 1/s; status logged every 5 s |
+| 3D regression | Player driving 71.7 studs/s after 1.5 s W, chase camera, civilian respawn after bust, Combat toggle while wanted, wanted HUD; no console errors |
 
 ## Known issues / limitations
 
-1. Place file save/publish not verified by the agent (see backup row above).
+1. ~~Place file save/publish not verified~~ — verified in 3C (cloud save + `backup.rbxl` opened and played). The agent cannot save the place itself; each stage asks the owner for a fresh save.
 2. All multiplayer behaviour is unverified (policy); see `MULTIPLAYER_TESTS.md`.
 3. Parked cars have a tiny vertical velocity jitter at rest (positions stable to ±0.01 stud). Revisit only if visible.
 4. Other players see wheels at rest pose (wheel animation is local to the simulating client). Cosmetic. MULTIPLAYER UNVERIFIED.
@@ -55,7 +68,7 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 7. Steering is fairly sharp at low speed (turn radius ~16 studs at 30 studs/s); tune after owner feedback.
 8. The original template `Workspace.SpawnLocation` is disabled (owner-approved), not deleted.
 9. Spawn choice with several simultaneous joiners is only tested with mock positions — MULTIPLAYER UNVERIFIED.
-10. **No real crime detection yet.** Every wanted-level change in 3B testing came from Studio dev tools. Gameplay detectors (ramming police, speeding near police, evading) need NPC police (3D).
+10. Crime detection: as of 3D one gameplay detector exists (ramming police). Wanted levels in 3B/3C/3D testing otherwise came from Studio dev tools.
 11. ~~Evading notice reported one star fewer at an exact threshold~~ — fixed in 3C pre-checks (rule documented in ARCHITECTURE).
 12. Wanted level survives death/respawn by design (prevents "reset to escape"). Owner may want to confirm.
 13. `CriminalReputation` is session-only until the persistence/economy phase.
@@ -63,6 +76,13 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 15. `CombatService.canPlayerHarm` / `canPoliceBust` wrappers are only exercised indirectly (rules unit-tested with mocks); they get their first live caller in 3D (police bust).
 16. The Studio-only dev panel covers the left edge on small phones (toggle with F8). Never present in published servers.
 17. Combat status is session-only and survives respawn; it resets to Peaceful on rejoin.
+18. ~~NPC trailed a moving target by ~65 studs~~ — fixed in 3D (predicted target, chase-speed rule).
+19. ~~NPC stalled forever in front of a wall~~ — fixed in 3D (stuck detection keyed on wanted progress, not throttle).
+20. NPC navigation is only verified on this test map's grid + highway; the plaza diagonal and highway end plazas were not driven in tests. The road network has no lane discipline (drives on the centre line) and no knowledge of blocked roads beyond hard recovery.
+21. A head-on meet with a target can make the unit swing round (U-turn) before chasing; it recovers without stuck events.
+22. Busted = respawn at a civilian pad for now; the 10–15 s jail comes later (approved order).
+23. Only one gameplay crime detector exists (ramming police). Speeding-near-police and evading detectors are not built.
+24. All NPC behaviour with several players (target choice, other players' cars in the way, ramming by a second player) is MULTIPLAYER UNVERIFIED; the moving target in tests was a scripted car, not a human driver.
 
 ## Fixed during development
 
@@ -77,8 +97,7 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
 
 - ~~3B Wanted rules, status, HUD~~ — done (solo), awaiting owner approval
 - ~~3C Peaceful/Combat status rules~~ — done (solo), awaiting owner approval
-- 3D One NPC police pursuit vehicle — **next, after approval**
-- 3D One NPC police pursuit vehicle (prototype, then more units)
+- ~~3D One NPC police pursuit vehicle~~ — single-unit prototype done (solo); **awaiting owner review before any dispatch-count increase**
 - 3E Safe-zone protection
 - 3F Studio-only test tools (throughout)
 - 3G Server vehicle speed/teleport validation

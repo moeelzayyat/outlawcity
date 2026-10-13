@@ -11,7 +11,7 @@ local Types = require(Shared.Types)
 local Remotes = require(Shared.Net.Remotes)
 local Signal = require(Shared.Util.Signal)
 local VehicleConfig = require(Shared.Config.VehicleConfig)
-local VehiclePhysics = require(script.Parent.Parent.Vehicle.VehiclePhysics)
+local VehiclePhysics = require(Shared.Vehicle.VehiclePhysics)
 local VehicleInputController = require(script.Parent.VehicleInputController)
 
 local VehicleController = {}

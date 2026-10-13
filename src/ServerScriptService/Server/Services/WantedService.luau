@@ -98,6 +98,17 @@ function WantedService.resetWanted(player: Player)
 	end
 end
 
+-- Police bust: clears the wanted level with no reward and tells the player.
+function WantedService.bust(player: Player)
+	local state = states[player]
+	if state then
+		local stars = state.Stars
+		WantedRules.reset(state)
+		publish(player, state)
+		notify(player, "Busted", { Stars = stars })
+	end
+end
+
 function WantedService.getStars(player: Player): number
 	local state = states[player]
 	return if state then state.Stars else 0

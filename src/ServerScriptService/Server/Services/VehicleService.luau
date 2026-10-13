@@ -104,7 +104,7 @@ end
 
 local function spawnVehicle(player: Player, vehicleId: string): (boolean, Types.SpawnError?)
 	local stats = VehicleConfig.get(vehicleId)
-	if not stats then
+	if not stats or stats.PlayerSpawnable == false then
 		return false, "UnknownVehicle"
 	end
 	local humanoid = getLiveHumanoid(player)

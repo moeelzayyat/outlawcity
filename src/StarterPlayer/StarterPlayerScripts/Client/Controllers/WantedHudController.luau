@@ -107,6 +107,8 @@ function WantedHudController.init()
 	Remotes.getEvent("OnWantedNotice").OnClientEvent:Connect(function(kind: string, payload: any)
 		if kind == "Evading" then
 			showBanner("EVADING...", Color3.fromRGB(255, 190, 60))
+		elseif kind == "Busted" then
+			showBanner("BUSTED!", Color3.fromRGB(255, 70, 70))
 		elseif kind == "Escaped" then
 			local reputation = if type(payload) == "table" and type(payload.Reputation) == "number" then payload.Reputation else 0
 			showBanner(if reputation > 0 then `ESCAPED!  +{reputation} REP` else "ESCAPED!", Color3.fromRGB(90, 230, 120))

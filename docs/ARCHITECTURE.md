@@ -27,6 +27,7 @@ ReplicatedStorage
     Config/CombatConfig        combat cooldown (30 s) and request rate limit (1 s)
     Combat/CombatRules         THE harm gate: canHarm(attacker, victim, context) (unit-tested)
     Combat/CombatStatusRules   pure Peaceful/Combat switching rules (unit-tested)
+    Vehicle/VehiclePhysics     raycast suspension + arcade handling (moved from Client in 3D; used by player cars on the client and NPC cars on the server)
   Remotes/                     (runtime) created by the server from Net/Remotes
 
 ServerScriptService
@@ -37,6 +38,14 @@ ServerScriptService
     Services/SpawnService      picks each civilian's next spawn (RespawnLocation) before every spawn
     Services/WantedService     per-player wanted state; reportCrime() entry point; 4 Hz decay loop; notices
     Services/CombatService     per-player combat status; RequestSetCombatStatus; canPlayerHarm / canPoliceBust
+    Services/PoliceService     NPC police orchestration (ONE unit): dispatch, sighting -> WantedService, bust, termination, logs
+    Police/PoliceConfig        NPC police tuning (MaxUnits = 1, sight, speeds, stuck, bust)
+    Police/RoadNetwork         waypoint graph from CityLayout + A* (path planning, pure)
+    Police/PolicePathPlanner   route from position to target over the road network (pure)
+    Police/PoliceDriveRules    steering, corner speed, chase speed, stuck state machine (pure)
+    Police/PoliceDriver        movement: drives an NPC car via VehiclePhysics, whisker avoidance, recovery
+    Police/PoliceDispatchRules dispatch counts, spawn-node choice, bust timing (pure)
+    Crime/PoliceCollisionDetector  gameplay crime detector: player car rams police -> reportCrime("RammingPolice")
     Dev/DevToolsService        STUDIO ONLY: creates ReplicatedStorage.DevRemotes + handlers; inert elsewhere
     Dev/DevCommandRules        pure validation of dev commands (unit-tested)
     Services/VehicleService    spawning, seating, exit, network ownership, cleanup
@@ -58,12 +67,12 @@ StarterPlayer.StarterPlayerScripts
     Controllers/WantedHudController      wanted stars, evading blink, Evading / Escaped banners
     Controllers/CombatStatusController   Peaceful/Combat toggle (top-centre row, left of Spawn Car)
     Controllers/DevPanelController       STUDIO ONLY dev panel (F8 toggles); absent without DevRemotes
-    Vehicle/VehiclePhysics               raycast suspension + arcade handling
 
 Workspace
   City/                        built once in edit mode by CityBuilder (saved in the place)
     Roads, Markings, Sidewalks, Plaza, Buildings, Highway, Barriers, VehicleSpawns
   Vehicles/                    (runtime) spawned vehicles, owned by VehicleService
+  NpcVehicles/                 (runtime) server-simulated NPC police car(s); EventLog attribute holds recent police events
 ```
 
 ## Server / client responsibilities
@@ -79,7 +88,7 @@ Workspace
 
 ## Boot order
 
-- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Vehicle, Wanted, Combat, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
+- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Vehicle, Wanted, Combat, Police, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
 - Client `Main`: `VehicleInputController.init()` → `VehicleController.init()` → `VehicleCameraController.init()` → `VehicleHudController.init()` → `WantedHudController.init()`, `DevPanelController.init()` and `CombatStatusController.init()` (all spawned), then wires input action signals.
 - HUD placement: the top-right corner belongs to Roblox's player list; game buttons live in the top-centre row.
 - Dev tools (Phase 3+): Studio-only, created only when `RunService:IsStudio()` is true on the server, so they can never activate in published servers.
@@ -94,7 +103,7 @@ All remotes live in `ReplicatedStorage.Shared.Net.Remotes.Definitions`. Nothing 
 | `RequestSpawnVehicle` | RemoteFunction | client → server | `(vehicleId: string) -> (ok: boolean, err: SpawnError?)` | string, 1–32 chars, known id, alive, 3 s cooldown, free pad |
 | `RequestExitVehicle` | RemoteEvent | client → server | `()` | 0.5 s cooldown, caller must be in a `DriverSeat` under `Workspace.Vehicles` |
 | `RequestSetCombatStatus` | RemoteFunction | client → server | `(target: "Peaceful" \| "Combat") -> (ok, err: CombatSwitchError?, secondsUntilPeacefulAllowed)` | 1 s per-player rate limit, string ≤ 16 chars, exact status names; Peaceful refused while wanted or during the 30 s combat cooldown |
-| `OnWantedNotice` | RemoteEvent | server → client | `(kind: "Evading" \| "Escaped", payload: { Stars?, FromStars?, Reputation? })` | server-only sender; the server never listens to it |
+| `OnWantedNotice` | RemoteEvent | server → client | `(kind: "Evading" \| "Escaped" \| "Busted", payload: { Stars?, FromStars?, Reputation? })` | server-only sender; the server never listens to it |
 
 `SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn"`.
 
@@ -148,3 +157,16 @@ Rules:
 - Every player starts **Peaceful**. Switching to **Combat** is allowed at any time; switching back to Peaceful is refused while wanted (`Wanted`) or within `CombatConfig.CombatCooldown` (30 s) of entering Combat or of the last combat activity (`Cooldown`). Status survives respawn. Switching status never reads or writes the wanted level.
 - **`CombatRules.canHarm(attacker, victim, context)` is the only harm gate.** Inputs are plain `Combatant` tables (`Kind`, `UserId`, `Status`, `WantedStars`, `InSafeZone`, `SpawnProtectedUntil`) so tests use mocks. Order of checks: malformed → `Invalid`; self → `Self`; NPC police → allowed iff victim wanted (ignores status, safe zone and spawn protection), else `NotWanted`; peaceful attacker → `AttackerPeaceful` (wanted victims included); peaceful, non-wanted victim → `VictimPeaceful` (a wanted player in Peaceful mode is *not* protected from Combat players); either side in a safe zone → `SafeZone` (wanted victims included); either side spawn-protected → `SpawnProtected`; otherwise allowed.
 - Server wrappers: `CombatService.canPlayerHarm(a, b)` for future PvP damage, `CombatService.canPoliceBust(victim)` for NPC police (3D), `CombatService.noteCombatActivity(player)` to refresh the cooldown when damage is dealt/taken. **No weapons or damage exist yet**; any future damage source must go through these.
+
+## NPC police (Phase 3D prototype — single unit)
+
+- **Separation:** path planning (`RoadNetwork`, `PolicePathPlanner`), movement (`PoliceDriver` + `PoliceDriveRules`) and dispatch (`PoliceDispatchRules`) are separate modules; `PoliceService` only wires them and owns the unit's lifecycle.
+- **Vehicle:** `VehicleConfig.Police` (Coupe handling, top speed 125, `PlayerSpawnable = false` so `RequestSpawnVehicle` refuses it). Built by the normal `VehicleFactory`; seat disabled and prompt removed; parented to `Workspace.NpcVehicles`; network owner = server. The server runs the same `VehiclePhysics` the client uses for player cars, on `RunService.PreSimulation`.
+- **Road network:** 23 nodes — the 16 grid intersections, the plaza centre (joined diagonally to its four corner intersections), four highway nodes in the south carriageway (clear of the median) and the two end plazas; the two connectors are edges. A* re-planned every 1 s.
+- **Dispatch:** every 0.25 s; one unit for the most-wanted player when nobody is being chased. Spawn node chosen 160–450 studs from the target (else the nearest beyond 450).
+- **Driving:** follow waypoints; corner speed from the turn angle (30 studs/s for 90°, cruise 95); within 90 studs *and* in sight → direct chase of the target's position + 0.5 s of its velocity, matching its speed plus a closing term (follow gap ≈ 10 + lead); three forward whisker rays steer away from walls and brake for obstacles.
+- **Stuck handling:** "wants progress" (desired speed before obstacle braking > 6) with speed < 3 for 1.5 s → reverse 1.2 s with opposite steer; 3 such stalls within 20 s → **hard recovery**: re-enter the network at a dispatch-style node out of the target's sight. Far behind (>650 studs for 10 s) → respawn closer the same way.
+- **Perception:** sees the target within 160 studs with a clear raycast (buildings block, vehicles/characters don't). `WantedService.setPoliceSightProvider` uses this, so heat cannot decay while seen.
+- **Busting:** target within 18 studs and slower than 5 studs/s for 2.5 s continuously **and** `CombatService.canPoliceBust` (i.e. `CombatRules.canHarm(NpcPolice, …)`, which requires a wanted level) → `WantedService.bust` (wanted cleared, no reward, "Busted" notice) and the player is respawned at a civilian spawn. The short jail replaces the respawn later.
+- **Termination:** escape/clear (stars 0), bust, or the target leaving → unit stops, despawns after 3 s.
+- **Diagnostics:** `[Police]` output lines and `Workspace.NpcVehicles.EventLog`: dispatch, sighting changes, crimes detected, recoveries, bust, despawn, and every 5 s a status line with per-frame step cost.

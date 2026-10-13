@@ -50,3 +50,11 @@ Decisions live in pure modules that take plain tables, not `Player` instances, s
 - Spawn protection (5 s) blocks player-vs-player harm.
 - NPC police may pursue and bust any wanted player regardless of combat status.
 - Phase 3 has no weapons and no real PvP damage: combat rules are implemented and unit-tested only.
+
+## NPC police (Phase 3D prototype)
+
+- One server-controlled police cruiser is dispatched when a player becomes wanted; more units only after owner approval.
+- It drives the road network (no free-form pathfinding), slows for corners, avoids walls, and recovers when blocked by re-entering the road network out of the player's sight.
+- Seeing the player (within 160 studs, clear line of sight) stops wanted heat from decaying. Breaking line of sight long enough lets heat decay to an escape.
+- Busted: the player is stopped near the cruiser for 2.5 s while wanted. The wanted level is cleared with no reward and the player respawns on a plaza pad (the 10–15 s jail comes later).
+- Ramming the cruiser with a car is a crime (+heat). Police never pursue or bust players with zero stars.
