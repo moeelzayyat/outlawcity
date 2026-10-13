@@ -15,8 +15,6 @@ Remotes.Definitions = table.freeze({
 	RequestSpawnVehicle = "RemoteFunction",
 	-- () -> (); server unseats the caller if they are in a vehicle driver seat
 	RequestExitVehicle = "RemoteEvent",
-	-- (teamId: string) -> (ok: boolean, err: Types.JoinTeamError?)
-	RequestJoinTeam = "RemoteFunction",
 } :: { [string]: string })
 
 function Remotes.createAll(): Folder

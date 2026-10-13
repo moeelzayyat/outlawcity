@@ -72,4 +72,19 @@ return {
 			end
 		end
 	end,
+	["civilian spawns are in the plaza, apart, and clear of vehicle pads"] = function()
+		local spawns = blueprint.CivilianSpawns
+		Assert.truthy(#spawns >= 4, "enough civilian spawns")
+		local plazaHalf = (CityLayout.GRID_LINES[3] - CityLayout.GRID_LINES[2] - CityLayout.ROAD_WIDTH) / 2
+		for i, spawn in spawns do
+			local p = spawn.CFrame.Position
+			Assert.truthy(math.abs(p.X) < plazaHalf - 4 and math.abs(p.Z) < plazaHalf - 4, `{spawn.Name} outside plaza`)
+			for j = i + 1, #spawns do
+				Assert.truthy((spawns[j].CFrame.Position - p).Magnitude >= 15, `{spawn.Name} too close to {spawns[j].Name}`)
+			end
+			for _, pad in blueprint.Spawns do
+				Assert.truthy((pad.CFrame.Position - p).Magnitude >= 20, `{spawn.Name} too close to pad {pad.Name}`)
+			end
+		end
+	end,
 }

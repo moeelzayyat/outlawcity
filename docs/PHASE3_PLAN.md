@@ -1,6 +1,24 @@
-# OUTLAW CITY — Revised Phase 3 plan (PROPOSED, awaiting owner approval)
+# OUTLAW CITY — Revised Phase 3 plan
 
-Date: 2026-10-13. Nothing in this plan has been built yet. Each step is built and solo-tested in Studio on its own, with a report after each one. Anything that needs real players is marked MULTIPLAYER UNVERIFIED.
+**Status: APPROVED by the owner with revisions (2026-10-13).** The owner's decisions override the proposal below where they differ:
+1. 3-star wanted system for the MVP; rules must allow more levels later.
+2. Everyone joins as a civilian; no permanent teams.
+3. Replace team selection after confirming a recoverable backup; keep its code in git history. ✅ done in 3A
+4. Busted → short jail of ~10–15 s, no cash fine. Jail is built after basic busting works.
+5. NPC police pursue and bust wanted players regardless of combat status.
+6. Wanted players cannot switch to Peaceful.
+7. Wanted players are vulnerable to eligible Combat-status opponents outside safe zones; Peaceful players cannot attack them just because they are wanted.
+8. No PvP attacks inside safe zones, including against wanted players.
+9. Safe zones never cancel wanted levels and never protect wanted players from NPC police.
+10. No weapons or real PvP damage in Phase 3: combat rules are implemented and unit-tested only.
+
+NPC police: build and validate **one** pursuit vehicle first (chase on the test roads, stuck recovery; record chase behaviour, collisions, recovery frequency, performance), and only then raise the count. Reports must separate wanted rules exercised through dev tools from crimes detected by real gameplay events.
+
+Order: 3A → 3B → 3C → 3D → 3E → 3G → jail, with 3F throughout; report after each stage before starting the next.
+
+---
+
+*Original proposal (2026-10-13):* Each step is built and solo-tested in Studio on its own, with a report after each one. Anything that needs real players is marked MULTIPLAYER UNVERIFIED.
 
 ## 0. Inspection: where the project stands
 

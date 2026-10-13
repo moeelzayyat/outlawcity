@@ -19,14 +19,17 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 | Feature | How it was verified |
 |---|---|
 | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
-| Network contract + server validation | `Remotes.spec`; spawn, exit and team requests behave in playtest |
-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 33 passed, 0 failed` |
+| Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
+| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 33 passed, 0 failed` (after 3A) |
 | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
 | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
 | Chase camera | Playtest measurements above |
 | Mobile driving controls | iPhone 17 Pro simulator: GAS, BRAKE/reverse, EXIT work; jump button hidden while driving |
-| **3.1 Police and Criminal teams** | Server creates both teams; players start Neutral; remote rejects bad type, unknown team, same team, and switching within 10 s; switch after cooldown works; `TeamRules.spec` incl. simulated 8-player lobby stays within the 2-player imbalance limit. Team colours/balance with real players: MULTIPLAYER UNVERIFIED |
-| **3.2 Team selection screen** | Opens on join while Neutral; Join buttons work by mouse (PC) and tap (iPhone 7 simulator, 666×374, no clipping/truncation/small targets); shows player counts, "Current team", cooldown message; X closes only once on a team; Team button reopens it |
+| ~~3.1 Police and Criminal teams~~ / ~~3.2 Team selection screen~~ | Built and solo-tested, then **removed in 3A** after the owner's direction change. Code kept in git tag `teams-superseded` |
+| **3A Team system removed** | 6 team scripts, `RequestJoinTeam`, team types removed from Studio; `PlayerAttributes.spec` asserts no team modules and no Teams remain; playtest: no team screen, `Teams` empty, players Neutral with no team, only 2 remotes |
+| **3A Civilian spawning** | `PlayerStateService` sets `Status = "Civilian"`; `SpawnService` picks a random free spawn among 6 plaza `CivilianSpawns` before every spawn. Playtest: 13 respawns landed on the chosen spawn every time and covered all 6 spawns; with a car parked on CivilianNorth, 10 respawns never used it. `SpawnRules.spec` (free / occupied / fallback / simulated 3-player join) and `CityLayout.spec` spawn-placement test pass |
+| **3A Spawn protection** | Every spawn sets `SpawnProtectedUntil` = now + 5 s and the SpawnLocation gives a 5 s ForceField; playtest: protected 4.5 s after spawn with ForceField, expired after 5.5 s with ForceField gone. Nothing deals damage yet, so protection is only observable as state (enforced via CombatRules in 3C) |
+| 3A regression | Vehicle spawn, exit, drive (70.8 studs/s after 1.5 s W), chase camera all unchanged; Spawn Car button re-centred top-centre |
 
 ## Known issues / limitations
 
@@ -34,10 +37,11 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 2. All multiplayer behaviour is unverified (policy); see `MULTIPLAYER_TESTS.md`.
 3. Parked cars have a tiny vertical velocity jitter at rest (positions stable to ±0.01 stud). Revisit only if visible.
 4. Other players see wheels at rest pose (wheel animation is local to the simulating client). Cosmetic. MULTIPLAYER UNVERIFIED.
-5. No server-side speed/teleport check on client-simulated vehicles yet — Phase 3 item 8.
+5. No server-side speed/teleport check on client-simulated vehicles yet (Phase 3G).
 6. The driver's head pokes through the Coupe roof. Cosmetic; leave until a vehicle art pass.
 7. Steering is fairly sharp at low speed (turn radius ~16 studs at 30 studs/s); tune after owner feedback.
-8. Team changes do not respawn the player yet; team spawn points come in Phase 3 item 3.
+8. The original template `Workspace.SpawnLocation` (plaza centre) is still in the place and still a valid spawn if `RespawnLocation` were ever unset. Left untouched (pre-existing object); propose disabling or removing it with owner approval.
+9. Spawn choice with several simultaneous joiners is only tested with mock positions — MULTIPLAYER UNVERIFIED.
 
 ## Fixed during development
 
@@ -46,8 +50,14 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 
 ## Direction change (2026-10-13)
 
-Permanent Police/Criminal teams are **superseded** by a civilian open-world design (`DESIGN.md`). The team features above (3.1, 3.2) still work and are still active in Studio, but they are slated for removal in step 3A of the revised plan. Their code is preserved in git (tag `teams-superseded`).
+Permanent Police/Criminal teams were **superseded** by a civilian open-world design (`DESIGN.md`), approved by the owner with revisions (see `PHASE3_PLAN.md`). The team code was removed from Studio in 3A and is preserved in git (tag `teams-superseded`).
 
-## Upcoming
+## Upcoming (approved order; each waits for the previous report)
 
-The revised Phase 3 plan (`PHASE3_PLAN.md`) is waiting for owner approval. Nothing beyond it will be built until it is approved.
+- 3B Wanted rules (3 stars, extensible), wanted status, HUD — **next, awaiting go-ahead after the 3A report**
+- 3C Peaceful/Combat status rules (rules only, no damage)
+- 3D One NPC police pursuit vehicle (prototype, then more units)
+- 3E Safe-zone protection
+- 3F Studio-only test tools (throughout)
+- 3G Server vehicle speed/teleport validation
+- Short jail (10–15 s) once busting works

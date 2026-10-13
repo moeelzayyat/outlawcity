@@ -7,7 +7,9 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 - [ ] `VehicleConfig.spec` — every vehicle has 4 wheels, sane stats, frozen config
 - [ ] `RateLimiter.spec` — cooldowns per key, reset
 - [ ] `Remotes.spec` — remote classes, naming, all remotes created by the server
-- [ ] `CityLayout.spec` — no overlapping road parts, no gaps along grid roads, spawns on road, connectors reach the highway
+- [ ] `CityLayout.spec` — no overlapping road parts, no gaps along grid roads, spawns on road, connectors reach the highway, civilian spawns in the plaza and clear of vehicle pads
+- [ ] `SpawnRules.spec` — random free spawn, occupied spawns skipped, least-crowded fallback
+- [ ] `PlayerAttributes.spec` — attribute names, frozen gameplay config, no team system left
 
 ## Solo playtest (Play, PC)
 - [ ] Press **V** or click **Spawn Car**: a car appears on the nearest free pad and you are seated
@@ -22,17 +24,20 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 - [ ] **F** exits next to the car; camera returns to normal; **E** prompt re-enters
 - [ ] Spawn again within 3 s: "Wait a moment" message; after 3 s the old car is replaced
 
-## Teams (solo)
-- [ ] `TeamRules.spec` and `TeamConfig.spec` pass (balance, same-team, unknown team, simulated 8-player lobby)
-- [ ] On join the "Choose your side" screen opens; there is no X button while Neutral
-- [ ] Join Police: screen closes, top button reads "Team: Police", name colour is blue
-- [ ] Reopen with the Team button; switching within 10 s shows the cooldown message; after 10 s switching works
-- [ ] Card shows player counts and "Current team" on your own team
-- [ ] Vehicle spawning still works after joining a team
+## Civilian spawning (3A, solo)
+- [ ] `SpawnRules.spec`, `PlayerAttributes.spec` and the `CityLayout.spec` spawn test pass
+- [ ] On join there is no team screen; `Teams` is empty; the player has `Status = "Civilian"`
+- [ ] The player appears on one of the 6 blue `City.CivilianSpawns` pads around the plaza (not the original centre SpawnLocation)
+- [ ] Reset the character several times: spawns vary and the character appears on the chosen pad each time
+- [ ] Park a car on a civilian pad and reset several times: that pad is never chosen
+- [ ] After each spawn: ForceField visible and `SpawnProtectedUntil` ≈ now + 5 s; both gone after 5 s
+- [ ] Vehicle spawn, drive, exit and camera still work (regression)
+
+Server snippet for respawn checks (Studio command bar or MCP, Server context):
+`local p = game.Players:GetPlayers()[1]; p.Character.Humanoid.Health = 0; p.CharacterAdded:Wait(); task.wait(0.5); print(p.RespawnLocation.Name, p.Character.HumanoidRootPart.Position)`
 
 ## Mobile (Device Simulator, phone landscape)
-- [ ] Team screen fits on the smallest phone (iPhone 7, 667×375): no clipping, text fits, buttons ≥ 44 px; Join works by tap
-- [ ] Team and Spawn Car buttons (top centre) reachable, not under the Roblox top bar or player list
+- [ ] Spawn Car button (top centre) reachable, not under the Roblox top bar or player list
 - [ ] GAS / BRAKE / DRIFT / EXIT visible only while driving, no overlap with the thumbstick
 - [ ] Thumbstick steers; GAS drives; BRAKE brakes and reverses; EXIT leaves the car
 - [ ] Jump button hidden while driving and back after exit

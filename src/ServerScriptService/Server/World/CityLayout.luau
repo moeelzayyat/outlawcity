@@ -11,7 +11,8 @@ export type PartSpec = {
 	CanCollide: boolean,
 }
 export type SpawnSpec = { Name: string, CFrame: CFrame }
-export type Blueprint = { Parts: { PartSpec }, Spawns: { SpawnSpec } }
+-- Spawns: vehicle spawn pads. CivilianSpawns: where player characters appear.
+export type Blueprint = { Parts: { PartSpec }, Spawns: { SpawnSpec }, CivilianSpawns: { SpawnSpec } }
 
 local CityLayout = {}
 
@@ -233,7 +234,14 @@ function CityLayout.createBlueprint(): Blueprint
 	addSpawn("HighwayWest", -(HL + P / 2), HZ, -math.pi / 2)
 	addSpawn("HighwayEast", HL + P / 2, HZ, math.pi / 2)
 
-	return { Parts = parts, Spawns = spawns }
+	-- Civilian character spawns around the plaza centre, clear of the vehicle pads.
+	local civilianSpawns: { SpawnSpec } = {}
+	for _, point in { { "North", 0, -20 }, { "South", 0, 20 }, { "West", -20, 0 }, { "East", 20, 0 }, { "FarWest", -65, 0 }, { "FarEast", 65, 0 } } do
+		local name, x, z = point[1] :: string, point[2] :: number, point[3] :: number
+		table.insert(civilianSpawns, { Name = `Civilian{name}`, CFrame = CFrame.new(x, TOP, z) })
+	end
+
+	return { Parts = parts, Spawns = spawns, CivilianSpawns = civilianSpawns }
 end
 
 return CityLayout

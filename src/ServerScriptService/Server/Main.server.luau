@@ -13,7 +13,8 @@ type Service = { init: () -> (), start: () -> () }
 
 local services: { Service } = {
 	require(Services.WorldService) :: any,
-	require(Services.TeamService) :: any,
+	require(Services.PlayerStateService) :: any,
+	require(Services.SpawnService) :: any,
 	require(Services.VehicleService) :: any,
 }
 

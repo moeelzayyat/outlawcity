@@ -42,16 +42,7 @@ export type VehicleInput = {
 -- Error codes returned by RequestSpawnVehicle.
 export type SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn"
 
-export type TeamId = "Police" | "Criminal"
-
-export type TeamDefinition = {
-	Id: TeamId,
-	DisplayName: string,
-	Description: string,
-	TeamColor: BrickColor,
-}
-
--- Error codes returned by RequestJoinTeam.
-export type JoinTeamError = "BadRequest" | "UnknownTeam" | "AlreadyOnTeam" | "TeamFull" | "Cooldown"
+-- Every player is a civilian in the open world; more statuses may follow (e.g. "Jailed").
+export type PlayerStatus = "Civilian"
 
 return {}

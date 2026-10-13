@@ -5,8 +5,12 @@ local CityLayout = require(script.Parent.CityLayout)
 
 local CityBuilder = {}
 
+local ReplicatedStorage = game:GetService("ReplicatedStorage")
+local GameplayConfig = require(ReplicatedStorage.Shared.Config.GameplayConfig)
+
 local CHUNK_SIZE = 60
 local SPAWN_PAD_SIZE = Vector3.new(9, 0.05, 15)
+local CIVILIAN_SPAWN_SIZE = Vector3.new(8, 0.1, 8)
 
 function CityBuilder.build(blueprint: CityLayout.Blueprint, parent: Instance): Folder
 	local city = Instance.new("Folder")
@@ -66,7 +70,38 @@ function CityBuilder.build(blueprint: CityLayout.Blueprint, parent: Instance): F
 		pad.Parent = spawnFolder
 	end
 
+	CityBuilder.buildCivilianSpawns(blueprint, city)
 	return city
+end
+
+-- Adds City.CivilianSpawns if missing (safe to call on an existing city). Returns the folder.
+-- Thin, non-colliding SpawnLocations; Duration gives the built-in spawn ForceField.
+function CityBuilder.buildCivilianSpawns(blueprint: CityLayout.Blueprint, city: Instance): Folder
+	local existing = city:FindFirstChild("CivilianSpawns")
+	if existing and existing:IsA("Folder") then
+		return existing
+	end
+	local folder = Instance.new("Folder")
+	folder.Name = "CivilianSpawns"
+	for _, spawn in blueprint.CivilianSpawns do
+		local location = Instance.new("SpawnLocation")
+		location.Name = spawn.Name
+		location.Anchored = true
+		location.CanCollide = false
+		location.CanQuery = false
+		location.CastShadow = false
+		location.Size = CIVILIAN_SPAWN_SIZE
+		location.CFrame = spawn.CFrame + Vector3.new(0, CIVILIAN_SPAWN_SIZE.Y / 2, 0)
+		location.Color = Color3.fromRGB(90, 200, 255)
+		location.Material = Enum.Material.SmoothPlastic
+		location.Transparency = 0.4
+		location.Neutral = true
+		location.AllowTeamChangeOnTouch = false
+		location.Duration = GameplayConfig.SpawnProtectionSeconds
+		location.Parent = folder
+	end
+	folder.Parent = city
+	return folder
 end
 
 return CityBuilder

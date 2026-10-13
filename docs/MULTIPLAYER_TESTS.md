@@ -12,7 +12,10 @@ Mark each item with the date and result when finally run.
 - [ ] A player leaving removes their car; a car they were driving falls back to its owner
 - [ ] Remote-player car wheels look acceptable (wheel animation is local to the simulating client)
 
-## Phase 3 — Police vs Criminal
-- [ ] Two players on different teams see each other's team colours and names
-- [ ] Team selection by one player does not affect another player's UI
-- [ ] Team switch cooldown and balance limits hold with several players requesting at once
+## Phase 3A — Civilian spawning
+- [ ] Several players joining at once get different civilian spawns (no stacking)
+- [ ] A respawning player never lands on another player's character or parked car
+- [ ] Other players see the spawn ForceField; `Status`/`SpawnProtectedUntil` attributes replicate to every client
+- [ ] No team UI or team colours appear for anyone
+
+(Removed: Police vs Criminal team tests — teams were dropped from the design.)

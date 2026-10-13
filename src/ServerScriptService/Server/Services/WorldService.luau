@@ -15,6 +15,8 @@ function WorldService.init()
 	city = Workspace:FindFirstChild("City")
 	if not city then
 		city = CityBuilder.build(CityLayout.createBlueprint(), Workspace)
+	elseif not city:FindFirstChild("CivilianSpawns") then
+		CityBuilder.buildCivilianSpawns(CityLayout.createBlueprint(), city)
 	end
 end
 
@@ -31,6 +33,23 @@ function WorldService.getVehicleSpawnCFrames(): { CFrame }
 			end
 		end
 	end
+	return result
+end
+
+-- SpawnLocations where civilian characters appear, in a stable order.
+function WorldService.getCivilianSpawns(): { SpawnLocation }
+	local result = {}
+	local folder = city and city:FindFirstChild("CivilianSpawns")
+	if folder then
+		for _, child in folder:GetChildren() do
+			if child:IsA("SpawnLocation") then
+				table.insert(result, child)
+			end
+		end
+	end
+	table.sort(result, function(a, b)
+		return a.Name < b.Name
+	end)
 	return result
 end
 

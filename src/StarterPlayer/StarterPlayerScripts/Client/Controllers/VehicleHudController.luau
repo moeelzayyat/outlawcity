@@ -96,8 +96,8 @@ function VehicleHudController.init()
 	spawnButton.Name = "SpawnButton"
 	spawnButton.Text = if touch then "Spawn Car" else "Spawn Car [V]"
 	spawnButton.Size = UDim2.fromOffset(160, 44)
-	-- Top centre: the top-right corner is covered by Roblox's player list once teams exist.
-	spawnButton.Position = UDim2.new(0.5, 84, 0, 8)
+	-- Top centre: the top-right corner can be covered by Roblox's player list.
+	spawnButton.Position = UDim2.new(0.5, 0, 0, 8)
 	spawnButton.AnchorPoint = Vector2.new(0.5, 0)
 	spawnButton.BackgroundColor3 = Color3.fromRGB(230, 160, 20)
 	spawnButton.TextColor3 = Color3.new(1, 1, 1)

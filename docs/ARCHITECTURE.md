@@ -19,15 +19,17 @@ ReplicatedStorage
     Net/Remotes                the network contract (all remotes declared here)
     Util/Signal                tiny same-side event helper
     Vehicle/VehicleMath        pure vehicle maths (unit-tested)
-    Config/TeamConfig          Police / Criminal definitions, imbalance limit, switch cooldown
-    Teams/TeamRules            pure team-join rules used by server and UI (unit-tested)
+    Config/GameplayConfig      open-world tuning (spawn protection, spawn clearance)
+    Player/PlayerAttributes    names of server-published Player attributes (Status, SpawnProtectedUntil, ...)
+    Player/SpawnRules          pure civilian spawn selection (unit-tested)
   Remotes/                     (runtime) created by the server from Net/Remotes
 
 ServerScriptService
   Server/
     Main                       (Script) server entry point; boots services, runs tests in Studio
     Services/WorldService      owns the test map; exposes vehicle spawn pads
-    Services/TeamService       creates teams, validates RequestJoinTeam; players start Neutral
+    Services/PlayerStateService  single owner of per-player gameplay state, published as Player attributes
+    Services/SpawnService      picks each civilian's next spawn (RespawnLocation) before every spawn
     Services/VehicleService    spawning, seating, exit, network ownership, cleanup
     World/CityLayout           data-only blueprint of the test city (unit-tested)
     World/CityBuilder          turns the blueprint into parts under Workspace.City
@@ -44,7 +46,6 @@ StarterPlayer.StarterPlayerScripts
     Controllers/VehicleController        runs physics for vehicles this client simulates
     Controllers/VehicleCameraController  chase camera while driving
     Controllers/VehicleHudController     spawn button, speedometer, touch driving buttons
-    Controllers/TeamSelectController     team selection screen + Team button
     Vehicle/VehiclePhysics               raycast suspension + arcade handling
 
 Workspace
@@ -66,8 +67,8 @@ Workspace
 
 ## Boot order
 
-- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, Team, Vehicle) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
-- Client `Main`: `VehicleInputController.init()` → `VehicleController.init()` → `VehicleCameraController.init()` → `VehicleHudController.init()` → `TeamSelectController.init()` (spawned, waits for teams), then wires input action signals.
+- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Vehicle) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
+- Client `Main`: `VehicleInputController.init()` → `VehicleController.init()` → `VehicleCameraController.init()` → `VehicleHudController.init()`, then wires input action signals.
 - HUD placement: the top-right corner belongs to Roblox's player list; game buttons live in the top-centre row.
 - Dev tools (Phase 3+): Studio-only, created only when `RunService:IsStudio()` is true on the server, so they can never activate in published servers.
 - Every service exposes `init()` (setup, may yield) and `start()` (connect runtime events). Every controller exposes `init()`.
@@ -80,10 +81,11 @@ All remotes live in `ReplicatedStorage.Shared.Net.Remotes.Definitions`. Nothing 
 |---|---|---|---|---|
 | `RequestSpawnVehicle` | RemoteFunction | client → server | `(vehicleId: string) -> (ok: boolean, err: SpawnError?)` | string, 1–32 chars, known id, alive, 3 s cooldown, free pad |
 | `RequestExitVehicle` | RemoteEvent | client → server | `()` | 0.5 s cooldown, caller must be in a `DriverSeat` under `Workspace.Vehicles` |
-| `RequestJoinTeam` | RemoteFunction | client → server | `(teamId: string) -> (ok: boolean, err: JoinTeamError?)` | string, 1–32 chars, known team, not current team, max 2-player imbalance (`TeamRules`), 10 s cooldown after a successful switch |
 
 `SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn"`.
-`JoinTeamError = "BadRequest" | "UnknownTeam" | "AlreadyOnTeam" | "TeamFull" | "Cooldown"`.
+Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time). Later stages add wanted, combat-status and safe-zone attributes here.
+
+There are no Teams: everyone is a civilian (`DESIGN.md`). The superseded team system lives only in git (tag `teams-superseded`).
 
 Replicated attributes on each vehicle Model: `VehicleId`, `OwnerUserId`, `SimulatedBy`, `DriverUserId`.
 
