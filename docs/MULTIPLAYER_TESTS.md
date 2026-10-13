@@ -42,3 +42,9 @@ Mark each item with the date and result when finally run.
 - [ ] A second player ramming the unit gets the RammingPolice crime, not the target
 - [ ] Busting one player never affects another's wanted level or position
 - [ ] A human driver (not the scripted test car) can be chased, lose the unit and escape
+
+## Phase 3E — Safe zones
+- [ ] Each player's `InSafeZone` replicates correctly to every client
+- [ ] Two Combat players: no harm when either stands in the plaza; harm allowed once both are outside (needs real PvP damage first)
+- [ ] A wanted player in the plaza is protected from Combat players but still busted by NPC police
+- [ ] Spawn camping: players arriving at plaza spawns can't be attacked from outside the zone

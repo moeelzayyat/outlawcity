@@ -20,7 +20,7 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 |---|---|
 | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
 | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 88 passed, 0 failed` (after 3D) |
+| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 96 passed, 0 failed` (after 3E) |
 | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
 | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
 | Chase camera | Playtest measurements above |
@@ -55,6 +55,13 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 | **3D: no bust at zero stars** | Stars cleared when the unit was < 30 studs away (closest 20): no bust, pursuit ended, unit despawned |
 | **3D: real crime detection** | `PoliceCollisionDetector` fired once in playtest: "rammed police at 27 studs/s" — the *scripted* test car was pushed into the unit, so this is a real gameplay detector triggered by a test contact, not a human ramming. Other crimes (speeding near police, evading) are not detected yet; wanted levels in these tests came from dev tools |
 | **3D: performance** | Server physics 60 FPS idle and during pursuit; police step ≈ 0.09–0.12 ms average, 0.44 ms max per frame; ~60 physics updates/s, AI tick 4/s, re-plan 1/s; status logged every 5 s |
+| **3E safe-zone rules** | `SafeZoneRules.spec` (8): the Plaza zone matches the plaza part exactly; all civilian spawns inside; inside/outside/edge/height; hysteresis; PvP blocked when either side is in a zone (incl. a wanted victim, and a wanted Peaceful victim); combat-status changes can't bypass a zone; police can bust wanted players in a zone but not unwanted ones; the wanted engine behaves identically in and out (no zone input). 96/96 |
+| **3E enter/exit + published state** | Playtest: spawn in plaza → server `[SafeZone] entered Plaza`, InSafeZone true, badge shown; teleport out → false after 0.63 s; back in → true after 0.43 s; 1 stud past the edge stays inside, 4 studs past leaves; driving out of the plaza in a car → false, badge hidden |
+| **3E wanted unchanged in zone** | 2★ (heat 70, police sight held) outside → walked in → after 2 s still 2★ / heat 70, no Escaped or other notice |
+| **3E police in zone** | Wanted 1★ standing inside the plaza: unit dispatched, approached to 11 studs, BUSTED after 6.8 s, InSafeZone was true at every sample while the unit was near. Also busted a player parked in their car on a plaza pad |
+| **3E spawn protection + combat cooldown** | After the in-zone bust: respawned on a plaza pad, InSafeZone true, 4.0 s protection left with ForceField. Combat toggle inside the zone: Peaceful → Combat accepted, switching back immediately refused with `Cooldown` |
+| **3E HUD** | PC: green SAFE ZONE badge under the Combat button. iPhone 7 simulator (666×374) while driving at 2★: amber badge, stars, Combat button and Spawn Car have no overlap, clipping or truncation |
+| 3E regression | Driving, car spawning, civilian spawning, wanted HUD, police dispatch/chase/bust all working; no console errors (one error came from my own test snippet when the player had just been busted, not from game code) |
 | 3D regression | Player driving 71.7 studs/s after 1.5 s W, chase camera, civilian respawn after bust, Combat toggle while wanted, wanted HUD; no console errors |
 
 ## Known issues / limitations
@@ -83,6 +90,7 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 22. Busted = respawn at a civilian pad for now; the 10–15 s jail comes later (approved order).
 23. Only one gameplay crime detector exists (ramming police). Speeding-near-police and evading detectors are not built.
 24. All NPC behaviour with several players (target choice, other players' cars in the way, ramming by a second player) is MULTIPLAYER UNVERIFIED; the moving target in tests was a scripted car, not a human driver.
+25. **NPC navigation against unpredictable human driving is UNVERIFIED** (owner note, 3D review). Every moving-target test in 3D used a scripted car following a fixed route at constant speed; those tests are not human-driving validation.
 
 ## Fixed during development
 
@@ -97,7 +105,9 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
 
 - ~~3B Wanted rules, status, HUD~~ — done (solo), awaiting owner approval
 - ~~3C Peaceful/Combat status rules~~ — done (solo), awaiting owner approval
-- ~~3D One NPC police pursuit vehicle~~ — single-unit prototype done (solo); **awaiting owner review before any dispatch-count increase**
+- ~~3D One NPC police pursuit vehicle~~ — provisionally approved (solo); dispatch stays at **one unit** by owner decision
+- ~~3E Safe zones~~ — done (solo); awaiting owner approval
+- Next by the approved order: 3G server vehicle speed/teleport validation, then the short jail
 - 3E Safe-zone protection
 - 3F Studio-only test tools (throughout)
 - 3G Server vehicle speed/teleport validation

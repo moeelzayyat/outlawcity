@@ -10,7 +10,7 @@ local PlayerAttributes = table.freeze({
 	CriminalReputation = "CriminalReputation", -- earned by escapes (session only until persistence)
 	CombatStatus = "CombatStatus", -- Types.CombatStatus
 	CombatCooldownUntil = "CombatCooldownUntil", -- server time before which Peaceful is refused (0 = none)
-	InSafeZone = "InSafeZone", -- set by the safe-zone system (3E); absent means false
+	InSafeZone = "InSafeZone", -- set by SafeZoneService (4 Hz); absent means false
 })
 
 return PlayerAttributes

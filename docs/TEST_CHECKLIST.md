@@ -16,6 +16,7 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 - [ ] `CombatStatusRules.spec` — Peaceful start, cooldown, wanted lock, activity, invalid requests
 - [ ] `PoliceNavigation.spec` — road network on drivable surface, connectivity, planner, steering/corner/chase speed, stuck logic
 - [ ] `PoliceDispatch.spec` — single unit, no dispatch unwanted, spawn band, bust rules, combat gate
+- [ ] `SafeZoneRules.spec` — plaza zone geometry, hysteresis, PvP blocked in zones, police allowed, wanted unaffected
 
 ## Solo playtest (Play, PC)
 - [ ] Press **V** or click **Spawn Car**: a car appears on the nearest free pad and you are seated
@@ -86,7 +87,18 @@ Watch the Output for `[Police]` lines, or read `Workspace.NpcVehicles` attribute
 - [ ] Try `RequestSpawnVehicle("Police")` from the client → `UnknownVehicle`
 - [ ] Physics FPS stays ~60 during a pursuit; status lines show step cost well under 1 ms
 
+## Safe zones (3E, solo)
+- [ ] `SafeZoneRules.spec` (8) passes
+- [ ] Spawn in the plaza: Output shows `[SafeZone] … entered Plaza`; green SAFE ZONE badge under the Combat button
+- [ ] Walk or drive out of the plaza: badge hides within ~0.5 s; back in: it shows again
+- [ ] Stand just past the plaza edge (1–2 studs): still inside; 3+ studs past: outside
+- [ ] Become wanted (dev) outside, then enter: stars and heat unchanged, no notice; the badge turns amber
+- [ ] Stay in the plaza while wanted: the police unit still comes and busts you
+- [ ] After respawn in the plaza: ForceField + spawn protection; the combat cooldown still blocks Peaceful
+- [ ] Combat status changes don't affect zone protection (covered by spec; there's no PvP damage to test live)
+
 ## Mobile (Device Simulator, phone landscape)
+- [ ] SAFE ZONE badge visible on iPhone 7 with the stars and the Combat button, no overlap
 - [ ] Combat button, Spawn Car, wanted stars and banners visible, no overlap or clipping on iPhone 7 (666×374) while driving
 - [ ] Spawn Car button (top centre) reachable, not under the Roblox top bar or player list
 - [ ] GAS / BRAKE / DRIFT / EXIT visible only while driving, no overlap with the thumbstick

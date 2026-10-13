@@ -92,6 +92,9 @@ export type Combatant = {
 
 export type HarmContext = { Now: number, Action: "Attack" | "Bust" }
 
+-- Axis-aligned safe-zone volume (world space).
+export type SafeZone = { Name: string, Min: Vector3, Max: Vector3 }
+
 -- Why CombatRules.canHarm refused.
 export type HarmDenial = "Invalid" | "Self" | "NotWanted" | "AttackerPeaceful" | "VictimPeaceful" | "SafeZone" | "SpawnProtected"
 

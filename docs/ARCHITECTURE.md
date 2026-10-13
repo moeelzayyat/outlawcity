@@ -27,6 +27,7 @@ ReplicatedStorage
     Config/CombatConfig        combat cooldown (30 s) and request rate limit (1 s)
     Combat/CombatRules         THE harm gate: canHarm(attacker, victim, context) (unit-tested)
     Combat/CombatStatusRules   pure Peaceful/Combat switching rules (unit-tested)
+    Zones/SafeZoneRules        pure safe-zone geometry with exit hysteresis (unit-tested)
     Vehicle/VehiclePhysics     raycast suspension + arcade handling (moved from Client in 3D; used by player cars on the client and NPC cars on the server)
   Remotes/                     (runtime) created by the server from Net/Remotes
 
@@ -38,6 +39,7 @@ ServerScriptService
     Services/SpawnService      picks each civilian's next spawn (RespawnLocation) before every spawn
     Services/WantedService     per-player wanted state; reportCrime() entry point; 4 Hz decay loop; notices
     Services/CombatService     per-player combat status; RequestSetCombatStatus; canPlayerHarm / canPoliceBust
+    Services/SafeZoneService   4 Hz position check; publishes InSafeZone
     Services/PoliceService     NPC police orchestration (ONE unit): dispatch, sighting -> WantedService, bust, termination, logs
     Police/PoliceConfig        NPC police tuning (MaxUnits = 1, sight, speeds, stuck, bust)
     Police/RoadNetwork         waypoint graph from CityLayout + A* (path planning, pure)
@@ -66,6 +68,7 @@ StarterPlayer.StarterPlayerScripts
     Controllers/VehicleHudController     spawn button, speedometer, touch driving buttons
     Controllers/WantedHudController      wanted stars, evading blink, Evading / Escaped banners
     Controllers/CombatStatusController   Peaceful/Combat toggle (top-centre row, left of Spawn Car)
+    Controllers/SafeZoneHudController    SAFE ZONE badge under the Combat button (amber while wanted)
     Controllers/DevPanelController       STUDIO ONLY dev panel (F8 toggles); absent without DevRemotes
 
 Workspace
@@ -88,7 +91,7 @@ Workspace
 
 ## Boot order
 
-- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Vehicle, Wanted, Combat, Police, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
+- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, SafeZone, Vehicle, Wanted, Combat, Police, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
 - Client `Main`: `VehicleInputController.init()` → `VehicleController.init()` → `VehicleCameraController.init()` → `VehicleHudController.init()` → `WantedHudController.init()`, `DevPanelController.init()` and `CombatStatusController.init()` (all spawned), then wires input action signals.
 - HUD placement: the top-right corner belongs to Roblox's player list; game buttons live in the top-centre row.
 - Dev tools (Phase 3+): Studio-only, created only when `RunService:IsStudio()` is true on the server, so they can never activate in published servers.
@@ -109,7 +112,7 @@ All remotes live in `ReplicatedStorage.Shared.Net.Remotes.Definitions`. Nothing 
 
 Studio-only (not in the contract; created by `DevToolsService` only when `RunService:IsStudio()`): `ReplicatedStorage.DevRemotes.RequestDevCommand` (RemoteFunction) `(name, value) -> (ok, err)` with commands `SetHeat`, `SetStars`, `ReportCrime`, `ResetWanted`, `SetPoliceSight`, validated by `DevCommandRules` and re-checked against `IsStudio` on every call.
 
-Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (reserved for 3E; absent = false). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
+Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
 
 ## Wanted system
 
@@ -170,3 +173,10 @@ Rules:
 - **Busting:** target within 18 studs and slower than 5 studs/s for 2.5 s continuously **and** `CombatService.canPoliceBust` (i.e. `CombatRules.canHarm(NpcPolice, …)`, which requires a wanted level) → `WantedService.bust` (wanted cleared, no reward, "Busted" notice) and the player is respawned at a civilian spawn. The short jail replaces the respawn later.
 - **Termination:** escape/clear (stars 0), bust, or the target leaving → unit stops, despawns after 3 s.
 - **Diagnostics:** `[Police]` output lines and `Workspace.NpcVehicles.EventLog`: dispatch, sighting changes, crimes detected, recoveries, bust, despawn, and every 5 s a status line with per-frame step cost.
+
+## Safe zones (Phase 3E)
+
+- **Data:** `CityLayout.safeZones()` returns axis-aligned boxes (`Types.SafeZone`). The first is `Plaza`, the central block (x and z from −82 to 82, y −20 to 80), which contains all six civilian spawns and the plaza vehicle pads. Future garages add entries there (none built).
+- **Rules:** `SafeZoneRules` (shared, pure). `contains`, `zoneAt`, and `update(wasInside, zones, point, exitMargin)` with 2 studs of exit hysteresis, so standing on the edge doesn't flicker.
+- **Service:** `SafeZoneService` checks every player's HumanoidRootPart 4 times per second (when seated, that's the car's position) and sets `InSafeZone`. On-screen latency was 0.4–0.6 s in playtests. Transitions print `[SafeZone]` lines.
+- **Effect:** only through `CombatRules.canHarm`. Either participant in a zone means `SafeZone` denial for player-vs-player harm, wanted or not, whatever their combat status. NPC police ignore zones by rule. WantedService, the heat decay and escape rewards don't read zone state at all, so a zone never clears, freezes or rewards a wanted level. Combat status rules are also zone-independent, so the cooldown and wanted lock still apply inside.

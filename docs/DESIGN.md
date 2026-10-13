@@ -58,3 +58,9 @@ Decisions live in pure modules that take plain tables, not `Player` instances, s
 - Seeing the player (within 160 studs, clear line of sight) stops wanted heat from decaying. Breaking line of sight long enough lets heat decay to an escape.
 - Busted: the player is stopped near the cruiser for 2.5 s while wanted. The wanted level is cleared with no reward and the player respawns on a plaza pad (the 10–15 s jail comes later).
 - Ramming the cruiser with a car is a crime (+heat). Police never pursue or bust players with zero stars.
+
+## Safe zones (Phase 3E)
+
+- The central plaza, where everyone spawns, is the first safe zone. Inside it no player can harm another, whatever their combat status and even if the target is wanted.
+- Safe zones don't help you escape: wanted levels, heat decay and police pursuit and busting work exactly as outside.
+- A small SAFE ZONE badge shows while you're inside. It turns amber when you're wanted, as a reminder that police can still get you.

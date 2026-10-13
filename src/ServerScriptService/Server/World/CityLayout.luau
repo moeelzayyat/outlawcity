@@ -1,6 +1,8 @@
 --!strict
 -- Data-only description of the driving test area. CityBuilder turns the blueprint into parts
 -- and CityLayout.spec validates it. Units are studs; the Baseplate top is Y = 0.
+local Types = require(game:GetService("ReplicatedStorage").Shared.Types)
+
 export type PartSpec = {
 	Name: string,
 	Group: string,
@@ -117,6 +119,19 @@ local function withOpenings(from: number, to: number, openings: { { number } }):
 		table.insert(pieces, { cursor, to })
 	end
 	return pieces
+end
+
+-- Safe zones (server-authoritative; see SafeZoneService). The first is the central plaza block
+-- that holds the civilian spawns. Future garages add entries here.
+function CityLayout.safeZones(): { Types.SafeZone }
+	local plaza = CityLayout.stretches()[2]
+	return {
+		{
+			Name = "Plaza",
+			Min = Vector3.new(plaza[1], -20, plaza[1]),
+			Max = Vector3.new(plaza[2], 80, plaza[2]),
+		},
+	}
 end
 
 function CityLayout.createBlueprint(): Blueprint
