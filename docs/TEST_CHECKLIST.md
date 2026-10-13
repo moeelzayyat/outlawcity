@@ -22,16 +22,20 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 - [ ] **F** exits next to the car; camera returns to normal; **E** prompt re-enters
 - [ ] Spawn again within 3 s: "Wait a moment" message; after 3 s the old car is replaced
 
+## Teams (solo)
+- [ ] `TeamRules.spec` and `TeamConfig.spec` pass (balance, same-team, unknown team, simulated 8-player lobby)
+- [ ] On join the "Choose your side" screen opens; there is no X button while Neutral
+- [ ] Join Police: screen closes, top button reads "Team: Police", name colour is blue
+- [ ] Reopen with the Team button; switching within 10 s shows the cooldown message; after 10 s switching works
+- [ ] Card shows player counts and "Current team" on your own team
+- [ ] Vehicle spawning still works after joining a team
+
 ## Mobile (Device Simulator, phone landscape)
-- [ ] Spawn Car button reachable, not under the Roblox top bar
+- [ ] Team screen fits on the smallest phone (iPhone 7, 667×375): no clipping, text fits, buttons ≥ 44 px; Join works by tap
+- [ ] Team and Spawn Car buttons (top centre) reachable, not under the Roblox top bar or player list
 - [ ] GAS / BRAKE / DRIFT / EXIT visible only while driving, no overlap with the thumbstick
 - [ ] Thumbstick steers; GAS drives; BRAKE brakes and reverses; EXIT leaves the car
 - [ ] Jump button hidden while driving and back after exit
 
-## Multiplayer (Test → Clients and Servers, 2 players)
-- [ ] Both players can spawn their own car at the same time on different pads
-- [ ] Each sees the other's car move smoothly (no rubber-banding at normal speeds)
-- [ ] Player B can enter Player A's parked car with **E**; it drives normally for B
-- [ ] When B exits, the car stays put (owner A simulates it again)
-- [ ] When a player leaves, their car is removed
-- [ ] No errors in either client's or the server's Output
+## Multiplayer — deferred
+Solo playtests are the current policy (owner decision 2026-10-13). Multiplayer checks live in `MULTIPLAYER_TESTS.md` and stay **MULTIPLAYER UNVERIFIED** until run with real players. Never tick a multiplayer item based on a solo run.
