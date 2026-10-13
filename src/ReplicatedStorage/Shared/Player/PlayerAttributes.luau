@@ -4,6 +4,10 @@
 local PlayerAttributes = table.freeze({
 	Status = "Status", -- Types.PlayerStatus
 	SpawnProtectedUntil = "SpawnProtectedUntil", -- server time (Workspace:GetServerTimeNow())
+	WantedLevel = "WantedLevel", -- stars, 0..#WantedConfig.StarThresholds
+	WantedHeat = "WantedHeat", -- heat, 0..WantedConfig.MaxHeat (1 decimal)
+	WantedEvading = "WantedEvading", -- true while heat is decaying
+	CriminalReputation = "CriminalReputation", -- earned by escapes (session only until persistence)
 })
 
 return PlayerAttributes

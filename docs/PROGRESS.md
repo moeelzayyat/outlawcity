@@ -20,7 +20,7 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 |---|---|
 | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
 | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 33 passed, 0 failed` (after 3A) |
+| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 52 passed, 0 failed` (after 3B) |
 | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
 | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
 | Chase camera | Playtest measurements above |
@@ -30,6 +30,13 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 | **3A Civilian spawning** | `PlayerStateService` sets `Status = "Civilian"`; `SpawnService` picks a random free spawn among 6 plaza `CivilianSpawns` before every spawn. Playtest: 13 respawns landed on the chosen spawn every time and covered all 6 spawns; with a car parked on CivilianNorth, 10 respawns never used it. `SpawnRules.spec` (free / occupied / fallback / simulated 3-player join) and `CityLayout.spec` spawn-placement test pass |
 | **3A Spawn protection** | Every spawn sets `SpawnProtectedUntil` = now + 5 s and the SpawnLocation gives a 5 s ForceField; playtest: protected 4.5 s after spawn with ForceField, expired after 5.5 s with ForceField gone. Nothing deals damage yet, so protection is only observable as state (enforced via CombatRules in 3C) |
 | 3A regression | Vehicle spawn, exit, drive (70.8 studs/s after 1.5 s W), chase camera all unchanged; Spawn Car button re-centred top-centre |
+| **3B pre-checks** | Owner-saved place backup found: `G:\Roblox\Outlaw City\backup.rbxl` (117 KB, 2026-10-13 15:48 local; existence/size/time verified, contents not opened). Original template `Workspace.SpawnLocation` disabled (`Enabled = false`, object kept); playtest spawns still land on civilian pads (East, South) |
+| **3B Wanted rules engine** | `WantedRules.spec` (14 tests): 3 stars, threshold mapping, 5-star config with no code change, crime heat, repeated-crime cooldown + heat cap, invalid crime/heat input, clamping, no decay before delay, police sighting blocks decay, decay starts evading and drops stars, escape with reputation by peak, 1-star escape earns 0, new crime while evading restarts delay, reset clears with no reward |
+| **3B WantedService + reportCrime** | Single server entry point `reportCrime(player, crimeType)`; 4 Hz decay loop; attributes `WantedLevel/WantedHeat/WantedEvading/CriminalReputation`. Playtest (crimes injected via **dev tools**, not gameplay): Ramming → heat 25, 1★; repeat within 2 s → `Cooldown`, heat unchanged; Set 3★ + "police sees me" for 12 s → heat stayed 100; sight off → Evading notice after ~8 s, heat 87.7 at 9.5 s, stars 3→2→1→0, Escaped notice `{FromStars=3, Reputation=25}`, server reputation 25. Wanted level persists through respawn (2★ before and after reset) |
+| **3B Wanted HUD + notifications** | Stars (top centre under Spawn Car), lit/unlit, blink while evading; "EVADING..." and "ESCAPED! +25 REP" banners confirmed on screen and in GUI state; stars hide at 0 |
+| **3B Studio-only dev tools** | `DevToolsService` creates `ReplicatedStorage.DevRemotes` only when `RunService:IsStudio()`; F8 panel with crime, star, clear and police-sight buttons all exercised by mouse. `DevCommandRules.spec` (5 tests) incl. invalid input and "DevRemotes present only in Studio". Behaviour in a published server not testable from Studio: guarded by design + test, not observed |
+| **3B Security** | Client set `CriminalReputation=9999` and `WantedLevel=3` locally and fired `OnWantedNotice` at the server; server still read rep 25 / level 0. Bad dev commands (`GiveReputation`, `SetHeat 1e9`, `SetHeat NaN`, `SetStars 7`, unknown crime) all rejected. Spec asserts no public `Request*` remote names wanted/heat/crime/reputation/dev |
+| 3B regression | 52/52 tests; vehicle spawn while wanted, drive 71.8 studs/s after 1.5 s, chase camera; no console errors |
 
 ## Known issues / limitations
 
@@ -40,8 +47,13 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 5. No server-side speed/teleport check on client-simulated vehicles yet (Phase 3G).
 6. The driver's head pokes through the Coupe roof. Cosmetic; leave until a vehicle art pass.
 7. Steering is fairly sharp at low speed (turn radius ~16 studs at 30 studs/s); tune after owner feedback.
-8. The original template `Workspace.SpawnLocation` (plaza centre) is still in the place and still a valid spawn if `RespawnLocation` were ever unset. Left untouched (pre-existing object); propose disabling or removing it with owner approval.
+8. The original template `Workspace.SpawnLocation` is disabled (owner-approved), not deleted.
 9. Spawn choice with several simultaneous joiners is only tested with mock positions — MULTIPLAYER UNVERIFIED.
+10. **No real crime detection yet.** Every wanted-level change in 3B testing came from Studio dev tools. Gameplay detectors (ramming police, speeding near police, evading) need NPC police (3D).
+11. When heat sits exactly on a star threshold, the first decay tick drops a star immediately, so the Evading notice can report one star fewer than the HUD showed a moment earlier (seen: set 3★ → notice said 2★). Cosmetic; candidate fix is to start the decay "grace" at the threshold.
+12. Wanted level survives death/respawn by design (prevents "reset to escape"). Owner may want to confirm.
+13. `CriminalReputation` is session-only until the persistence/economy phase.
+14. Wanted HUD not yet checked on the phone simulator (layout is a 102-px row under the Spawn Car button).
 
 ## Fixed during development
 
@@ -54,8 +66,8 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
 
 ## Upcoming (approved order; each waits for the previous report)
 
-- 3B Wanted rules (3 stars, extensible), wanted status, HUD — **next, awaiting go-ahead after the 3A report**
-- 3C Peaceful/Combat status rules (rules only, no damage)
+- ~~3B Wanted rules, status, HUD~~ — done (solo), awaiting owner approval
+- 3C Peaceful/Combat status rules (rules only, no damage) — **next, after approval**
 - 3D One NPC police pursuit vehicle (prototype, then more units)
 - 3E Safe-zone protection
 - 3F Studio-only test tools (throughout)

@@ -19,3 +19,10 @@ Mark each item with the date and result when finally run.
 - [ ] No team UI or team colours appear for anyone
 
 (Removed: Police vs Criminal team tests — teams were dropped from the design.)
+
+## Phase 3B — Wanted level
+- [ ] Each player's wanted state is independent (one player's crime/decay/escape never changes another's)
+- [ ] Other players can see a wanted player's `WantedLevel` attribute (for future UI), but only the wanted player gets Evading/Escaped banners
+- [ ] A player leaving while wanted cleans up with no errors; rejoining starts at 0 stars
+- [ ] 4 Hz decay loop cost stays negligible with a full server
+- [ ] Reputation from an escape is credited only to the escaping player

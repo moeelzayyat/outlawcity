@@ -109,7 +109,7 @@ function VehicleHudController.init()
 		VehicleController.requestSpawn(VehicleConfig.DefaultVehicleId)
 	end)
 
-	local toast = label(gui, "Toast", UDim2.fromOffset(380, 36), UDim2.new(0.5, 0, 0, 64), Vector2.new(0.5, 0), 16)
+	local toast = label(gui, "Toast", UDim2.fromOffset(380, 36), UDim2.new(0.5, 0, 0, 140), Vector2.new(0.5, 0), 16)
 	toast.Visible = false
 	local toastToken = 0
 	local function showToast(text: string)

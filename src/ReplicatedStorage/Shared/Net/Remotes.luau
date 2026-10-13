@@ -15,6 +15,8 @@ Remotes.Definitions = table.freeze({
 	RequestSpawnVehicle = "RemoteFunction",
 	-- () -> (); server unseats the caller if they are in a vehicle driver seat
 	RequestExitVehicle = "RemoteEvent",
+	-- server -> client: (kind: Types.WantedNoticeKind, payload: { Stars?, FromStars?, Reputation? })
+	OnWantedNotice = "RemoteEvent",
 } :: { [string]: string })
 
 function Remotes.createAll(): Folder

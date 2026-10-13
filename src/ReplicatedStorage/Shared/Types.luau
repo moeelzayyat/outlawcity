@@ -45,4 +45,32 @@ export type SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldow
 -- Every player is a civilian in the open world; more statuses may follow (e.g. "Jailed").
 export type PlayerStatus = "Civilian"
 
+export type CrimeDefinition = { Heat: number, Cooldown: number }
+
+-- The number of wanted stars is #StarThresholds (3 for the MVP; extendable to 5).
+export type WantedConfig = {
+	StarThresholds: { number },
+	MaxHeat: number,
+	DecayDelay: number,
+	DecayRate: number,
+	EscapeMinStars: number,
+	EscapeReputation: { [number]: number },
+	Crimes: { [string]: CrimeDefinition },
+}
+
+export type WantedState = {
+	Heat: number,
+	Stars: number,
+	PeakStars: number,
+	LastCrimeAt: number,
+	LastSeenAt: number,
+	Evading: boolean,
+	CrimeCooldowns: { [string]: number },
+}
+
+export type CrimeError = "InvalidCrime" | "Cooldown" | "NotInGame"
+
+-- Kinds sent through OnWantedNotice.
+export type WantedNoticeKind = "Evading" | "Escaped"
+
 return {}

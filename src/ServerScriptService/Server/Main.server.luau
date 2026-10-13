@@ -15,6 +15,8 @@ local services: { Service } = {
 	require(Services.WorldService) :: any,
 	require(Services.PlayerStateService) :: any,
 	require(Services.SpawnService) :: any,
+	require(Services.WantedService) :: any,
+	require(script.Parent.Dev.DevToolsService) :: any,
 	require(Services.VehicleService) :: any,
 }
 

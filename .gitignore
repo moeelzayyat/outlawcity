@@ -6,3 +6,6 @@
 *.rbxm
 *.rbxmx
 build/
+
+# Studio place backups (kept locally, too large for git)
+backups/

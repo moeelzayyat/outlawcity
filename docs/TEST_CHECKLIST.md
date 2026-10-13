@@ -10,6 +10,8 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 - [ ] `CityLayout.spec` — no overlapping road parts, no gaps along grid roads, spawns on road, connectors reach the highway, civilian spawns in the plaza and clear of vehicle pads
 - [ ] `SpawnRules.spec` — random free spawn, occupied spawns skipped, least-crowded fallback
 - [ ] `PlayerAttributes.spec` — attribute names, frozen gameplay config, no team system left
+- [ ] `WantedRules.spec` — thresholds, 5-star extensibility, cooldowns, cap, invalid input, decay, sightings, escape, reset
+- [ ] `DevCommandRules.spec` — dev command validation, no public remote touches wanted state, DevRemotes only in Studio
 
 ## Solo playtest (Play, PC)
 - [ ] Press **V** or click **Spawn Car**: a car appears on the nearest free pad and you are seated
@@ -36,7 +38,23 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 Server snippet for respawn checks (Studio command bar or MCP, Server context):
 `local p = game.Players:GetPlayers()[1]; p.Character.Humanoid.Health = 0; p.CharacterAdded:Wait(); task.wait(0.5); print(p.RespawnLocation.Name, p.Character.HumanoidRootPart.Position)`
 
+## Wanted level (3B, solo, Studio dev panel — press F8 to toggle)
+All of these use **dev tools**, not real crimes; gameplay crime detection arrives with NPC police (3D).
+- [ ] `WantedRules.spec` (14) and `DevCommandRules.spec` (5) pass
+- [ ] Dev panel appears in a Studio playtest (left side, "DEV (Studio)"), and `ReplicatedStorage.DevRemotes` exists
+- [ ] "Crime: Ramming" → 1 star, heat 25; clicking again within 2 s shows "failed: Cooldown" and heat stays 25
+- [ ] "Set 3 stars" → three lit stars at top centre
+- [ ] "Police sees me: ON" for 10+ s → heat does not drop, no Evading banner
+- [ ] "Police sees me: OFF" → after ~8 s "EVADING..." banner, stars blink and step down
+- [ ] Heat reaches 0 → "ESCAPED! +25 REP" banner, stars hide, `CriminalReputation` +25 (server view)
+- [ ] From 1 star, escape shows "ESCAPED!" with no reputation
+- [ ] "Clear wanted" → stars hide immediately, no Escaped banner, no reputation
+- [ ] Wanted level survives a character reset
+- [ ] Tamper check (client context): set `CriminalReputation`/`WantedLevel` attributes locally and invoke dev commands with bad values → server values unchanged, commands rejected
+- [ ] Vehicle spawn/drive/camera still work while wanted
+
 ## Mobile (Device Simulator, phone landscape)
+- [ ] Wanted stars and banners visible under the Spawn Car button, not clipped (not yet checked)
 - [ ] Spawn Car button (top centre) reachable, not under the Roblox top bar or player list
 - [ ] GAS / BRAKE / DRIFT / EXIT visible only while driving, no overlap with the thumbstick
 - [ ] Thumbstick steers; GAS drives; BRAKE brakes and reverses; EXIT leaves the car
