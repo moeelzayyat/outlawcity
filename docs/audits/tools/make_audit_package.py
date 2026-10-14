@@ -68,6 +68,9 @@ def check(task_id, base, head):
         print("\n".join(problems))
         sys.exit(1)
     uploads = [os.path.join(folder, name) for name in REPORTS if name != "00_AUDITOR_PROMPT.md"]
+    for extra in sorted(os.listdir(folder)):  # e.g. SOURCE_DIFFS.md
+        if extra.endswith(".md") and extra not in REPORTS:
+            uploads.append(os.path.join(folder, extra))
     for line in git("diff", "--name-only", f"{base}..{head}", "--", "docs").splitlines():
         if line.endswith(".md") and not line.startswith("docs/audits/"):
             uploads.append(os.path.join(ROOT, line))
