@@ -1,0 +1,17 @@
+git diff --name-status fc3e5c3..HEAD -- src docs
+
+M	docs/ARCHITECTURE.md
+A	docs/PLAYTEST_CHECKLIST.md
+M	docs/PROGRESS.md
+M	docs/ROADMAP.md
+M	docs/TEST_CHECKLIST.md
+M	src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
+M	src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau
+M	src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+M	src/ServerScriptService/Server/Services/RobberyService.luau
+M	src/ServerScriptService/Server/Services/VehicleService.luau
+M	src/ServerStorage/Tests/OnboardingRules.spec.luau
+M	src/ServerStorage/Tests/RobberyRules.spec.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/OnboardingTipController.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleController.luau

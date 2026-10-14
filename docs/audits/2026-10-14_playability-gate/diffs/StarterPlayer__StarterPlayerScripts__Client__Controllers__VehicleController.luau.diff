@@ -1,0 +1,33 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleController.luau
+index 2415aa4..4346ce5 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleController.luau
+@@ -113,6 +113,12 @@ local function onCharacter(character: Model)
+ 	humanoid.Seated:Connect(function(active, seat)
+ 		onSeated(humanoid, active, seat)
+ 	end)
++	-- Moving straight from one seat to another (a car replaced while driving) may not fire
++	-- Seated again, so also follow SeatPart itself.
++	humanoid:GetPropertyChangedSignal("SeatPart"):Connect(function()
++		local seat = humanoid.SeatPart
++		onSeated(humanoid, seat ~= nil, seat)
++	end)
+ 	if humanoid.SeatPart then
+ 		onSeated(humanoid, true, humanoid.SeatPart)
+ 	end
+@@ -145,6 +151,15 @@ function VehicleController.init()
+ 		vehiclesFolder = folder
+ 		folder.ChildAdded:Connect(watchVehicle)
+ 		folder.ChildRemoved:Connect(function(vehicle)
++			if vehicle == currentVehicle then
++				-- The car we were driving is gone (replaced or removed): stop driving it.
++				local character = player.Character
++				local humanoid = character and character:FindFirstChildOfClass("Humanoid")
++				setCurrentVehicle(nil, humanoid)
++				if humanoid and humanoid.SeatPart then
++					onSeated(humanoid, true, humanoid.SeatPart)
++				end
++			end
+ 			if vehicle:IsA("Model") then
+ 				local physics = simulated[vehicle]
+ 				if physics then

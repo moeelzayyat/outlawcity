@@ -1,0 +1,46 @@
+diff --git a/src/ServerStorage/Tests/OnboardingRules.spec.luau b/src/ServerStorage/Tests/OnboardingRules.spec.luau
+index 69fef5a..32c80dd 100644
+--- a/src/ServerStorage/Tests/OnboardingRules.spec.luau
++++ b/src/ServerStorage/Tests/OnboardingRules.spec.luau
+@@ -14,10 +14,37 @@ end
+ 
+ return {
+ 	["P1: one owned car spawns directly; two or more open the garage"] = function()
+-		Assert.equal(OnboardingRules.spawnButtonAction(0), "Spawn")
+-		Assert.equal(OnboardingRules.spawnButtonAction(1), "Spawn")
+-		Assert.equal(OnboardingRules.spawnButtonAction(2), "Choose")
+-		Assert.equal(OnboardingRules.spawnButtonAction(5), "Choose")
++		local starters = EconomyConfig.StarterVehicles
++		local action, id = OnboardingRules.spawnChoice({ "Coupe" }, starters)
++		Assert.equal(action, "Spawn")
++		Assert.equal(id, "Coupe")
++		action, id = OnboardingRules.spawnChoice({ "Coupe", "Muscle" }, starters)
++		Assert.equal(action, "Choose")
++		Assert.equal(id, nil)
++	end,
++	["P1: a stale selection is never sent; the only owned car is"] = function()
++		-- e.g. "Muscle" was selected earlier but the list now holds one other car
++		local action, id = OnboardingRules.spawnChoice({ "Coupe" }, {})
++		Assert.equal(action, "Spawn")
++		Assert.equal(id, "Coupe")
++		action, id = OnboardingRules.spawnChoice({ "Muscle" }, { "Coupe" })
++		Assert.equal(id, "Muscle", "owned list wins over the starter list")
++	end,
++	["P1: not loaded yet uses only the starter car; nothing at all sends nothing"] = function()
++		local action, id = OnboardingRules.spawnChoice({}, EconomyConfig.StarterVehicles)
++		Assert.equal(action, "Spawn")
++		Assert.equal(id, "Coupe", "the server always accepts starter cars")
++		action, id = OnboardingRules.spawnChoice({}, {})
++		Assert.equal(action, "None")
++		Assert.equal(id, nil)
++	end,
++	["P3: the tip closes only for a running robbery"] = function()
++		Assert.equal(OnboardingRules.isActiveRobbery("Holding"), true)
++		Assert.equal(OnboardingRules.isActiveRobbery("Escaping"), true)
++		Assert.equal(OnboardingRules.isActiveRobbery(nil), false)
++		Assert.equal(OnboardingRules.isActiveRobbery("PayoutPending"), false)
++		Assert.equal(OnboardingRules.isActiveRobbery("Failed"), false)
++		Assert.equal(OnboardingRules.isActiveRobbery(5), false)
+ 	end,
+ 	["P2: markers show between the hide and max distance only"] = function()
+ 		local c = OnboardingConfig

@@ -4,7 +4,7 @@
 - Date: 2026-10-14
 - Commit range: `fc3e5c3..b58d907` (code `9bfa55a`, docs `b58d907`)
 - Prepared by: Claude (primary integration agent)
-- Status: conditions done (solo); **owner's human playtest pending**. Its results will be added to TEST_EVIDENCE.md section "Human playtest" before this goes to the auditor.
+- Status: **SUPERSEDED** by `docs/audits/2026-10-14_playability-gate/` (submitted together with the seating fix); kept for the record. Was: conditions done (solo); owner's human playtest pending. Its results will be added to TEST_EVIDENCE.md section "Human playtest" before this goes to the auditor.
 
 ## 1. What was asked
 The onboarding audit was **APPROVE WITH CONDITIONS**. It asked for four small corrections:

@@ -1,0 +1,62 @@
+diff --git a/src/ServerScriptService/Server/Services/VehicleService.luau b/src/ServerScriptService/Server/Services/VehicleService.luau
+index fafc94b..f7727f6 100644
+--- a/src/ServerScriptService/Server/Services/VehicleService.luau
++++ b/src/ServerScriptService/Server/Services/VehicleService.luau
+@@ -26,6 +26,8 @@ local MAX_VEHICLE_ID_LENGTH = 32
+ local PROMPT_SLACK = 6 -- extra studs allowed beyond the prompt range for latency
+ local SPAWN_CLEARANCE = Vector3.new(10, 8, 16)
+ local SPAWN_DROP = 0.5
++local SEAT_RETRIES = 10 -- re-seat attempts after a spawn (covers a client still leaving its old seat)
++local SEAT_RETRY_INTERVAL = 0.1
+ 
+ local vehiclesFolder: Folder
+ local vehicleByOwner: { [number]: Model } = {}
+@@ -135,6 +137,15 @@ local function spawnVehicle(player: Player, vehicleId: string): (boolean, Types.
+ 		return false, "Cooldown"
+ 	end
+ 
++	-- Replacing a car while sitting in one: leave the old seat cleanly first (as exitVehicle
++	-- does), so the character isn't still "seated" in a destroyed seat when the new one sits it.
++	if humanoid.SeatPart then
++		local weld = humanoid.SeatPart:FindFirstChild("SeatWeld")
++		if weld then
++			weld:Destroy()
++		end
++		humanoid.Sit = false
++	end
+ 	despawnOwnedVehicle(player.UserId)
+ 	local spawnCFrame = findFreeSpawn(root.Position)
+ 	if not spawnCFrame then
+@@ -161,7 +172,32 @@ local function spawnVehicle(player: Player, vehicleId: string): (boolean, Types.
+ 		end)
+ 	end
+ 	updateSimulation(vehicle)
++	-- The character is simulated by its client, which can take a moment to leave its old seat;
++	-- until it has sat in the new car once, retry briefly. Stops for good once it was seated (so
++	-- a player who gets straight out isn't pulled back in), or the seat is taken, the car is
++	-- gone, or the player may no longer drive.
++	local seatedOnce = false
++	local seatedConnection = seat:GetPropertyChangedSignal("Occupant"):Connect(function()
++		if seat.Occupant == humanoid then
++			seatedOnce = true
++		end
++	end)
+ 	seat:Sit(humanoid)
++	task.spawn(function()
++		for _ = 1, SEAT_RETRIES do
++			task.wait(SEAT_RETRY_INTERVAL)
++			if seatedOnce or seat.Occupant ~= nil or not seat:IsDescendantOf(Workspace) then
++				break
++			end
++			if humanoid.Health <= 0 or humanoid.Parent ~= player.Character or not JailService.allows(player, "Drive") then
++				break
++			end
++			if humanoid.SeatPart == nil then
++				seat:Sit(humanoid)
++			end
++		end
++		seatedConnection:Disconnect()
++	end)
+ 	MilestoneLog.mark(player, "FirstCar")
+ 	return true, nil
+ end

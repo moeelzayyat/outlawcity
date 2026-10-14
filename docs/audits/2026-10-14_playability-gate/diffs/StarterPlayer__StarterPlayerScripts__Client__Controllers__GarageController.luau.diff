@@ -1,0 +1,34 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
+index 48d6304..9ab3e2a 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
+@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ 
+ local VehicleConfig = require(ReplicatedStorage.Shared.Config.VehicleConfig)
++local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
+ local PlayerAttributes = require(ReplicatedStorage.Shared.Player.PlayerAttributes)
+ local OnboardingRules = require(ReplicatedStorage.Shared.Onboarding.OnboardingRules)
+ local VehicleController = require(script.Parent.VehicleController)
+@@ -27,14 +28,17 @@ function GarageController.spawnSelected()
+ 	VehicleController.requestSpawn(selected)
+ end
+ 
+--- The Spawn Car button (P1): one owned car spawns straight away, 2+ open the garage.
++-- The Spawn Car button (P1): one owned car spawns straight away (and becomes the selection, so
++-- a stale earlier pick is never sent), 2+ open the garage, none sends nothing.
+ function GarageController.spawnOrChoose()
+-	if OnboardingRules.spawnButtonAction(#UiKit.ownedVehicles(player)) == "Spawn" then
++	local action, vehicleId = OnboardingRules.spawnChoice(UiKit.ownedVehicles(player), EconomyConfig.StarterVehicles)
++	if action == "Spawn" and vehicleId then
++		selected = vehicleId
+ 		if panel then
+ 			panel.Visible = false
+ 		end
+-		VehicleController.requestSpawn(selected)
+-	else
++		VehicleController.requestSpawn(vehicleId)
++	elseif action == "Choose" then
+ 		GarageController.toggle()
+ 	end
+ end
