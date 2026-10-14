@@ -198,6 +198,11 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] **Owner, real phone:** panel, tip and markers readable; nothing blocks the touch controls
 - [ ] Conditions: stale selection + one car spawns the owned car; not-loaded spawns the starter Coupe; the tip stays for PayoutPending/cleared and closes for Holding; repeated/overlapping failures change the cooldown once (`RobberyRules.spec`)
 
+## Playability gate
+- [ ] While driving, Spawn Car (or V, or picking the other car in the garage) seats you in the new car; W drives it at once; the camera stays behind the car; F still exits
+- [ ] A second spawn within 3 s shows "Wait a moment before spawning again."; jailed players can't spawn; unknown/unowned cars are refused
+- [ ] Owner's 10-minute playtest: `docs/PLAYTEST_CHECKLIST.md` (no dev tools)
+
 ## Police pursuit tuning (audit remediation, EXPERIMENTAL)
 - [ ] With SightRange 130 / ChaseSpeed 100 / ChaseGain 0.25: rob, drive away normally, lose the police -> paid once
 - [ ] Police still catch a robber who stops or crashes nearby (bust within 18 studs, slow for 2.5 s)
