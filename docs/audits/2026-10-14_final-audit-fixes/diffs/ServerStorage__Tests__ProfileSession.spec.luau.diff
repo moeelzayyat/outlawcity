@@ -1,0 +1,218 @@
+diff --git a/src/ServerStorage/Tests/ProfileSession.spec.luau b/src/ServerStorage/Tests/ProfileSession.spec.luau
+new file mode 100644
+index 0000000..52e6ce6
+--- /dev/null
++++ b/src/ServerStorage/Tests/ProfileSession.spec.luau
+@@ -0,0 +1,212 @@
++-- ProfileSession (audit remediation): ambiguous writes are reconciled from the store before
++-- anything else is written, and queued operations never run after the player leaves or the
++-- lock is lost. Uses a fake store that can fail, store-then-error, and yield mid-write.
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local ServerScriptService = game:GetService("ServerScriptService")
++local HttpService = game:GetService("HttpService")
++local ProfileSession = require(ServerScriptService.Server.Data.ProfileSession)
++local ProfileStore = require(ServerScriptService.Server.Data.ProfileStore)
++local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
++local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
++local Assert = require(script.Parent.Assert)
++
++local C = EconomyConfig
++
++local function deepCopy(value)
++	if value == nil then
++		return nil
++	end
++	return HttpService:JSONDecode(HttpService:JSONEncode(value))
++end
++
++-- Fail: every call errors. CommitThenError = n: the next n writes are stored, then error.
++-- Yield = seconds: each call waits (lets other operations queue up).
++local function fakeStore()
++	local data = {}
++	local store = { Fail = false, CommitThenError = 0, Yield = 0, Writes = 0, Data = data }
++	function store.UpdateAsync(self, key, transform)
++		if self.Yield > 0 then
++			task.wait(self.Yield)
++		end
++		if self.Fail then
++			error("simulated outage")
++		end
++		local result = transform(deepCopy(data[key]))
++		if result ~= nil then
++			data[key] = deepCopy(result)
++			self.Writes += 1
++			if self.CommitThenError > 0 then
++				self.CommitThenError -= 1
++				error("simulated ambiguous write (stored, then errored)")
++			end
++		end
++		return deepCopy(result)
++	end
++	return store
++end
++
++local function session(store, cash: number?)
++	local profile = assert(ProfileStore.load(store, "k", "A", 1000, C))
++	if cash then
++		profile.Cash = cash
++		assert(ProfileStore.save(store, "k", "A", profile, 1000, false))
++	end
++	return ProfileSession.new(store, "k", "A", profile, C, { Wait = function() end, Now = function() return 1001 end })
++end
++
++local function buy(s, tx: string)
++	return ProfileSession.commit(s, function(draft)
++		return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, tx, C)
++	end)
++end
++
++return {
++	["ambiguous write: stored-then-errored purchase is detected and counted once"] = function()
++		local store = fakeStore()
++		local s = session(store, 20000)
++		store.CommitThenError = 1
++		local ok, err, note = buy(s, "buy:1")
++		Assert.equal(ok, true, tostring(err))
++		Assert.equal(note, "AlreadyApplied")
++		Assert.equal(s.Profile.Cash, 5000)
++		Assert.equal(EconomyRules.ownsVehicle(s.Profile, "Muscle"), true)
++		Assert.equal(store.Data.k.Profile.Cash, 5000, "charged exactly once in the store")
++		Assert.equal(s.Stale, false)
++	end,
++	["ambiguous write + unreadable store: stale memory never overwrites the stored change"] = function()
++		local store = fakeStore()
++		local s = session(store, 20000)
++		store.CommitThenError = 1
++		-- after the ambiguous write, the store stays down for the rest of this commit
++		local realUpdate = store.UpdateAsync
++		local calls = 0
++		store.UpdateAsync = function(self, key, transform)
++			calls += 1
++			if calls > 1 then
++				error("still down")
++			end
++			return realUpdate(self, key, transform)
++		end
++		local ok, err = buy(s, "buy:1")
++		Assert.equal(ok, false)
++		Assert.equal(err, "SaveUnconfirmed")
++		Assert.equal(s.Stale, true)
++		Assert.equal(s.Profile.Cash, 20000, "memory doesn't know yet")
++		Assert.equal(store.Data.k.Profile.Cash, 5000, "but the store has it")
++		-- store back: a heartbeat must reconcile first, not write the stale copy over the store
++		store.UpdateAsync = realUpdate
++		Assert.equal((ProfileSession.save(s, false)), true)
++		Assert.equal(store.Data.k.Profile.Cash, 5000, "stored purchase survived the heartbeat")
++		Assert.equal(s.Profile.Cash, 5000, "memory adopted the stored truth")
++		Assert.equal(EconomyRules.ownsVehicle(s.Profile, "Muscle"), true)
++		-- the client retries the same purchase: never charged twice
++		local ok2, err2 = buy(s, "buy:2")
++		Assert.equal(ok2, false)
++		Assert.equal(err2, "AlreadyOwned")
++		Assert.equal(store.Data.k.Profile.Cash, 5000)
++	end,
++	["ambiguous write that did NOT store: retried once, applied once"] = function()
++		local store = fakeStore()
++		local s = session(store, 20000)
++		local realUpdate = store.UpdateAsync
++		local first = true
++		store.UpdateAsync = function(self, key, transform)
++			if first then
++				first = false
++				error("failed before storing")
++			end
++			return realUpdate(self, key, transform)
++		end
++		local ok, err, note = buy(s, "buy:1")
++		Assert.equal(ok, true, tostring(err))
++		Assert.equal(note, nil)
++		Assert.equal(store.Data.k.Profile.Cash, 5000)
++	end,
++	["an unreachable store reports SaveUnconfirmed and nothing is applied"] = function()
++		local store = fakeStore()
++		local s = session(store, 20000)
++		store.Fail = true
++		local ok, err = buy(s, "buy:1")
++		Assert.equal(ok, false)
++		Assert.equal(err, "SaveUnconfirmed", "the store can't even be read: outcome unknown")
++		store.Fail = false
++		Assert.equal((ProfileSession.save(s, false)), true)
++		Assert.equal(store.Data.k.Profile.Cash, 20000)
++		Assert.equal(EconomyRules.ownsVehicle(s.Profile, "Muscle"), false)
++	end,
++	["operations queued when the player leaves never run"] = function()
++		local store = fakeStore()
++		local s = session(store, 20000)
++		store.Yield = 0.1
++		local results = {}
++		task.spawn(function()
++			results.a = table.pack(ProfileSession.commit(s, function(draft)
++				return EconomyRules.grant(draft, 100, "g1", C)
++			end))
++		end)
++		task.wait() -- A is now writing
++		task.spawn(function()
++			results.b = table.pack(ProfileSession.commit(s, function(draft)
++				return EconomyRules.grant(draft, 100, "g2", C)
++			end))
++		end)
++		ProfileSession.beginLeave(s)
++		local t0 = os.clock()
++		while (not results.a or not results.b) and os.clock() - t0 < 3 do
++			task.wait(0.05)
++		end
++		Assert.equal(results.a[1], true, "the operation already writing finishes")
++		Assert.equal(results.b[1], false)
++		Assert.equal(results.b[2], "SessionClosed")
++		Assert.equal(EconomyRules.hasTransaction(s.Profile, "g2"), false)
++		Assert.equal(table.find(store.Data.k.Profile.RecentTransactions, "g2"), nil, "never written")
++		-- the final save may still run, and closes the session
++		store.Yield = 0
++		Assert.equal((ProfileSession.save(s, true)), true)
++		Assert.equal(s.Closed, true)
++		local ok, err = ProfileSession.commit(s, function(draft)
++			return EconomyRules.grant(draft, 1, "late", C)
++		end)
++		Assert.equal(ok, false)
++		Assert.equal(err, "SessionClosed")
++	end,
++	["another server taking the lock closes the session; queued operations don't run"] = function()
++		local store = fakeStore()
++		local s = session(store, 20000)
++		store.Yield = 0.1
++		local results = {}
++		task.spawn(function()
++			results.a = table.pack(ProfileSession.commit(s, function(draft)
++				return EconomyRules.grant(draft, 100, "g1", C)
++			end))
++		end)
++		task.wait()
++		task.spawn(function()
++			results.b = table.pack(ProfileSession.commit(s, function(draft)
++				return EconomyRules.grant(draft, 100, "g2", C)
++			end))
++		end)
++		-- server B takes over while A's write is in flight
++		store.Data.k.Lock = { Id = "B", At = 5000 }
++		local t0 = os.clock()
++		while (not results.a or not results.b) and os.clock() - t0 < 3 do
++			task.wait(0.05)
++		end
++		Assert.equal(results.a[1], false)
++		Assert.equal(results.a[2], "SessionClosed")
++		Assert.equal(results.a[3], "LockLost")
++		Assert.equal(results.b[2], "SessionClosed")
++		Assert.equal(s.Closed, true)
++		Assert.equal(store.Data.k.Lock.Id, "B", "B's ownership untouched")
++		Assert.equal(store.Data.k.Profile.Cash, 20000, "nothing written over B")
++	end,
++	["a heartbeat after the lock moved closes the session instead of writing"] = function()
++		local store = fakeStore()
++		local s = session(store, 20000)
++		store.Data.k.Lock = { Id = "B", At = 5000 }
++		local ok, err = ProfileSession.save(s, false)
++		Assert.equal(ok, false)
++		Assert.equal(err, "LockLost")
++		Assert.equal(s.Closed, true)
++	end,
++}

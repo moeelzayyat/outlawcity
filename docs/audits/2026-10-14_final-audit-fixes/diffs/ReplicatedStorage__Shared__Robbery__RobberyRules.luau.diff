@@ -1,0 +1,13 @@
+diff --git a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+index 61c6b63..0ea7195 100644
+--- a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
++++ b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+@@ -152,7 +152,7 @@ function RobberyRules.payoutOutcome(ok: boolean, err: string?): Types.PayoutOutc
+ 		return "Paid"
+ 	elseif err == "DuplicateTransaction" then
+ 		return "AlreadyPaid"
+-	elseif err == "DataNotLoaded" or err == "SaveFailed" then
++	elseif err == "DataNotLoaded" or err == "SaveFailed" or err == "SaveUnconfirmed" or err == "SessionClosed" or err == "RewardHistoryFull" then
+ 		return "Retry" -- temporary: the data isn't loaded, or the write didn't go through
+ 	end
+ 	return "Rejected"

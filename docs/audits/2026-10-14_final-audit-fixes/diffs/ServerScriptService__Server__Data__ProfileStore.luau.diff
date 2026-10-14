@@ -1,0 +1,72 @@
+diff --git a/src/ServerScriptService/Server/Data/ProfileStore.luau b/src/ServerScriptService/Server/Data/ProfileStore.luau
+index 56da08a..7dbef52 100644
+--- a/src/ServerScriptService/Server/Data/ProfileStore.luau
++++ b/src/ServerScriptService/Server/Data/ProfileStore.luau
+@@ -19,6 +19,7 @@ export type Store = { UpdateAsync: (self: any, key: string, transform: (any) ->
+ export type LoadResult = "New" | "Existing" | "Migrated"
+ export type LoadError = "StoreError" | "SessionLocked" | "Corrupt"
+ export type SaveError = "StoreError" | "LockLost"
++export type ReadError = "StoreError" | "LockLost" | "Corrupt"
+ 
+ function ProfileStore.load(store: Store, key: string, sessionId: string, now: number, config: any): (Types.Profile?, LoadResult | LoadError, string?)
+ 	local profile: Types.Profile? = nil
+@@ -55,6 +56,7 @@ local function copyProfile(profile: Types.Profile): Types.Profile
+ 		Cash = profile.Cash,
+ 		RecentTransactions = table.clone(profile.RecentTransactions),
+ 		OwnedVehicles = table.clone(profile.OwnedVehicles),
++		PaidRewards = table.clone(profile.PaidRewards),
+ 	}
+ end
+ 
+@@ -85,6 +87,7 @@ function ProfileStore.commit(
+ 	profile.Cash = draft.Cash
+ 	profile.RecentTransactions = draft.RecentTransactions
+ 	profile.OwnedVehicles = draft.OwnedVehicles
++	profile.PaidRewards = draft.PaidRewards
+ 	return true, nil, nil
+ end
+ 
+@@ -105,6 +108,7 @@ function ProfileStore.save(store: Store, key: string, sessionId: string, profile
+ 					Cash = profile.Cash,
+ 					RecentTransactions = table.clone(profile.RecentTransactions),
+ 					OwnedVehicles = table.clone(profile.OwnedVehicles),
++					PaidRewards = table.clone(profile.PaidRewards),
+ 				},
+ 				Lock = if release then nil else { Id = sessionId, At = now },
+ 			}
+@@ -119,4 +123,35 @@ function ProfileStore.save(store: Store, key: string, sessionId: string, profile
+ 	return true, nil, nil
+ end
+ 
++-- Reads the stored profile WITHOUT writing (the transform cancels), for reconciling after an
++-- ambiguous write. Returns (profile?, err?): "LockLost" if another session owns the record now.
++function ProfileStore.read(store: Store, key: string, sessionId: string, config: any): (Types.Profile?, ReadError?, string?)
++	local profile: Types.Profile? = nil
++	local outcome: ReadError? = nil
++	local ok, err = pcall(function()
++		store:UpdateAsync(key, function(old: any)
++			local record = if type(old) == "table" then old else nil
++			local lock = record and record.Lock
++			if type(lock) ~= "table" or lock.Id ~= sessionId then
++				outcome = "LockLost"
++				return nil
++			end
++			local loaded = EconomyRules.validateSaved(record and record.Profile, config)
++			if not loaded then
++				outcome = "Corrupt"
++				return nil
++			end
++			profile = loaded
++			return nil -- read only
++		end)
++	end)
++	if not ok then
++		return nil, "StoreError", tostring(err)
++	end
++	if outcome then
++		return nil, outcome, nil
++	end
++	return profile, nil, nil
++end
++
+ return ProfileStore

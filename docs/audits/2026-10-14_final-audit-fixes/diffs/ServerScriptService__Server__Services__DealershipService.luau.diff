@@ -1,0 +1,20 @@
+diff --git a/src/ServerScriptService/Server/Services/DealershipService.luau b/src/ServerScriptService/Server/Services/DealershipService.luau
+index 2976430..ca27c12 100644
+--- a/src/ServerScriptService/Server/Services/DealershipService.luau
++++ b/src/ServerScriptService/Server/Services/DealershipService.luau
+@@ -51,8 +51,14 @@ local function purchase(player: Player, vehicleId: unknown): (boolean, Types.Pur
+ 		return false, "TooFar"
+ 	end
+ 	inFlight[player] = true
+-	local ok, err = EconomyService.purchaseVehicle(player, vehicleId, price, EconomyService.newTransactionId("buy:" .. vehicleId))
++	-- The flag is cleared even if the economy call raises (audit remediation): otherwise one
++	-- error would leave this player unable to buy until they rejoin.
++	local called, ok, err = pcall(EconomyService.purchaseVehicle, player, vehicleId, price, EconomyService.newTransactionId("buy:" .. vehicleId))
+ 	inFlight[player] = nil
++	if not called then
++		warn(`[Dealership] {player.Name}: purchase raised an error: {tostring(ok)}`)
++		return false, "SaveUnconfirmed" -- the outcome is unknown; the next operation reconciles from the store
++	end
+ 	return ok, err
+ end
+ 

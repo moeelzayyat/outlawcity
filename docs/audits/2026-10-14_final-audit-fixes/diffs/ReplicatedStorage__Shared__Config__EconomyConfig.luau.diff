@@ -1,0 +1,27 @@
+diff --git a/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau b/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+index 3d72d1d..b14b504 100644
+--- a/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
++++ b/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+@@ -8,7 +8,7 @@ local EconomyConfig = {
+ 	TransactionIdMaxLength = 64,
+ 	-- 1: cash only (4A). 2: + OwnedVehicles (4C). Older records are migrated on load; a record
+ 	-- from a NEWER version is refused untouched, so an old server can never downgrade it.
+-	ProfileVersion = 2,
++	ProfileVersion = 3, -- 3 (audit remediation): + PaidRewards (durable reward dedupe)
+ 	StarterVehicles = table.freeze({ "Coupe" }), -- every profile owns these (new and migrated)
+ 	MaxOwnedVehicles = 50,
+ 	VehicleIdMaxLength = 32,
+@@ -23,7 +23,12 @@ local EconomyConfig = {
+ 	-- Earned-but-unpaid rewards are recorded here first (separate store), so they survive a
+ 	-- failed profile save, a disconnect or a server crash. Claimed on the next load.
+ 	RewardStoreName = "OutlawCity_PendingRewards_v1",
+-	CommitAttempts = 2, -- write-through tries per cash change before it is refused as SaveFailed
++	CommitAttempts = 3, -- write-through tries per cash change (each retry reconciles from the store first)
++	MaxPaidRewards = 1000, -- paid-reward ids kept until the ledger drops them
++	LedgerMaxEntries = 50, -- unpaid rewards per player in the ledger; more is refused as LedgerFull
++	ClaimRetryBase = 30, -- seconds; ledger claim retry after a failure, doubling...
++	ClaimRetryMax = 900, -- ...up to this
++	ClaimIdleInterval = 300, -- seconds between ledger checks when nothing is outstanding
+ 	-- If the save on leave fails, the unsaved profile is kept on this server and retried.
+ 	OrphanRetryInterval = 10,
+ 	OrphanRetryLimit = 900, -- seconds; stops early if another server takes the lock

@@ -1,0 +1,33 @@
+diff --git a/src/ServerScriptService/Server/Data/DataStoreAdapter.luau b/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
+index 7bd98b2..c391d97 100644
+--- a/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
++++ b/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
+@@ -30,11 +30,28 @@ function DataStoreAdapter.get(baseName: string): any
+ 	local store = DataStoreService:GetDataStore(DataStoreAdapter.storeName(baseName))
+ 	-- Studio-only: Workspace attribute SimulateStoreFailure_<baseName> fails just this store.
+ 	local perStore = "SimulateStoreFailure_" .. baseName
++	-- Studio-only: Workspace attribute SimulateCommitThenError_<baseName> = N makes the next N
++	-- writes to this store succeed and THEN raise an error (an ambiguous write).
++	local ambiguous = "SimulateCommitThenError_" .. baseName
+ 	return {
+ 		UpdateAsync = function(_, key: string, transform: (any) -> any): any
+ 			if DataStoreAdapter.isSimulatingFailure() or (RunService:IsStudio() and Workspace:GetAttribute(perStore) == true) then
+ 				error("Simulated DataStore failure (Studio test)")
+ 			end
++			local remaining = if RunService:IsStudio() then Workspace:GetAttribute(ambiguous) else nil
++			if type(remaining) == "number" and remaining > 0 then
++				local wrote = false
++				local result = store:UpdateAsync(key, function(old)
++					local new = transform(old)
++					wrote = new ~= nil
++					return new
++				end)
++				if wrote then
++					Workspace:SetAttribute(ambiguous, remaining - 1)
++					error("Simulated ambiguous DataStore write: stored, then errored (Studio test)")
++				end
++				return result
++			end
+ 			return store:UpdateAsync(key, transform)
+ 		end,
+ 	}

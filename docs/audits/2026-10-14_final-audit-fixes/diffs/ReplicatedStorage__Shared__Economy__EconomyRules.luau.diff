@@ -1,0 +1,86 @@
+diff --git a/src/ReplicatedStorage/Shared/Economy/EconomyRules.luau b/src/ReplicatedStorage/Shared/Economy/EconomyRules.luau
+index 3630038..fe08206 100644
+--- a/src/ReplicatedStorage/Shared/Economy/EconomyRules.luau
++++ b/src/ReplicatedStorage/Shared/Economy/EconomyRules.luau
+@@ -16,6 +16,7 @@ type Config = {
+ 	StarterVehicles: { string },
+ 	MaxOwnedVehicles: number,
+ 	VehicleIdMaxLength: number,
++	MaxPaidRewards: number,
+ }
+ 
+ local function isWholeFinite(n: any): boolean
+@@ -43,6 +44,7 @@ function EconomyRules.newProfile(config: Config): Types.Profile
+ 		Cash = config.StartingCash,
+ 		RecentTransactions = {},
+ 		OwnedVehicles = table.clone(config.StarterVehicles),
++		PaidRewards = {},
+ 	}
+ end
+ 
+@@ -87,11 +89,26 @@ function EconomyRules.validateSaved(saved: any, config: Config): (Types.Profile?
+ 			end
+ 		end
+ 	end
++	-- Paid-reward ids (v3+, audit remediation): rewards paid from the ledger that the ledger may
++	-- still list. Kept until the ledger no longer has them, so a reward can never be paid twice
++	-- even after its id has left RecentTransactions.
++	local paid = {}
++	if version >= 3 then
++		if type(saved.PaidRewards) ~= "table" then
++			return nil, "Corrupt" -- a v3 record without its paid-reward list is damaged, not empty
++		end
++		for _, txId in saved.PaidRewards do
++			if type(txId) == "string" and not table.find(paid, txId) then
++				table.insert(paid, txId)
++			end
++		end
++	end
+ 	return {
+ 		Version = config.ProfileVersion,
+ 		Cash = saved.Cash,
+ 		RecentTransactions = recent,
+ 		OwnedVehicles = owned,
++		PaidRewards = paid,
+ 	}, if version < config.ProfileVersion then "Migrated" else "Existing"
+ end
+ 
+@@ -183,6 +200,38 @@ function EconomyRules.purchaseVehicle(profile: Types.Profile, vehicleId: any, pr
+ 	return true, nil
+ end
+ 
++-- Pays a ledger reward once (audit remediation). Refuses a reward already in PaidRewards or in
++-- the recent transaction ids ("DuplicateTransaction"), so it can't pay twice even after the id
++-- has aged out of RecentTransactions. Records the id in PaidRewards in the same step.
++function EconomyRules.payReward(profile: Types.Profile, amount: any, txId: any, config: Config): (boolean, Types.EconomyError?)
++	if type(txId) == "string" and table.find(profile.PaidRewards, txId) then
++		return false, "DuplicateTransaction"
++	end
++	if #profile.PaidRewards >= config.MaxPaidRewards then
++		return false, "RewardHistoryFull"
++	end
++	local ok, err = EconomyRules.grant(profile, amount, txId, config)
++	if not ok then
++		return false, err
++	end
++	table.insert(profile.PaidRewards, txId)
++	return true, nil
++end
++
++-- Drops paid-reward ids the ledger no longer lists (they can never be claimed again).
++-- Returns how many were dropped.
++function EconomyRules.prunePaidRewards(profile: Types.Profile, stillInLedger: { string }): number
++	local kept = {}
++	for _, txId in profile.PaidRewards do
++		if table.find(stillInLedger, txId) then
++			table.insert(kept, txId)
++		end
++	end
++	local dropped = #profile.PaidRewards - #kept
++	profile.PaidRewards = kept
++	return dropped
++end
++
+ -- Session lock: a server may claim a record when it is unlocked, already its own, or the
+ -- other server's lock is older than `timeout` seconds (that server crashed or hung).
+ function EconomyRules.canClaimLock(lock: any, sessionId: string, now: number, timeout: number): boolean

@@ -1,0 +1,23 @@
+diff --git a/src/ReplicatedStorage/Shared/Types.luau b/src/ReplicatedStorage/Shared/Types.luau
+index cb3dfc8..acaf2e1 100644
+--- a/src/ReplicatedStorage/Shared/Types.luau
++++ b/src/ReplicatedStorage/Shared/Types.luau
+@@ -108,6 +108,7 @@ export type Profile = {
+ 	Cash: number,
+ 	RecentTransactions: { string }, -- most recent last; bounded; blocks duplicate grants/deductions
+ 	OwnedVehicles: { string }, -- vehicle ids this player may spawn (v2+); always includes the starters
++	PaidRewards: { string }, -- (v3+) ledger reward ids already paid; kept until the ledger drops them
+ }
+ 
+ export type EconomyError =
+@@ -121,6 +122,10 @@ export type EconomyError =
+ 	| "AlreadyOwned"
+ 	| "TooManyVehicles"
+ 	| "SaveFailed" -- the change could not be stored, so it was NOT applied
++	| "SaveUnconfirmed" -- a write failed ambiguously and the store couldn't be read to check; the next
++	--   operation reconciles from the store, so it is applied at most once
++	| "SessionClosed" -- the player left or this server lost the profile's lock before it ran
++	| "RewardHistoryFull"
+ 	| "NotInGame"
+ 
+ -- Store robbery (Phase 4B).
