@@ -1,0 +1,37 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/OnboardingTipController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/OnboardingTipController.luau
+index 6f727c1..8e7d45f 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/OnboardingTipController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/OnboardingTipController.luau
+@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ local Shared = ReplicatedStorage.Shared
+ local OnboardingConfig = require(Shared.Config.OnboardingConfig)
+ local PlayerAttributes = require(Shared.Player.PlayerAttributes)
++local OnboardingRules = require(Shared.Onboarding.OnboardingRules)
+ local UiKit = require(script.Parent.UiKit)
+ 
+ local OnboardingTipController = {}
+@@ -49,12 +50,20 @@ function OnboardingTipController.init()
+ 			gui:Destroy()
+ 		end
+ 	end)
+-	-- A robbery's objective panel takes over the top of the screen, so the tip steps aside.
+-	player:GetAttributeChangedSignal(PlayerAttributes.RobberyPhase):Connect(function()
+-		if gui.Parent then
+-			gui:Destroy()
++	-- A running robbery's objective panel takes over the top of the screen, so the tip steps aside.
++	-- Other RobberyPhase changes (cleared, payout pending) leave it alone.
++	local connection: RBXScriptConnection
++	connection = player:GetAttributeChangedSignal(PlayerAttributes.RobberyPhase):Connect(function()
++		if OnboardingRules.isActiveRobbery(player:GetAttribute(PlayerAttributes.RobberyPhase)) then
++			connection:Disconnect()
++			if gui.Parent then
++				gui:Destroy()
++			end
+ 		end
+ 	end)
++	gui.Destroying:Connect(function()
++		connection:Disconnect()
++	end)
+ end
+ 
+ return OnboardingTipController

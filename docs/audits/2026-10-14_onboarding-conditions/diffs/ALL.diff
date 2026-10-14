@@ -1,0 +1,326 @@
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index e636687..c9d40ed 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -290,7 +290,7 @@ Rules:
+   - Granted cash is stored at the moment it is granted (write-through).
+ - **Client:** `RobberyHudController` shows "ROBBING THE STORE Ns / Stay inside" while holding, "ESCAPE TO KEEP $2,000 / Break line of sight, then stay hidden until your stars are gone" while escaping ("Stars fading..." while `WantedEvading`) (from server attributes), and toasts for the alarm, rejections, failure reasons and the cash reward. It can't start, finish or pay anything.
+ - **Tuning:** `RobberyConfig` (hold, reward, cooldown, ranges, escape limit) and `WantedConfig.Crimes.StoreRobbery` are the only places to change values.
+-- **Failed-robbery cooldown (audit 4 trial):** `RobberyConfig.FailedCooldownSeconds = 90`. A robbery that fails (died, busted, left, disconnected, timed out) shortens the store's cooldown to its start + 90 s, but only while it is still the store's latest robbery (`StoreState.LastSession`), so an old getaway failing late never cuts a newer robbery's cooldown. Successful robberies keep 180 s. `nil` restores the old behaviour.
++- **Failed-robbery cooldown (EXPERIMENTAL, audit 4 trial):** a session fails at most once: `RobberyRules.tick` does nothing once a session is Failed or Paid, and `RobberyService.failSession` ignores an entry that already ended. `RobberyConfig.FailedCooldownSeconds = 90`. A robbery that fails (died, busted, left, disconnected, timed out) shortens the store's cooldown to its start + 90 s, but only while it is still the store's latest robbery (`StoreState.LastSession`), so an old getaway failing late never cuts a newer robbery's cooldown. Successful robberies keep 180 s. `nil` restores the old behaviour.
+ - **Not built (by owner decision):** banks, more stores, gangs, weapons, new vehicles, monetization. Police stay at one NPC unit.
+ 
+ ### Police pursuit tuning (audit remediation, EXPERIMENTAL; owner/auditor review pending)
+@@ -323,9 +323,9 @@ See PROGRESS.md for the details. It's a small solo sample, so human playtests sh
+ ## New-player guidance (audit 4 onboarding batch)
+ 
+ Display only: nothing here changes rewards, prices, police, validation or who decides a robbery start or purchase. Values live in `OnboardingConfig`; logic in `OnboardingRules` (`OnboardingRules.spec`).
+-- **P1 spawn shortcut:** Spawn Car (and its tap on phones) spawns the car directly when the player owns one; with 2+ cars it opens the garage window. The server still checks ownership on every spawn.
++- **P1 spawn shortcut:** `OnboardingRules.spawnChoice(owned, StarterVehicles)`. One candidate: Spawn Car (and its tap on phones) spawns that car and makes it the selection, so a stale earlier pick is never sent. 2+ cars: the garage window opens. While the owned list is empty (data not loaded or unavailable) only the starter Coupe counts, which the server always accepts. No candidates: nothing is sent. The server still checks ownership on every spawn.
+ - **P2 markers:** client `BillboardGui`s over `StoreSign` and `DealerSign`, 190x46 px, drawn through buildings, shown 35-450 studs from the sign, with the distance and a status line.
+-- **P3 tip:** once per session after the first spawn, at the left under the HUD row (12, 92), 250x84. Closes after 15 s, with X, or when a robbery starts. Only X takes input.
++- **P3 tip:** once per session after the first spawn, at the left under the HUD row (12, 92), 250x84. Closes after 15 s, with X, or when `RobberyPhase` becomes `Holding` or `Escaping` (`OnboardingRules.isActiveRobbery`); other phase changes leave it. Only X takes input.
+ - **P4 escape hint:** matches `WantedRules`: heat decays only after `DecayDelay` (8 s) with no sighting and no new crime; the escape counts when the stars reach 0.
+ - **P5 store status:** the store marker shows Open / Being robbed / Reopens in m:ss from the server's store attributes; the register prompt shows "Reopens in m:ss" while cooling down.
+ - **P6 Muscle progress:** the dealership window's message line shows "Muscle: $X of $15,000. About N more successful robberies." (`ceil((price - cash) / RobberyConfig.Reward)`: 8 from the $500 start).
+diff --git a/docs/PROGRESS.md b/docs/PROGRESS.md
+index acc34a3..cca87eb 100644
+--- a/docs/PROGRESS.md
++++ b/docs/PROGRESS.md
+@@ -20,7 +20,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ |---|---|
+ | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
+ | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
+-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 195 passed, 0 failed` (after the onboarding batch) |
++| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 200 passed, 0 failed` (after the onboarding audit conditions) |
+ | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
+ | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
+ | Chase camera | Playtest measurements above |
+@@ -113,6 +113,8 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ | **P6 Muscle progress** | Dealership window (one-car view, $11,400): `Muscle: $11,400 of $15,000. About 2 more successful robberies.` Text fits. Price unchanged ($15,000) |
+ | **P7 compact mobile robbery panel** | Studio's device simulator wasn't available to me, so the real HUD elements were cloned into a 666×374 frame (iPhone 7 landscape) with the compact layout: panel at (203, 92), 260×64 = **6.7%** (was 300×76 at y 136, ~9%); all four panel texts fit (holding, escaping, evading, reward pending); no overlap with Spawn Car, Combat, cash or safe-zone badges. PC (2004×935) keeps the full 300×76 panel at y 136. **Real phone: owner check** |
+ | **P8 Studio-only milestones** | Output: `[Milestone] Lighthouse8282 FirstCar 31.8s after join`, `FirstRobbery 83.0s after join` (no FirstEscape: busted). Each prints once per session; nothing outside Studio |
++| **Onboarding audit conditions (APPROVE WITH CONDITIONS)** | (1) `GarageController.spawnOrChoose` uses `OnboardingRules.spawnChoice(owned, StarterVehicles)`: one candidate spawns that car and becomes the selection; 2+ open the garage; while the owned list is empty (not loaded) only the starter Coupe is sent (the server always accepts it); no candidates send nothing. (2) The tip closes only when `RobberyPhase` becomes `Holding` or `Escaping`. (3) `RobberyRules.tick` returns nothing once a session is Failed or Paid, so a session fails and changes the cooldown at most once; `RobberyService.failSession` also ignores an entry that already ended. (4) `FailedCooldownSeconds` is labelled EXPERIMENTAL and stays configurable (nil = old behaviour). Specs: `OnboardingRules.spec` +3 (stale selection, not-loaded/none, active-robbery check), `RobberyRules.spec` +2 (repeated and overlapping failures; success keeps start + 180 and paying is final). **200/200** |
++| **Conditions: live checks** | Stale selection: chose Muscle in the garage, then the one-car view (`OwnedVehicles = Coupe`, display attribute only): one click spawned `Coupe_11752219158`, garage closed. Not loaded (`OwnedVehicles` attribute removed): one click → `seated Coupe_11752219158`. Tip: `phase=PayoutPending tip=true`, `phase=nil tip=true`, `phase=Holding tip=false`. Live evading HUD (scripted getaway, Muscle): `stars=2 evading=false \| Break line of sight, then stay hidden until your stars are gone` → `stars=2 evading=true \| Stars fading: stay out of police sight until they're gone` → back to the first text when the unit sighted the car again. Both scripted getaways were busted (`failed: Busted`); the store then reopened at start + 89.8 / 90 s. Starts still set 180 s (`store cooldown 179.3 s` just after the start). No successful getaway this round, so the 180 s after success is unit-tested only |
+ | Onboarding regression | Robbery start/holdout/dispatch/bust/jail/release normal; vehicle validation 0 observations; no console errors. Studio and `src/` match for all 98 scripts (length + FNV-1a hash) |
+ | **Five-minute player-experience audit (measurements only)** | See `PLAYER_EXPERIENCE_AUDIT.md`: data ready ~2.0 s; first car PC 1 input, mobile 2 taps; store 150 / dealership 237 studs from spawns, signs in sight from 6/6 and 4/6 spawns, no hint or marker; on-foot HUD 5 elements (~8%), driving 9 elements (touch ~12%); robbery panel ~9% of a phone screen. Proposals P1–P8 await owner review (nothing implemented) |
+ | **Final audit fixes: pre-work** | Backup `backups\OutlawCity_Remediation1.rbxl` (Studio log: place file downloaded 16:35:06Z). Only the `Outlaw City (placeId: 132163592957463)` Studio was used; two Lighthouse Keepers Studios were also open and never touched |
+@@ -170,6 +172,8 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ 8f. Robbery sessions and store cooldowns are per server and session-only: leaving mid-robbery forfeits it; a server restart clears cooldowns.
+ 8g. The NPC police car can't enter the store; at the storefront it hits hard recovery (`stalled repeatedly at (-113, -57)`) and re-routes. It still busted a player standing near the counter from 21 studs.
+ 8h. ~~On small phones the robbery panel covers the middle of the view~~: compact 260×64 panel at y 92 since the onboarding batch (checked in a 666×374 layout frame, not on a real phone). The `InVehicle` rejection is unit-tested only.
++8q. Pressing Spawn Car (or choosing a car in the garage) **while already driving** replaces the car but leaves the player standing next to the new one instead of seated. Seen while testing the conditions (one click from the Muscle → Coupe spawned, not seated). The server spawn path is unchanged since 4C, so choosing a car in the garage while driving most likely did the same before (inferred, not re-tested). Low; fix needs owner approval.
++8r. Scripted getaways in this round: 0/2 paid (one head-on with the arriving unit, one stalled near the store). The earlier 5/5 used other routes. Escape difficulty needs the owner's human playtest.
+ 8p. **Onboarding batch:** markers draw through buildings on purpose (`AlwaysOnTop`) and are hidden within 35 studs. The first-spawn tip is per session (not saved), so a rejoining player sees it again. The register prompt shows `Reopens in m:ss` only while cooling down. The 90 s failed-robbery cooldown is a **trial** (`RobberyConfig.FailedCooldownSeconds`; nil restores 180 s): decide after human playtests. Milestone timings are Studio-only and measured from when the server first saw the player.
+ 8j. **4C:** the dealership and garage are MULTIPLAYER UNVERIFIED (two buyers, other players seeing the display car or someone else's Muscle). Purchases while another server holds the profile lock are refused until the lock clears (`SessionLocked`, up to 180 s); that path was seen in Studio but not across two real servers.
+ 8k. **4C:** a player whose cash data is unavailable can still spawn the starter Coupe, but not a bought car, until the data loads.
+@@ -215,6 +219,6 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
+ - ~~Audit remediation (CHANGES REQUIRED, 2026-10-14)~~ — done (solo)
+ - ~~Final targeted audit fixes~~ — APPROVED WITH CONDITIONS by the auditor; the six conditions are done (solo)
+ - ~~Five-minute player-experience plan~~ — reviewed (audit 4: APPROVE on Part A)
+-- Onboarding batch (P1–P8 as modified by audit 4, ledger timestamp fix) — done (solo); **awaiting owner/auditor review**. No broad Phase 5 content or monetization
++- ~~Onboarding batch~~ — APPROVED WITH CONDITIONS by the auditor; the four conditions are done (solo). **Next: the owner's human playtest**, then a short test report. No broad Phase 5 content or monetization
+ - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
+ - 3F Studio-only test tools — maintained throughout
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index f56741c..3bd47c5 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -53,7 +53,7 @@ Out of scope for Phase 3: robberies, weapons, gangs, helicopters, new districts,
+ - **Audit remediation ✅ (solo; awaiting audit):** write-through economy (acknowledged = stored), durable reward ledger, lock heartbeat, experimental police tuning (paid getaways 5/5 vs 3/5), Muscle touch check, HTTP off.
+ - **Final targeted audit fixes ✅ (solo; awaiting audit + owner approval before Phase 5):** ambiguous-write reconciliation, durable reward dedupe (profile v3 `PaidRewards`), periodic ledger recovery with backoff, explicit ledger invalid states, leave/lock queue safety, dealership handler safety. Approved with conditions; conditions done (FIFO queue, leave-safe saves, reward validation).
+ - **Five-minute player-experience plan ✅ reviewed** (audit 4: APPROVE on Part A), `docs/PLAYER_EXPERIENCE_AUDIT.md`.
+-- **Onboarding batch ✅ (solo; awaiting owner/auditor review):** one-car spawn shortcut, store/dealership markers, first-spawn tip, escape hint, store reopen time + 90 s failed-robbery cooldown trial, Muscle progress (price unchanged), compact phone robbery panel, Studio-only milestone timings; reward timestamps reject ±infinity. Next: the owner's human playtest.
++- **Onboarding batch ✅ (solo; awaiting owner/auditor review):** one-car spawn shortcut, store/dealership markers, first-spawn tip, escape hint, store reopen time + 90 s failed-robbery cooldown trial, Muscle progress (price unchanged), compact phone robbery panel, Studio-only milestone timings; reward timestamps reject ±infinity. Auditor: APPROVE WITH CONDITIONS; conditions done (solo). Next: the owner's human playtest and a short test report.
+ - **4C ✅ (solo; awaiting owner review):** OUTLAW MOTORS dealership, the $15,000 Muscle (faster, heavier handling), server purchase API (atomic cash + ownership, duplicate-safe), persistent ownership in profile v2 with safe migration from cash-only profiles, garage window, ownership-checked spawning, PC + mobile UI.
+ - Original line: cash, server-authoritative rewards for arrests and robberies, DataStore persistence.
+ - A first purchasable vehicle.
+diff --git a/docs/TEST_CHECKLIST.md b/docs/TEST_CHECKLIST.md
+index 87988eb..d799d8c 100644
+--- a/docs/TEST_CHECKLIST.md
++++ b/docs/TEST_CHECKLIST.md
+@@ -196,6 +196,7 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
+ - [ ] Phone (666x374): robbery panel 260x64 at y 92, text fits, no overlap with the top HUD row
+ - [ ] Studio Output prints `[Milestone] ... FirstCar / FirstRobbery / FirstEscape` once each
+ - [ ] **Owner, real phone:** panel, tip and markers readable; nothing blocks the touch controls
++- [ ] Conditions: stale selection + one car spawns the owned car; not-loaded spawns the starter Coupe; the tip stays for PayoutPending/cleared and closes for Holding; repeated/overlapping failures change the cooldown once (`RobberyRules.spec`)
+ 
+ ## Police pursuit tuning (audit remediation, EXPERIMENTAL)
+ - [ ] With SightRange 130 / ChaseSpeed 100 / ChaseGain 0.25: rob, drive away normally, lose the police -> paid once
+diff --git a/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau b/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
+index af12c52..5eba759 100644
+--- a/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
++++ b/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
+@@ -6,9 +6,9 @@ local RobberyConfig = {
+ 	WantedCrime = "StoreRobbery", -- WantedConfig crime reported at the start (70 heat = 2 stars)
+ 	InProgressCrime = "RobberyInProgress", -- re-reported while holding so heat can't decay early
+ 	CooldownSeconds = 180, -- per store, from the moment a robbery starts
+-	-- Audit 4 trial (P5): after a FAILED robbery the store reopens 90 s after that robbery
+-	-- started instead of 180 s. Successful robberies keep 180 s. Set to nil to restore the old
+-	-- behaviour (180 s after any robbery).
++	-- EXPERIMENTAL (audit 4 trial, P5; decide after human playtests): after a FAILED robbery
++	-- the store reopens 90 s after that robbery started instead of 180 s. Successful robberies
++	-- keep 180 s. Set to nil to restore the old behaviour (180 s after any robbery).
+ 	FailedCooldownSeconds = 90,
+ 	PromptDistance = 10, -- studs from the register to start
+ 	DistanceSlack = 4, -- extra studs the server allows for latency
+diff --git a/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau b/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau
+index d0f3f47..8054720 100644
+--- a/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau
++++ b/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau
+@@ -8,9 +8,24 @@ local OnboardingRules = {}
+ export type PanelLayout = { Y: number, Width: number, Height: number, TitleSize: number, DetailSize: number }
+ export type Milestones = { JoinedAt: number, Done: { [string]: number } }
+ 
+--- P1: one owned car spawns straight away; the garage window only opens with a choice to make.
+-function OnboardingRules.spawnButtonAction(ownedCount: number): "Spawn" | "Choose"
+-	return if ownedCount >= 2 then "Choose" else "Spawn"
++-- P1 (audit condition 1): what the Spawn Car button does, and with which car. `owned` comes from
++-- the OwnedVehicles display attribute; while it is empty (data not loaded yet, or unavailable)
++-- only the starter cars count, because the server always accepts those. One candidate spawns
++-- that car, whatever was selected before (so a stale selection is never sent); several open the
++-- garage; none sends nothing.
++function OnboardingRules.spawnChoice(owned: { string }, starters: { string }): ("Spawn" | "Choose" | "None", string?)
++	local candidates = if #owned > 0 then owned else starters
++	if #candidates == 0 then
++		return "None", nil
++	elseif #candidates == 1 then
++		return "Spawn", candidates[1]
++	end
++	return "Choose", nil
++end
++
++-- P3 (audit condition 2): the tip steps aside only for a robbery that is actually running.
++function OnboardingRules.isActiveRobbery(phase: any): boolean
++	return phase == "Holding" or phase == "Escaping"
+ end
+ 
+ -- P2: a marker shows between the hide distance (you're already there) and the max distance.
+diff --git a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+index 08e1336..55412bb 100644
+--- a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
++++ b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+@@ -97,7 +97,9 @@ end
+ 
+ -- A failed robbery may shorten the store's cooldown (FailedCooldownSeconds, counted from the
+ -- start), but only while this session is still the store's latest: a late failure of an old
+--- getaway never cuts the cooldown of a newer robbery.
++-- getaway never cuts the cooldown of a newer robbery. Only reached from a live phase (tick
++-- returns nothing once a session is Failed or Paid), so a session fails, and changes the
++-- cooldown, at most once.
+ local function fail(session: Session, store: StoreState?, reason: Types.RobberyFailReason, config: Config): (string, Types.RobberyFailReason)
+ 	session.Phase = "Failed"
+ 	session.FailReason = reason
+diff --git a/src/ServerScriptService/Server/Services/RobberyService.luau b/src/ServerScriptService/Server/Services/RobberyService.luau
+index 76ac919..41cd2bc 100644
+--- a/src/ServerScriptService/Server/Services/RobberyService.luau
++++ b/src/ServerScriptService/Server/Services/RobberyService.luau
+@@ -100,6 +100,9 @@ local function endSession(player: Player, entry: Live)
+ end
+ 
+ local function failSession(player: Player, entry: Live, reason: Types.RobberyFailReason)
++	if live[player] ~= entry then
++		return -- already ended: a duplicate failure never notifies or changes anything twice
++	end
+ 	endSession(player, entry)
+ 	notify(player, "Failed", { Reason = reason, Id = entry.Session.Id })
+ 	print(`[Robbery] {player.Name} {entry.Session.Id} failed: {reason}`)
+diff --git a/src/ServerStorage/Tests/OnboardingRules.spec.luau b/src/ServerStorage/Tests/OnboardingRules.spec.luau
+index 69fef5a..32c80dd 100644
+--- a/src/ServerStorage/Tests/OnboardingRules.spec.luau
++++ b/src/ServerStorage/Tests/OnboardingRules.spec.luau
+@@ -14,10 +14,37 @@ end
+ 
+ return {
+ 	["P1: one owned car spawns directly; two or more open the garage"] = function()
+-		Assert.equal(OnboardingRules.spawnButtonAction(0), "Spawn")
+-		Assert.equal(OnboardingRules.spawnButtonAction(1), "Spawn")
+-		Assert.equal(OnboardingRules.spawnButtonAction(2), "Choose")
+-		Assert.equal(OnboardingRules.spawnButtonAction(5), "Choose")
++		local starters = EconomyConfig.StarterVehicles
++		local action, id = OnboardingRules.spawnChoice({ "Coupe" }, starters)
++		Assert.equal(action, "Spawn")
++		Assert.equal(id, "Coupe")
++		action, id = OnboardingRules.spawnChoice({ "Coupe", "Muscle" }, starters)
++		Assert.equal(action, "Choose")
++		Assert.equal(id, nil)
++	end,
++	["P1: a stale selection is never sent; the only owned car is"] = function()
++		-- e.g. "Muscle" was selected earlier but the list now holds one other car
++		local action, id = OnboardingRules.spawnChoice({ "Coupe" }, {})
++		Assert.equal(action, "Spawn")
++		Assert.equal(id, "Coupe")
++		action, id = OnboardingRules.spawnChoice({ "Muscle" }, { "Coupe" })
++		Assert.equal(id, "Muscle", "owned list wins over the starter list")
++	end,
++	["P1: not loaded yet uses only the starter car; nothing at all sends nothing"] = function()
++		local action, id = OnboardingRules.spawnChoice({}, EconomyConfig.StarterVehicles)
++		Assert.equal(action, "Spawn")
++		Assert.equal(id, "Coupe", "the server always accepts starter cars")
++		action, id = OnboardingRules.spawnChoice({}, {})
++		Assert.equal(action, "None")
++		Assert.equal(id, nil)
++	end,
++	["P3: the tip closes only for a running robbery"] = function()
++		Assert.equal(OnboardingRules.isActiveRobbery("Holding"), true)
++		Assert.equal(OnboardingRules.isActiveRobbery("Escaping"), true)
++		Assert.equal(OnboardingRules.isActiveRobbery(nil), false)
++		Assert.equal(OnboardingRules.isActiveRobbery("PayoutPending"), false)
++		Assert.equal(OnboardingRules.isActiveRobbery("Failed"), false)
++		Assert.equal(OnboardingRules.isActiveRobbery(5), false)
+ 	end,
+ 	["P2: markers show between the hide and max distance only"] = function()
+ 		local c = OnboardingConfig
+diff --git a/src/ServerStorage/Tests/RobberyRules.spec.luau b/src/ServerStorage/Tests/RobberyRules.spec.luau
+index c04a0db..b61f475 100644
+--- a/src/ServerStorage/Tests/RobberyRules.spec.luau
++++ b/src/ServerStorage/Tests/RobberyRules.spec.luau
+@@ -187,4 +187,37 @@ return {
+ 		Assert.equal(store.CooldownUntil, 200 + C.CooldownSeconds, "B's cooldown untouched")
+ 		Assert.equal(store.ActiveSession, b.Id)
+ 	end,
++	["a failure is final: repeated or overlapping failure facts change nothing"] = function()
++		-- Overlapping causes in one tick (dead AND jailed): one failure, one reason.
++		local store, a = started(100)
++		local event, reason = RobberyRules.tick(a, store, tickFacts({ Alive = false, Jailed = true }), 105, C)
++		Assert.equal(event, "Failed")
++		Assert.equal(reason, "Died")
++		Assert.equal(store.CooldownUntil, 190)
++		-- Later failure callbacks for the same session: no event, no change.
++		for _, f in { { Jailed = true }, { Connected = false }, { Alive = false }, { InArea = false } } do
++			Assert.equal((RobberyRules.tick(a, store, tickFacts(f), 106, C)), nil)
++		end
++		Assert.equal(a.Phase, "Failed")
++		Assert.equal(a.FailReason, "Died")
++		Assert.equal(store.CooldownUntil, 190, "cooldown changed once")
++		Assert.equal(RobberyRules.onEscaped(a), false, "a failed robbery never pays")
++		-- A newer robbery B: more failure callbacks for A don't touch B.
++		local b = RobberyRules.start(store, "id-2", 2, "Store1", 200, C)
++		Assert.equal((RobberyRules.tick(a, store, tickFacts({ Connected = false }), 210, C)), nil)
++		Assert.equal(store.CooldownUntil, 200 + C.CooldownSeconds)
++		Assert.equal(store.ActiveSession, b.Id)
++		Assert.equal(b.Phase, "Holding")
++	end,
++	["successful robbery: cooldown stays 180 s from the start"] = function()
++		local store, session = started(100)
++		RobberyRules.tick(session, store, OK_TICK, 100 + C.HoldSeconds, C)
++		Assert.equal(session.Phase, "Escaping")
++		Assert.equal(RobberyRules.onEscaped(session), true)
++		Assert.equal(session.Phase, "Paid")
++		Assert.equal((RobberyRules.tick(session, store, tickFacts({ Jailed = true }), 150, C)), nil, "busted after paying: nothing")
++		Assert.equal(store.CooldownUntil, 100 + C.CooldownSeconds)
++		Assert.equal((RobberyRules.canStart(store, facts(), 279.9, C)), false)
++		Assert.equal((RobberyRules.canStart(store, facts(), 280, C)), true)
++	end,
+ }
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
+index 48d6304..9ab3e2a 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
+@@ -7,6 +7,7 @@ local Players = game:GetService("Players")
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ 
+ local VehicleConfig = require(ReplicatedStorage.Shared.Config.VehicleConfig)
++local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
+ local PlayerAttributes = require(ReplicatedStorage.Shared.Player.PlayerAttributes)
+ local OnboardingRules = require(ReplicatedStorage.Shared.Onboarding.OnboardingRules)
+ local VehicleController = require(script.Parent.VehicleController)
+@@ -27,14 +28,17 @@ function GarageController.spawnSelected()
+ 	VehicleController.requestSpawn(selected)
+ end
+ 
+--- The Spawn Car button (P1): one owned car spawns straight away, 2+ open the garage.
++-- The Spawn Car button (P1): one owned car spawns straight away (and becomes the selection, so
++-- a stale earlier pick is never sent), 2+ open the garage, none sends nothing.
+ function GarageController.spawnOrChoose()
+-	if OnboardingRules.spawnButtonAction(#UiKit.ownedVehicles(player)) == "Spawn" then
++	local action, vehicleId = OnboardingRules.spawnChoice(UiKit.ownedVehicles(player), EconomyConfig.StarterVehicles)
++	if action == "Spawn" and vehicleId then
++		selected = vehicleId
+ 		if panel then
+ 			panel.Visible = false
+ 		end
+-		VehicleController.requestSpawn(selected)
+-	else
++		VehicleController.requestSpawn(vehicleId)
++	elseif action == "Choose" then
+ 		GarageController.toggle()
+ 	end
+ end
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/OnboardingTipController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/OnboardingTipController.luau
+index 6f727c1..8e7d45f 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/OnboardingTipController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/OnboardingTipController.luau
+@@ -9,6 +9,7 @@ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ local Shared = ReplicatedStorage.Shared
+ local OnboardingConfig = require(Shared.Config.OnboardingConfig)
+ local PlayerAttributes = require(Shared.Player.PlayerAttributes)
++local OnboardingRules = require(Shared.Onboarding.OnboardingRules)
+ local UiKit = require(script.Parent.UiKit)
+ 
+ local OnboardingTipController = {}
+@@ -49,12 +50,20 @@ function OnboardingTipController.init()
+ 			gui:Destroy()
+ 		end
+ 	end)
+-	-- A robbery's objective panel takes over the top of the screen, so the tip steps aside.
+-	player:GetAttributeChangedSignal(PlayerAttributes.RobberyPhase):Connect(function()
+-		if gui.Parent then
+-			gui:Destroy()
++	-- A running robbery's objective panel takes over the top of the screen, so the tip steps aside.
++	-- Other RobberyPhase changes (cleared, payout pending) leave it alone.
++	local connection: RBXScriptConnection
++	connection = player:GetAttributeChangedSignal(PlayerAttributes.RobberyPhase):Connect(function()
++		if OnboardingRules.isActiveRobbery(player:GetAttribute(PlayerAttributes.RobberyPhase)) then
++			connection:Disconnect()
++			if gui.Parent then
++				gui:Destroy()
++			end
+ 		end
+ 	end)
++	gui.Destroying:Connect(function()
++		connection:Disconnect()
++	end)
+ end
+ 
+ return OnboardingTipController

@@ -1,0 +1,15 @@
+diff --git a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+index 08e1336..55412bb 100644
+--- a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
++++ b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+@@ -97,7 +97,9 @@ end
+ 
+ -- A failed robbery may shorten the store's cooldown (FailedCooldownSeconds, counted from the
+ -- start), but only while this session is still the store's latest: a late failure of an old
+--- getaway never cuts the cooldown of a newer robbery.
++-- getaway never cuts the cooldown of a newer robbery. Only reached from a live phase (tick
++-- returns nothing once a session is Failed or Paid), so a session fails, and changes the
++-- cooldown, at most once.
+ local function fail(session: Session, store: StoreState?, reason: Types.RobberyFailReason, config: Config): (string, Types.RobberyFailReason)
+ 	session.Phase = "Failed"
+ 	session.FailReason = reason

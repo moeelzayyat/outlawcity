@@ -1,0 +1,32 @@
+diff --git a/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau b/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau
+index d0f3f47..8054720 100644
+--- a/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau
++++ b/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau
+@@ -8,9 +8,24 @@ local OnboardingRules = {}
+ export type PanelLayout = { Y: number, Width: number, Height: number, TitleSize: number, DetailSize: number }
+ export type Milestones = { JoinedAt: number, Done: { [string]: number } }
+ 
+--- P1: one owned car spawns straight away; the garage window only opens with a choice to make.
+-function OnboardingRules.spawnButtonAction(ownedCount: number): "Spawn" | "Choose"
+-	return if ownedCount >= 2 then "Choose" else "Spawn"
++-- P1 (audit condition 1): what the Spawn Car button does, and with which car. `owned` comes from
++-- the OwnedVehicles display attribute; while it is empty (data not loaded yet, or unavailable)
++-- only the starter cars count, because the server always accepts those. One candidate spawns
++-- that car, whatever was selected before (so a stale selection is never sent); several open the
++-- garage; none sends nothing.
++function OnboardingRules.spawnChoice(owned: { string }, starters: { string }): ("Spawn" | "Choose" | "None", string?)
++	local candidates = if #owned > 0 then owned else starters
++	if #candidates == 0 then
++		return "None", nil
++	elseif #candidates == 1 then
++		return "Spawn", candidates[1]
++	end
++	return "Choose", nil
++end
++
++-- P3 (audit condition 2): the tip steps aside only for a robbery that is actually running.
++function OnboardingRules.isActiveRobbery(phase: any): boolean
++	return phase == "Holding" or phase == "Escaping"
+ end
+ 
+ -- P2: a marker shows between the hide distance (you're already there) and the max distance.

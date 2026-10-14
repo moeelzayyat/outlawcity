@@ -1,0 +1,42 @@
+diff --git a/src/ServerStorage/Tests/RobberyRules.spec.luau b/src/ServerStorage/Tests/RobberyRules.spec.luau
+index c04a0db..b61f475 100644
+--- a/src/ServerStorage/Tests/RobberyRules.spec.luau
++++ b/src/ServerStorage/Tests/RobberyRules.spec.luau
+@@ -187,4 +187,37 @@ return {
+ 		Assert.equal(store.CooldownUntil, 200 + C.CooldownSeconds, "B's cooldown untouched")
+ 		Assert.equal(store.ActiveSession, b.Id)
+ 	end,
++	["a failure is final: repeated or overlapping failure facts change nothing"] = function()
++		-- Overlapping causes in one tick (dead AND jailed): one failure, one reason.
++		local store, a = started(100)
++		local event, reason = RobberyRules.tick(a, store, tickFacts({ Alive = false, Jailed = true }), 105, C)
++		Assert.equal(event, "Failed")
++		Assert.equal(reason, "Died")
++		Assert.equal(store.CooldownUntil, 190)
++		-- Later failure callbacks for the same session: no event, no change.
++		for _, f in { { Jailed = true }, { Connected = false }, { Alive = false }, { InArea = false } } do
++			Assert.equal((RobberyRules.tick(a, store, tickFacts(f), 106, C)), nil)
++		end
++		Assert.equal(a.Phase, "Failed")
++		Assert.equal(a.FailReason, "Died")
++		Assert.equal(store.CooldownUntil, 190, "cooldown changed once")
++		Assert.equal(RobberyRules.onEscaped(a), false, "a failed robbery never pays")
++		-- A newer robbery B: more failure callbacks for A don't touch B.
++		local b = RobberyRules.start(store, "id-2", 2, "Store1", 200, C)
++		Assert.equal((RobberyRules.tick(a, store, tickFacts({ Connected = false }), 210, C)), nil)
++		Assert.equal(store.CooldownUntil, 200 + C.CooldownSeconds)
++		Assert.equal(store.ActiveSession, b.Id)
++		Assert.equal(b.Phase, "Holding")
++	end,
++	["successful robbery: cooldown stays 180 s from the start"] = function()
++		local store, session = started(100)
++		RobberyRules.tick(session, store, OK_TICK, 100 + C.HoldSeconds, C)
++		Assert.equal(session.Phase, "Escaping")
++		Assert.equal(RobberyRules.onEscaped(session), true)
++		Assert.equal(session.Phase, "Paid")
++		Assert.equal((RobberyRules.tick(session, store, tickFacts({ Jailed = true }), 150, C)), nil, "busted after paying: nothing")
++		Assert.equal(store.CooldownUntil, 100 + C.CooldownSeconds)
++		Assert.equal((RobberyRules.canStart(store, facts(), 279.9, C)), false)
++		Assert.equal((RobberyRules.canStart(store, facts(), 280, C)), true)
++	end,
+ }
