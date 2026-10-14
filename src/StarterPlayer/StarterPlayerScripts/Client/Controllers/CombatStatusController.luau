@@ -24,6 +24,7 @@ local REFUSAL_TEXT: { [string]: string } = {
 	AlreadyInStatus = "No change",
 	NotInGame = "Not ready",
 	NetworkError = "No connection",
+	Jailed = "Not in jail",
 }
 
 local player = Players.LocalPlayer

@@ -16,6 +16,7 @@ local CombatStatusRules = require(Shared.Combat.CombatStatusRules)
 local PlayerAttributes = require(Shared.Player.PlayerAttributes)
 local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
 local WantedService = require(script.Parent.WantedService)
+local JailService = require(script.Parent.JailService)
 
 local CombatService = {}
 
@@ -36,6 +37,9 @@ function CombatService.requestStatus(player: Player, target: unknown): (boolean,
 	local state = states[player]
 	if not state then
 		return false, "NotInGame", 0
+	end
+	if not JailService.allows(player, "Combat") then
+		return false, "Jailed", 0
 	end
 	local t = now()
 	local ok, err = CombatStatusRules.requestSwitch(state, target, t, WantedService.getStars(player) > 0, CombatConfig)
@@ -60,6 +64,7 @@ function CombatService.getCombatant(player: Player): Types.Combatant
 		WantedStars = WantedService.getStars(player),
 		InSafeZone = player:GetAttribute(PlayerAttributes.InSafeZone) == true,
 		SpawnProtectedUntil = if type(spawnUntil) == "number" then spawnUntil else 0,
+		Jailed = JailService.isJailed(player),
 	}
 end
 

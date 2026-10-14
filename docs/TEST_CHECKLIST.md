@@ -18,6 +18,7 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 - [ ] `PoliceDispatch.spec` — single unit, no dispatch unwanted, spawn band, bust rules, combat gate
 - [ ] `SafeZoneRules.spec` — plaza zone geometry, hysteresis, PvP blocked in zones, police allowed, wanted unaffected
 - [ ] `VehicleValidation.spec` — limits, normal-driving trace, spikes, overspeed, teleports, grace, non-finite, ownership
+- [ ] `JailRules.spec` — sentence length, duplicates, zero-wanted, release timing, restrictions, slots, combat gate, cell placement
 
 ## Solo playtest (Play, PC)
 - [ ] Press **V** or click **Spawn Car**: a car appears on the nearest free pad and you are seated
@@ -109,6 +110,17 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] Server sets the car's network owner to nil for 3 s -> `OwnershipMismatch`
 - [ ] NPC police chase: no observations for the police car
 - [ ] Summary line every 30 s shows loop cost well under 1 ms
+
+## Short jail (solo)
+- [ ] `JailRules.spec` (10) passes
+- [ ] Dev "Simulate bust" at 0 stars -> refused (`NotWanted`), not jailed
+- [ ] Get busted by the police unit while wanted -> `[Jail] … jailed for 12 s`, ejected from the car, in the cell south of the city, stars 0, BUSTED! banner, IN JAIL countdown
+- [ ] Countdown ticks down in step with the server (12 -> 0) and hides on release
+- [ ] While jailed: Spawn Car refused ("can't spawn a car while in jail"), Combat button refused, second "Simulate bust" refused
+- [ ] Reset the character while jailed -> back in the cell, same release time
+- [ ] On release: respawn on a plaza pad with ForceField / spawn protection; car spawning, driving and combat work again
+- [ ] Reputation and the parked car are unchanged after jail
+- [ ] Phone (iPhone 7): BUSTED! banner and IN JAIL panel both visible, no overlap
 
 ## Mobile (Device Simulator, phone landscape)
 - [ ] SAFE ZONE badge visible on iPhone 7 with the stars and the Combat button, no overlap

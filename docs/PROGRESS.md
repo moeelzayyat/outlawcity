@@ -20,7 +20,7 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 |---|---|
 | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
 | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 108 passed, 0 failed` (after 3G) |
+| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 118 passed, 0 failed` (after the jail) |
 | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
 | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
 | Chase camera | Playtest measurements above |
@@ -68,6 +68,17 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 | **3G detection (simulated cheats)** | 815-stud client teleport -> observation + alert in the next sample. Speed hack forcing 230 studs/s (limit 166) for 2.5 s -> 2 SustainedOverspeed observations + 2 alerts. 90-stud jumps: 3 of 4 noted, and the alert fired on the repeat. Server took network ownership for 3 s -> OwnershipMismatch after 1.7 s. Seven observations in total, all from deliberate tests |
 | **3G NPC exclusion** | Police dispatched, chased and busted the player during monitoring: no observations; only player vehicles are sampled (NpcVehicles excluded by design) |
 | **3G performance** | 5 Hz loop: 0.034 ms average, 0.32 ms max per loop with one player car (869 loops, 764 vehicle samples) |
+| **Jail pre-checks** | Studio matched the 3G snapshot (66 scripts); current backup `OutlawCity_3G.rbxl` (cloud save at 00:53Z, after 3G); project CLAUDE.md updated (it still said Phase 2) |
+| **Jail unit tests** | `JailRules.spec` (10): 12 s default clamped to 10-15 (bad values -> default); wanted player jailed until the server releases them; zero-wanted refused; duplicate bust neither stacks nor extends; countdown rounding; spawn/drive/combat/robbery blocked only while jailed; cell slots don't overlap; jailed players out of play in `CombatRules` (police, attacker, victim); no remote name touches jail/release; the cell is south of the grid and its 4 slots are ≥ 6 studs apart. **118/118** |
+| **Jail: zero wanted** | `SimulateBust` at 0 stars -> refused `NotWanted`, not jailed |
+| **Jail: real police bust** | Player in their car at 1★: unit dispatched, busted after 7.9 s -> `[Jail] jailed for 12 s in slot 1`, ejected from the car (car kept), placed in the cell, stars 0, reputation unchanged, pursuit ended, unit despawned |
+| **Jail: countdown** | HUD showed 12, 11, 10 s at the same moments the server release time gave 12, 11, 10; it hides on release |
+| **Jail: restrictions** | While jailed: `RequestSpawnVehicle` -> `Jailed`; `RequestSetCombatStatus` -> `Jailed`; second bust -> `AlreadyJailed` with the release time unchanged; a server-forced `Seat:Sit` left the seat empty and the player in the cell |
+| **Jail: reset doesn't bypass** | Character reset right after the bust: the new character spawned back in the cell (slot 1) with 7.5 s still to serve and the same release time |
+| **Jail: release** | Released 0.14 s after the release time (client-observed). Respawned on a civilian plaza pad inside the safe zone with ForceField and 4.6 s spawn protection, 0 stars. Could spawn a car, drive (69 studs/s after 1.5 s W) and use combat again |
+| **Jail: reputation preserved** | Reputation 25 before a 3★ bust -> still 25 in jail; stars cleared with no escape reward |
+| **Jail: HUD** | PC: IN JAIL / "Release in 11s" panel. Fixed: the panel first overlapped the BUSTED! banner, so it was moved below it, and a light was added to the dark cell. iPhone 7 simulator: banner + panel + top buttons with no overlap, clipping or truncation |
+| Jail regression | Police dispatch/chase/bust, wanted levels, safe-zone enter/leave, vehicle validation (0 observations in normal play), driving and spawning all working; no console errors |
 | 3G regression | Driving, car spawn/exit, civilian respawn, wanted, police chase/bust and the safe-zone enter/exit log all working; 108/108 tests; no console errors |
 | 3E regression | Driving, car spawning, civilian spawning, wanted HUD, police dispatch/chase/bust all working; no console errors (one error came from my own test snippet when the player had just been busted, not from game code) |
 
@@ -78,7 +89,7 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 3. **Crime detection:** exactly one gameplay crime detector exists — *ramming a police car* (`PoliceCollisionDetector`; first observed firing in 3D, triggered by a scripted test car). *Speeding near police* and *evading* are defined in `WantedConfig` but have **no detectors**; no other crimes exist. All other wanted levels in testing came from Studio dev tools.
 4. Vehicle validation is **monitor-only**: anomalies are logged, nothing is corrected or punished. Its false-positive data covers ~1 minute of solo driving plus transitions and a police chase (about 450 samples); more normal-driving data is needed before enabling corrections. Medium jumps (60-150 studs) can occasionally go unnoticed: one of four was missed, probably because a longer sample gap raised the allowance. Large jumps were always caught. Real network latency is MULTIPLAYER UNVERIFIED.
 5. NPC navigation only verified on the grid + highway; the plaza diagonal and highway end plazas weren't driven in tests. No lane discipline (centre line); no knowledge of blocked roads beyond hard recovery. A head-on meet with the target can cause a U-turn before the chase.
-6. Busted = respawn on a civilian pad for now; the 10–15 s jail comes later (approved order).
+6. Jail is session-only: leaving the game mid-sentence ends it (no persistence yet). After a reset mid-sentence the new character can appear at its respawn pad for a split second before being moved into the cell (it's re-placed immediately and again 0.3 s later).
 7. Wanted level survives death/respawn by design (prevents "reset to escape"); owner may want to confirm.
 8. `CriminalReputation` and combat status are session-only (reset on rejoin) until persistence exists.
 9. Player-vs-player harm (combat rules, safe zones, spawn protection) is verified only with mock players: no PvP damage exists yet.
@@ -106,5 +117,5 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
 
 - 3A civilian spawning ✅ · 3B wanted ✅ · 3C combat status ✅ · 3D one NPC police unit ✅ (stays at one unit) · 3E safe zones ✅ — all solo-tested and provisionally approved
 - ~~3G server vehicle movement validation~~ — done (solo, **monitor-only**); awaiting owner review before any automatic correction or the jail
-- Short jail (10–15 s) — after 3G review
+- ~~Short jail (12 s, 10-15 configurable)~~ — done (solo); **awaiting owner approval**
 - 3F Studio-only test tools — maintained throughout

@@ -134,6 +134,41 @@ function CityLayout.safeZones(): { Types.SafeZone }
 	}
 end
 
+-- Short-jail cell: one building south of the grid, off the road network (no new city area).
+-- Solid walls on three sides, a barred front, a roof, and SLOT_COUNT separate standing spots.
+CityLayout.JAIL_CENTER = Vector3.new(0, 0, 420)
+CityLayout.JAIL_SIZE = 28
+CityLayout.JAIL_HEIGHT = 12
+CityLayout.JAIL_SLOT_COUNT = 4
+
+function CityLayout.jail(): { Parts: { PartSpec }, Slots: { CFrame } }
+	local c = CityLayout.JAIL_CENTER
+	local half = CityLayout.JAIL_SIZE / 2
+	local h = CityLayout.JAIL_HEIGHT
+	local top = CityLayout.ROAD_TOP
+	local wallColor = Color3.fromRGB(110, 110, 118)
+	local parts: { PartSpec } = {}
+	local function add(name: string, x: number, z: number, sizeX: number, sizeZ: number, partTop: number, thickness: number, color: Color3, material: Enum.Material)
+		table.insert(parts, slab(name, "Jail", c.X + x, c.Z + z, sizeX, sizeZ, partTop, thickness, color, material, true))
+	end
+	add("JailFloor", 0, 0, 2 * half, 2 * half, top, 0.4, Color3.fromRGB(90, 90, 95), Enum.Material.Concrete)
+	add("JailRoof", 0, 0, 2 * half + 2, 2 * half + 2, top + h + 1, 1, wallColor, Enum.Material.Concrete)
+	add("JailWallNorth", 0, -half - 0.5, 2 * half + 2, 1, top + h, h, wallColor, Enum.Material.Concrete)
+	add("JailWallWest", -half - 0.5, 0, 1, 2 * half, top + h, h, wallColor, Enum.Material.Concrete)
+	add("JailWallEast", half + 0.5, 0, 1, 2 * half, top + h, h, wallColor, Enum.Material.Concrete)
+	-- Barred front (south): 0.6-stud bars every 2 studs leave 1.4-stud gaps, too narrow to pass.
+	local bar = 0
+	for x = -half, half, 2 do
+		bar += 1
+		add(`JailBar{bar}`, x, half + 0.5, 0.6, 0.6, top + h, h, Color3.fromRGB(40, 40, 45), Enum.Material.Metal)
+	end
+	local slots = {}
+	for _, offset in { Vector2.new(-6, -6), Vector2.new(6, -6), Vector2.new(-6, 6), Vector2.new(6, 6) } do
+		table.insert(slots, CFrame.new(c.X + offset.X, top + 3, c.Z + offset.Y) * CFrame.Angles(0, math.pi, 0))
+	end
+	return { Parts = parts, Slots = slots }
+end
+
 function CityLayout.createBlueprint(): Blueprint
 	local parts: { PartSpec } = {}
 	local spawns: { SpawnSpec } = {}

@@ -7,6 +7,7 @@ local RunService = game:GetService("RunService")
 
 local DevCommandRules = require(script.Parent.DevCommandRules)
 local WantedService = require(script.Parent.Parent.Services.WantedService)
+local JailService = require(script.Parent.Parent.Services.JailService)
 
 local DevToolsService = {}
 
@@ -37,6 +38,9 @@ local function run(player: Player, name: unknown, value: unknown): (boolean, str
 	elseif command.Name == "SetPoliceSight" then
 		WantedService.setPoliceSightForTesting(player, command.Value)
 		return true, nil
+	elseif command.Name == "SimulateBust" then
+		local ok, jailErr = JailService.jailForBust(player)
+		return ok, jailErr
 	end
 	return false, "Unhandled command"
 end

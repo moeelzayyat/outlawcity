@@ -54,3 +54,9 @@ Mark each item with the date and result when finally run.
 - [ ] Ownership handover when a second player enters someone else's car stays within the 1.5 s grace
 - [ ] Two cars colliding head-on at top speed between two clients produce no sustained alerts
 - [ ] The 5 Hz loop cost stays negligible with a full server of cars
+
+## Short jail
+- [ ] Two players busted at once get different cell slots and don't overlap
+- [ ] Other players see the jailed player in the cell; nobody can harm or seat them
+- [ ] A jailed player's parked car can be used by another player (ownership rules) without freeing the prisoner
+- [ ] Leaving and rejoining mid-sentence (currently ends the sentence: session-only) — decide the desired behaviour with persistence

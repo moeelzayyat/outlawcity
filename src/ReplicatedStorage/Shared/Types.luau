@@ -41,7 +41,7 @@ export type VehicleInput = {
 }
 
 -- Error codes returned by RequestSpawnVehicle.
-export type SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn"
+export type SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn" | "Jailed"
 
 -- Every player is a civilian in the open world; more statuses may follow (e.g. "Jailed").
 export type PlayerStatus = "Civilian"
@@ -78,7 +78,7 @@ export type WantedNoticeKind = "Evading" | "Escaped" | "Busted"
 export type CombatStatus = "Peaceful" | "Combat"
 
 -- Errors returned by RequestSetCombatStatus.
-export type CombatSwitchError = "InvalidStatus" | "AlreadyInStatus" | "Wanted" | "Cooldown" | "RateLimited" | "NotInGame"
+export type CombatSwitchError = "InvalidStatus" | "AlreadyInStatus" | "Wanted" | "Cooldown" | "RateLimited" | "NotInGame" | "Jailed"
 
 -- Plain view of anything that can harm or be harmed; built by CombatService (or mocks in tests).
 export type Combatant = {
@@ -88,6 +88,7 @@ export type Combatant = {
 	WantedStars: number,
 	InSafeZone: boolean,
 	SpawnProtectedUntil: number,
+	Jailed: boolean?, -- jailed players can't harm or be harmed by anyone
 }
 
 export type HarmContext = { Now: number, Action: "Attack" | "Bust" }
@@ -96,6 +97,12 @@ export type HarmContext = { Now: number, Action: "Attack" | "Bust" }
 export type SafeZone = { Name: string, Min: Vector3, Max: Vector3 }
 
 -- Why CombatRules.canHarm refused.
-export type HarmDenial = "Invalid" | "Self" | "NotWanted" | "AttackerPeaceful" | "VictimPeaceful" | "SafeZone" | "SpawnProtected"
+export type HarmDenial = "Invalid" | "Self" | "NotWanted" | "AttackerPeaceful" | "VictimPeaceful" | "SafeZone" | "SpawnProtected" | "Jailed"
+
+-- Errors from JailService.jailForBust.
+export type JailError = "NotInGame" | "NotWanted" | "AlreadyJailed"
+
+-- Actions a jailed player may not take.
+export type JailAction = "SpawnVehicle" | "Drive" | "Combat" | "Robbery"
 
 return {}

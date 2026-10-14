@@ -11,6 +11,7 @@ export type Command =
 	| { Name: "ReportCrime", Value: string }
 	| { Name: "ResetWanted" }
 	| { Name: "SetPoliceSight", Value: boolean }
+	| { Name: "SimulateBust" }
 
 local function finite(value: any): boolean
 	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
@@ -40,6 +41,8 @@ function DevCommandRules.parse(name: any, value: any): (Command?, string?)
 			return nil, "SetPoliceSight needs true or false"
 		end
 		return { Name = "SetPoliceSight", Value = value }, nil
+	elseif name == "SimulateBust" then
+		return { Name = "SimulateBust" }, nil
 	end
 	return nil, "Unknown command"
 end

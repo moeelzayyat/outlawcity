@@ -14,6 +14,7 @@ local Server = script.Parent.Parent
 local VehicleFactory = require(Server.Vehicle.VehicleFactory)
 local RateLimiter = require(Server.Util.RateLimiter)
 local WorldService = require(script.Parent.WorldService)
+local JailService = require(script.Parent.JailService)
 
 local VehicleService = {}
 
@@ -51,6 +52,16 @@ local function updateSimulation(vehicle: Model)
 	end
 	local occupant = seat.Occupant
 	local driver = if occupant then Players:GetPlayerFromCharacter(occupant.Parent) else nil
+	if driver and occupant and not JailService.allows(driver, "Drive") then
+		-- A jailed player can never hold a driver seat (e.g. touch-sitting); eject them.
+		local weld = seat:FindFirstChild("SeatWeld")
+		if weld then
+			weld:Destroy()
+		end
+		occupant.Sit = false
+		driver = nil
+		occupant = nil
+	end
 	local owner = Players:GetPlayerByUserId(vehicle:GetAttribute("OwnerUserId") :: number)
 	local simulator = driver or owner
 	chassis:SetNetworkOwner(simulator)
@@ -90,7 +101,7 @@ end
 local function sitIfFree(player: Player, vehicle: Model)
 	local seat = getSeat(vehicle)
 	local humanoid = getLiveHumanoid(player)
-	if not seat or not humanoid or seat.Occupant or humanoid.SeatPart then
+	if not seat or not humanoid or seat.Occupant or humanoid.SeatPart or not JailService.allows(player, "Drive") then
 		return
 	end
 	local root = humanoid.RootPart
@@ -106,6 +117,9 @@ local function spawnVehicle(player: Player, vehicleId: string): (boolean, Types.
 	local stats = VehicleConfig.get(vehicleId)
 	if not stats or stats.PlayerSpawnable == false then
 		return false, "UnknownVehicle"
+	end
+	if not JailService.allows(player, "SpawnVehicle") then
+		return false, "Jailed"
 	end
 	local humanoid = getLiveHumanoid(player)
 	local root = humanoid and humanoid.RootPart

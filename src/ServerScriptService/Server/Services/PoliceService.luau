@@ -23,7 +23,7 @@ local PoliceCollisionDetector = require(Server.Crime.PoliceCollisionDetector)
 local VehicleFactory = require(Server.Vehicle.VehicleFactory)
 local WantedService = require(script.Parent.WantedService)
 local CombatService = require(script.Parent.CombatService)
-local SpawnService = require(script.Parent.SpawnService)
+local JailService = require(script.Parent.JailService)
 
 local PoliceService = {}
 
@@ -221,12 +221,11 @@ local function endPursuit(reason: string)
 end
 
 local function bust(target: Player)
-	logEvent(`BUSTED {target.Name}`)
-	WantedService.bust(target)
+	-- JailService re-validates (must be wanted, no duplicate sentence), clears wanted with no
+	-- reward and holds the player in the jail cell; release is server-timed.
+	local jailed, err = JailService.jailForBust(target)
+	logEvent(if jailed then `BUSTED {target.Name} -> jail` else `bust of {target.Name} refused: {tostring(err)}`)
 	endPursuit("busted")
-	-- Basic bust outcome until the short jail is built: respawn at a civilian spawn.
-	SpawnService.assignSpawn(target)
-	target:LoadCharacter()
 end
 
 local function tick(dt: number)

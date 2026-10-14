@@ -11,6 +11,8 @@ local PlayerAttributes = table.freeze({
 	CombatStatus = "CombatStatus", -- Types.CombatStatus
 	CombatCooldownUntil = "CombatCooldownUntil", -- server time before which Peaceful is refused (0 = none)
 	InSafeZone = "InSafeZone", -- set by SafeZoneService (4 Hz); absent means false
+	Jailed = "Jailed", -- true while serving a jail sentence (JailService)
+	JailReleaseAt = "JailReleaseAt", -- server time the sentence ends (0 when not jailed)
 })
 
 return PlayerAttributes

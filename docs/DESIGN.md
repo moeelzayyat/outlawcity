@@ -64,3 +64,10 @@ Decisions live in pure modules that take plain tables, not `Player` instances, s
 - The central plaza, where everyone spawns, is the first safe zone. Inside it no player can harm another, whatever their combat status and even if the target is wanted.
 - Safe zones don't help you escape: wanted levels, heat decay and police pursuit and busting work exactly as outside.
 - A small SAFE ZONE badge shows while you're inside. It turns amber when you're wanted, as a reminder that police can still get you.
+
+## Short jail
+
+- When the police bust you, you go to a jail cell south of the city for 12 seconds (configurable 10-15). Your wanted level is cleared with no reward.
+- While jailed you can't spawn or drive cars or use combat, and resetting your character doesn't get you out.
+- When your time is up you respawn in the plaza with normal spawn protection. Your car, reputation and (future) cash are untouched.
+- No escapes, jailbreak missions or bail in this version.

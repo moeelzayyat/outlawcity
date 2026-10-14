@@ -22,6 +22,7 @@ local ERROR_TEXT: { [string]: string } = {
 	UnknownVehicle = "That vehicle is not available.",
 	BadRequest = "Spawn request was rejected.",
 	NetworkError = "Could not reach the server.",
+	Jailed = "You can't spawn a car while in jail.",
 }
 
 local function corner(parent: Instance, radius: number)

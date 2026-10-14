@@ -7,4 +7,5 @@
 - Unit tests run automatically at the start of each Studio playtest (`[Tests] N passed, 0 failed`). Add a `*.spec` in `ServerStorage.Tests` for new pure logic.
 - Nothing counts as working until a Studio playtest passes. Update `docs/PROGRESS.md` (completed, known issues, upcoming) after each change.
 - Gotcha: the Studio MCP resets `Camera.CameraType` after `execute_luau` runs in the client, so don't treat that as a game bug.
-- Ask the owner before starting work beyond the approved phase (currently Phase 2).
+- Ask the owner before starting work beyond the approved stage (see `docs/PROGRESS.md` → Upcoming). The owner saves a backup (cloud + `OutlawCity_<stage>.rbxl`) before each stage; check the Studio log for "Place file downloaded".
+- Keep VehicleValidationService monitor-only and NPC police at one unit unless the owner approves otherwise.

@@ -28,6 +28,8 @@ ReplicatedStorage
     Combat/CombatRules         THE harm gate: canHarm(attacker, victim, context) (unit-tested)
     Combat/CombatStatusRules   pure Peaceful/Combat switching rules (unit-tested)
     Zones/SafeZoneRules        pure safe-zone geometry with exit hysteresis (unit-tested)
+    Config/JailConfig          sentence 12 s (clamped 10-15), release-check cadence
+    Jail/JailRules             pure sentencing, duplicate guard, release timing, restricted actions, slots (unit-tested)
     Vehicle/VehiclePhysics     raycast suspension + arcade handling (moved from Client in 3D; used by player cars on the client and NPC cars on the server)
   Remotes/                     (runtime) created by the server from Net/Remotes
 
@@ -40,6 +42,7 @@ ServerScriptService
     Services/WantedService     per-player wanted state; reportCrime() entry point; 4 Hz decay loop; notices
     Services/CombatService     per-player combat status; RequestSetCombatStatus; canPlayerHarm / canPoliceBust
     Services/SafeZoneService   4 Hz position check; publishes InSafeZone
+    Services/JailService       busts -> jail cell; server-timed release; gates spawn/drive/combat
     Services/VehicleValidationService  5 Hz monitor-only checks of player vehicles; diagnostics in ServerStorage.Diagnostics
     Validation/VehicleValidationConfig  limits, tolerances, scoring (Mode = "Monitor")
     Validation/VehicleValidationRules   pure checks: speed, displacement, finite values, ownership, scoring (unit-tested)
@@ -72,6 +75,7 @@ StarterPlayer.StarterPlayerScripts
     Controllers/WantedHudController      wanted stars, evading blink, Evading / Escaped banners
     Controllers/CombatStatusController   Peaceful/Combat toggle (top-centre row, left of Spawn Car)
     Controllers/SafeZoneHudController    SAFE ZONE badge under the Combat button (amber while wanted)
+    Controllers/JailHudController        IN JAIL panel with countdown from the server's release time
     Controllers/DevPanelController       STUDIO ONLY dev panel (F8 toggles); absent without DevRemotes
 
 Workspace
@@ -94,7 +98,7 @@ Workspace
 
 ## Boot order
 
-- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, SafeZone, Vehicle, VehicleValidation, Wanted, Combat, Police, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
+- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, SafeZone, Jail, Vehicle, VehicleValidation, Wanted, Combat, Police, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
 - Client `Main`: `VehicleInputController.init()` → `VehicleController.init()` → `VehicleCameraController.init()` → `VehicleHudController.init()` → `WantedHudController.init()`, `DevPanelController.init()` and `CombatStatusController.init()` (all spawned), then wires input action signals.
 - HUD placement: the top-right corner belongs to Roblox's player list; game buttons live in the top-centre row.
 - Dev tools (Phase 3+): Studio-only, created only when `RunService:IsStudio()` is true on the server, so they can never activate in published servers.
@@ -115,7 +119,7 @@ All remotes live in `ReplicatedStorage.Shared.Net.Remotes.Definitions`. Nothing 
 
 Studio-only (not in the contract; created by `DevToolsService` only when `RunService:IsStudio()`): `ReplicatedStorage.DevRemotes.RequestDevCommand` (RemoteFunction) `(name, value) -> (ok, err)` with commands `SetHeat`, `SetStars`, `ReportCrime`, `ResetWanted`, `SetPoliceSight`, validated by `DevCommandRules` and re-checked against `IsStudio` on every call.
 
-Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
+Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
 
 ## Wanted system
 
@@ -200,3 +204,18 @@ Rules:
   - `VehicleValidationService.authorizeReposition(vehicle, seconds)` gives a grace window and a fresh baseline for any future server-side move. No current server code moves player cars.
   - The client's own flip recovery lifts the car 4 studs vertically, which the horizontal checks ignore.
 - **No enforcement:** there are no resets, kicks or bans, and none are implemented. Turning on corrections needs owner approval after more normal-driving data. Future rewards for driving, escapes or arrests must come from server-validated gameplay events.
+
+## Short jail
+
+- **Trigger:** `PoliceService` bust -> `JailService.jailForBust(player)`, which is the only way in. The Studio-only dev command `SimulateBust` calls the same function. It re-checks the shared combat gate (`CombatRules.canHarm(NpcPolice, ...)`, so the player must be wanted and not already jailed). It then uses `JailRules.sentence` to refuse duplicates (`AlreadyJailed`) and players who aren't wanted (`NotWanted`).
+- **On a valid bust:** the sentence is `JailConfig.Seconds` (12, clamped to 10-15). `WantedService.bust` clears the wanted level with no escape reward. The player is pulled out of any seat and placed on a free cell slot (`JailRules.pickSlot`, 4 slots). `Jailed`/`JailReleaseAt` attributes are published. Their car, reputation and anything else are untouched.
+- **Cell:** `Workspace.City.Jail`, built from `CityLayout.jail()` by `CityBuilder.buildJail`. It sits south of the grid at (0, 0, 420), off the road network, with solid walls, a barred front (1.4-stud gaps), a roof with a light, and 4 invisible slot markers.
+- **Server-owned timer:** a 4 Hz loop releases players whose time is up. `JailRules.isJailed` stays true until the server releases them, so nothing slips through between the deadline and the release. On release: `SpawnService.assignSpawn` + `LoadCharacter`, so the player gets a civilian pad with normal spawn protection. No remote can end or shorten a sentence (spec-checked).
+- **Bypass guards:**
+  - A character reset or death mid-sentence puts the new character back in the cell, and the timer is unchanged.
+  - `VehicleService` refuses spawns (`Jailed`), refuses prompt seating, and ejects a jailed player from any driver seat.
+  - `CombatService` refuses status requests (`Jailed`).
+  - `CombatRules` treats a jailed player as out of play: no harm or bust either way (`Jailed`).
+  - The `Robbery` action is already gated in `JailRules` for later.
+- **Client:** `JailHudController` shows IN JAIL + "Release in Ns". It's computed from `JailReleaseAt` and the server clock, so it follows the real release.
+- **Not built (by owner decision):** prison escapes, jailbreak missions, bail. Leaving the game mid-sentence ends it, because jail state is session-only until persistence exists.

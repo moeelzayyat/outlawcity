@@ -23,6 +23,7 @@ local ACTIONS: { Action } = {
 	{ Label = "Clear wanted", Name = "ResetWanted", Value = nil },
 	{ Label = "Police sees me: ON", Name = "SetPoliceSight", Value = true },
 	{ Label = "Police sees me: OFF", Name = "SetPoliceSight", Value = false },
+	{ Label = "Simulate bust", Name = "SimulateBust", Value = nil },
 }
 
 function DevPanelController.init()

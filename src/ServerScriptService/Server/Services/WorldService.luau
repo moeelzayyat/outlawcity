@@ -18,6 +18,24 @@ function WorldService.init()
 	elseif not city:FindFirstChild("CivilianSpawns") then
 		CityBuilder.buildCivilianSpawns(CityLayout.createBlueprint(), city)
 	end
+	if city and not city:FindFirstChild("Jail") then
+		CityBuilder.buildJail(city)
+	end
+end
+
+-- Jail cell standing spots, in slot order.
+function WorldService.getJailSlots(): { CFrame }
+	local result = {}
+	local slots = city and city:FindFirstChild("Jail") and city.Jail:FindFirstChild("Slots")
+	if slots then
+		for index = 1, #slots:GetChildren() do
+			local marker = slots:FindFirstChild(`Slot{index}`)
+			if marker and marker:IsA("BasePart") then
+				table.insert(result, marker.CFrame)
+			end
+		end
+	end
+	return result
 end
 
 function WorldService.start() end

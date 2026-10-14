@@ -22,6 +22,10 @@ function CombatRules.canHarm(
 	if attacker.Kind == "Player" and attacker.UserId ~= nil and attacker.UserId == victim.UserId then
 		return false, "Self"
 	end
+	-- Jailed players are out of play: nobody harms or busts them, and they harm nobody.
+	if victim.Jailed or (attacker.Kind == "Player" and attacker.Jailed) then
+		return false, "Jailed"
+	end
 
 	-- NPC police: may pursue and bust wanted players regardless of combat status, safe zones
 	-- or spawn protection. Never touches players who are not wanted.

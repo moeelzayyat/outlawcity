@@ -104,4 +104,51 @@ function CityBuilder.buildCivilianSpawns(blueprint: CityLayout.Blueprint, city: 
 	return folder
 end
 
+-- Adds City.Jail (walls, bars, roof and invisible Slot markers) if missing. Returns the folder.
+function CityBuilder.buildJail(city: Instance): Folder
+	local existing = city:FindFirstChild("Jail")
+	if existing and existing:IsA("Folder") then
+		return existing
+	end
+	local spec = CityLayout.jail()
+	local folder = Instance.new("Folder")
+	folder.Name = "Jail"
+	for _, partSpec in spec.Parts do
+		local part = Instance.new("Part")
+		part.Name = partSpec.Name
+		part.Anchored = true
+		part.Size = partSpec.Size
+		part.CFrame = CFrame.new(partSpec.Center)
+		part.Color = partSpec.Color
+		part.Material = partSpec.Material
+		part.TopSurface = Enum.SurfaceType.Smooth
+		part.BottomSurface = Enum.SurfaceType.Smooth
+		part.Parent = folder
+	end
+	local roof = folder:FindFirstChild("JailRoof")
+	if roof then
+		local light = Instance.new("PointLight")
+		light.Range = 24
+		light.Brightness = 1.5
+		light.Parent = roof
+	end
+	local slots = Instance.new("Folder")
+	slots.Name = "Slots"
+	for index, cframe in spec.Slots do
+		local marker = Instance.new("Part")
+		marker.Name = `Slot{index}`
+		marker.Anchored = true
+		marker.CanCollide = false
+		marker.CanQuery = false
+		marker.CanTouch = false
+		marker.Transparency = 1
+		marker.Size = Vector3.new(2, 1, 2)
+		marker.CFrame = cframe
+		marker.Parent = slots
+	end
+	slots.Parent = folder
+	folder.Parent = city
+	return folder
+end
+
 return CityBuilder
