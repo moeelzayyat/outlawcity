@@ -200,6 +200,8 @@ return {
 			{ TxId = "t", Amount = C.MaxTransaction + 1, Reason = "x", At = 1 },
 			{ TxId = "t", Amount = 10, Reason = string.rep("r", 101), At = 1 },
 			{ TxId = "t", Amount = 10, Reason = "x", At = 0 / 0 },
+			{ TxId = "t", Amount = 10, Reason = "x", At = math.huge },
+			{ TxId = "t", Amount = 10, Reason = "x", At = -math.huge },
 		}
 		for i, r in bad do
 			local ok, err = RewardLedger.record(rewards, "r", r :: any)

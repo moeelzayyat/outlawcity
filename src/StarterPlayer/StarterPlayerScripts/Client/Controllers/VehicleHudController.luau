@@ -109,7 +109,7 @@ function VehicleHudController.init()
 	spawnButton.Parent = gui
 	corner(spawnButton, 10)
 	spawnButton.Activated:Connect(function()
-		GarageController.toggle() -- choose which owned car to spawn
+		GarageController.spawnOrChoose() -- one car: spawn it; 2+: choose in the garage
 	end)
 
 	local toast = label(gui, "Toast", UDim2.fromOffset(380, 36), UDim2.new(0.5, 0, 0, 140), Vector2.new(0.5, 0), 16)

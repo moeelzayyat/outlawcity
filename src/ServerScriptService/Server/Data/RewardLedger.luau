@@ -90,7 +90,7 @@ function RewardLedger.validate(reward: any): (boolean, string?)
 	if type(reward.Reason) ~= "string" or #reward.Reason > MAX_REASON then
 		return false, "InvalidReason"
 	end
-	if type(reward.At) ~= "number" or reward.At ~= reward.At then
+	if type(reward.At) ~= "number" or reward.At ~= reward.At or reward.At == math.huge or reward.At == -math.huge then
 		return false, "InvalidTime"
 	end
 	return true, nil
