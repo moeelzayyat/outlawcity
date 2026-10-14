@@ -1,6 +1,6 @@
 # OUTLAW CITY: five-minute player-experience audit (plan for owner review)
 
-Status: **plan only, nothing implemented.** Prepared 2026-10-14 after the auditor's APPROVE WITH CONDITIONS. Every change below needs the owner's OK first. Police stay at one unit, vehicle validation stays monitor-only, and the experimental pursuit tuning (130 / 100 / 0.25, 8 s decay delay) stays until human playtests.
+Status: **reviewed; approved items built (solo).** Prepared 2026-10-14 after the auditor's APPROVE WITH CONDITIONS. Audit 4 approved P1, P7 and P8, modified P2–P4, and scoped P5 and P6 (section 6). Results are in `PROGRESS.md`. Police stay at one unit, vehicle validation stays monitor-only, and the experimental pursuit tuning (130 / 100 / 0.25, 8 s decay delay) stays until human playtests.
 
 ## How this was measured
 - Solo Studio, place 132163592957463 only, on PC and in the iPhone 7 simulator (666×374).
@@ -20,7 +20,7 @@ Status: **plan only, nothing implemented.** Prepared 2026-10-14 after the audito
 | ~0:50 | Walk out to the car; police dispatched now, from 160–450 studs away. |
 | ~1:10–1:30 | Escape: scripted getaways with the tuned police paid in 18–35 s (5/5). +$2,000. |
 | 3:00 after the first robbery started | Store cooldown ends (180 s from start, also after a failed robbery). Second robbery possible. |
-| 5:00 | At most 2 robberies → about $4,500 from a $500 start. The Muscle ($15,000) is about 7 robberies ≈ 21+ minutes away. |
+| 5:00 | At most 2 robberies → about $4,500 from a $500 start. The Muscle ($15,000) is **8 successful robberies** away ($500 + 7 × $2,000 = $14,500 is still short), about 24 minutes at one robbery per 3-minute cooldown. (The first version of this plan said 7; corrected in audit 4.) |
 
 ## 2. Findings by area
 | Area | Measured now | Problem |
@@ -66,3 +66,17 @@ Each change is small, can be undone, and comes with a measurable target.
 4. P5 and P6: pacing; needs the owner's numbers.
 
 Then run the owner's human playtest, followed by an audit package.
+
+## 6. What audit 4 approved, and what was built (2026-10-14, solo)
+| # | Approved form | Built | Measured |
+|---|---|---|---|
+| P1 | as proposed | Spawn Car spawns the only owned car; 2+ open the garage | 1 click/tap to the first car (was 2 on mobile) |
+| P2 | discreet, distance-aware markers | 190×46 px labels over both signs, 35–450 studs, with distance and status | both shown from the spawn (150 / 220 studs) |
+| P3 | dismissible, doesn't block driving | 15 s card at the left under the HUD row; X closes it; also closes when a robbery starts | text fits; only X takes input |
+| P4 | accurate line-of-sight explanation | "Break line of sight, then stay hidden until your stars are gone"; "Stars fading…" while evading | matches `WantedRules` (8 s delay, escape at 0 stars) |
+| P5 | show the cooldown; trial 90 s after **failed** robberies; success unchanged | marker and register prompt show "Reopens in m:ss"; `FailedCooldownSeconds = 90` | a bust and a walk-out both reopened at start + 90 s; a start still sets 180 s |
+| P6 | show progress; 8 robberies from $500; price unchanged | dealership message "Muscle: $X of $15,000. About N more successful robberies." | $11,400 → "About 2"; $500 → 8 (unit test) |
+| P7 | smaller panel with readability and safe-area checks | 260×64 at y 92 on screens under 400 px tall; `CoreUISafeInsets`; text ≥ 14 px | 6.7% of 666×374, all texts fit, no overlaps (layout frame, not a real phone) |
+| P8 | Studio-only milestones | `[Milestone]` lines for FirstCar, FirstRobbery, FirstEscape | printed once each in Studio |
+
+Still open: the owner's human playtest (section 4) and a real-phone check. The 90 s failed-robbery cooldown and the $15,000 price are decided after that.

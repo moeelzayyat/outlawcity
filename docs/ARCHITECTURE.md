@@ -1,6 +1,6 @@
 # OUTLAW CITY — Architecture
 
-Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) provisionally approved; 4B follow-up fixes (recoverable payouts) done; police sent at holdout end; driving getaway still open. Phase 4C (dealership + second vehicle) built and solo-tested. Audit remediation (write-through economy, durable reward ledger, experimental police tuning, HTTP off) done. The final targeted fixes were APPROVED WITH CONDITIONS; the six conditions are done (FIFO profile queue, leave-safe saves, reward validation, extra tests, limitations tracked). A five-minute player-experience plan (`docs/PLAYER_EXPERIENCE_AUDIT.md`) awaits owner review. No broad Phase 5 work. Last updated 2026-10-14.
+Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) provisionally approved; 4B follow-up fixes (recoverable payouts) done; police sent at holdout end; driving getaway still open. Phase 4C (dealership + second vehicle) built and solo-tested. Audit remediation (write-through economy, durable reward ledger, experimental police tuning, HTTP off) done. The final targeted fixes were APPROVED WITH CONDITIONS; the six conditions are done (FIFO profile queue, leave-safe saves, reward validation, extra tests, limitations tracked). The five-minute player-experience plan (`docs/PLAYER_EXPERIENCE_AUDIT.md`) was reviewed (audit 4: APPROVE on Part A) and its approved onboarding changes are built and solo-tested (see *New-player guidance*). No broad Phase 5 work. Last updated 2026-10-14.
 
 ## Source of truth and workflow
 
@@ -28,7 +28,9 @@ ReplicatedStorage
     Combat/CombatRules         THE harm gate: canHarm(attacker, victim, context) (unit-tested)
     Combat/CombatStatusRules   pure Peaceful/Combat switching rules (unit-tested)
     Zones/SafeZoneRules        pure safe-zone geometry with exit hysteresis (unit-tested)
-    Config/RobberyConfig       store robbery tuning (hold 15 s, reward 2000, cooldown 180 s, ranges)
+    Config/RobberyConfig       store robbery tuning (hold 15 s, reward 2000, cooldown 180 s, 90 s after a failed robbery (trial), ranges)
+    Config/OnboardingConfig    new-player guidance: marker range, tip time, compact phone panel, milestones (display only)
+    Onboarding/OnboardingRules pure helpers: spawn shortcut, marker range, store status, escape hint, Muscle progress, milestones (unit-tested)
     Robbery/RobberyRules       pure robbery state machine: start checks, holdout, escape, single payout (unit-tested)
     Config/DealershipConfig    dealership catalogue and prices (Muscle $15,000), desk range, request interval
     Config/JailConfig          sentence 12 s (clamped 10-15), release-check cadence
@@ -86,8 +88,10 @@ StarterPlayer.StarterPlayerScripts
     Controllers/CombatStatusController   Peaceful/Combat toggle (top-centre row, left of Spawn Car)
     Controllers/SafeZoneHudController    SAFE ZONE badge under the Combat button (amber while wanted)
     Controllers/JailHudController        IN JAIL panel with countdown from the server's release time
-    Controllers/RobberyHudController     robbery objective panel (countdown / escape) and result toasts
-    Controllers/GarageController         garage window (owned vehicles); Spawn Car opens it, V spawns the last chosen car
+    Controllers/RobberyHudController     robbery objective panel (countdown / escape hint; compact on phones) and result toasts
+    Controllers/GarageController         garage window (owned vehicles); Spawn Car spawns the only car or opens it with 2+, V spawns the last chosen car
+    Controllers/WorldMarkerController    floating markers over the 24/7 MART and OUTLAW MOTORS (distance, store status)
+    Controllers/OnboardingTipController  one-time first-spawn tip (15 s, X to close)
     Controllers/DealershipController     dealership window opened by the showroom prompt; sends RequestPurchaseVehicle
     Controllers/UiKit                    shared touch-sized window/button builders for the 4C windows
     Controllers/CashHudController        $ balance (server attribute) right of the stars; "$ offline" if data didn't load
@@ -136,7 +140,7 @@ All remotes live in `ReplicatedStorage.Shared.Net.Remotes.Definitions`. Nothing 
 
 Studio-only (not in the contract; created by `DevToolsService` only when `RunService:IsStudio()`): `ReplicatedStorage.DevRemotes.RequestDevCommand` (RemoteFunction) `(name, value) -> (ok, err)` with commands `SetHeat`, `SetStars`, `ReportCrime`, `ResetWanted`, `SetPoliceSight`, validated by `DevCommandRules` and re-checked against `IsStudio` on every call. Later stages added `SimulateBust`, cash commands (4A), `ClearRobberyCooldown` and `TryRobStore` (4B: runs the same server checks as the register prompt without the prompt's own range limit, so rejections can be tested).
 
-Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService), `Cash`, `CashStatus` (EconomyService), `RobberyPhase` (`Holding`/`Escaping`, else nil), `RobberyHoldEndsAt` (server time), `RobberyReward` (display only) (RobberyService), `OwnedVehicles` (comma-separated ids from the profile; display only) (EconomyService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
+Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService), `Cash`, `CashStatus` (EconomyService), `RobberyPhase` (`Holding`/`Escaping`, else nil), `RobberyHoldEndsAt` (server time), `RobberyReward` (display only) (RobberyService), `OwnedVehicles` (comma-separated ids from the profile; display only) (EconomyService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here. Store folder attributes (server-written, display only): `City.Store.RobberyCooldownUntil` (server time, 0 = never robbed) and `RobberyBusy` (RobberyService).
 
 ## Wanted system
 
@@ -284,8 +288,9 @@ Rules:
   - If the grant can't be stored (`DataNotLoaded` or `SaveFailed`), `RobberyRules.payoutOutcome` says `Retry`. The reward stays pending (same tx id) and `RobberyPhase = "PayoutPending"`. The HUD says the reward is safely recorded (or, if even the ledger failed, to stay in the game). Payment is retried every 2 s without blocking the robbery tick loop. Other errors are final (`PayoutFailed`).
   - Pending rewards survive death, respawn and jail (they belong to the player, not the character). If recorded in the ledger, they also survive leaving and server crashes: they are paid on the next join.
   - Granted cash is stored at the moment it is granted (write-through).
-- **Client:** `RobberyHudController` shows "ROBBING THE STORE Ns / Stay inside" while holding, "ESCAPE THE POLICE / Lose your wanted stars to keep $2,000" while escaping (from server attributes), and toasts for the alarm, rejections, failure reasons and the cash reward. It can't start, finish or pay anything.
+- **Client:** `RobberyHudController` shows "ROBBING THE STORE Ns / Stay inside" while holding, "ESCAPE TO KEEP $2,000 / Break line of sight, then stay hidden until your stars are gone" while escaping ("Stars fading..." while `WantedEvading`) (from server attributes), and toasts for the alarm, rejections, failure reasons and the cash reward. It can't start, finish or pay anything.
 - **Tuning:** `RobberyConfig` (hold, reward, cooldown, ranges, escape limit) and `WantedConfig.Crimes.StoreRobbery` are the only places to change values.
+- **Failed-robbery cooldown (audit 4 trial):** `RobberyConfig.FailedCooldownSeconds = 90`. A robbery that fails (died, busted, left, disconnected, timed out) shortens the store's cooldown to its start + 90 s, but only while it is still the store's latest robbery (`StoreState.LastSession`), so an old getaway failing late never cuts a newer robbery's cooldown. Successful robberies keep 180 s. `nil` restores the old behaviour.
 - **Not built (by owner decision):** banks, more stores, gangs, weapons, new vehicles, monetization. Police stay at one NPC unit.
 
 ### Police pursuit tuning (audit remediation, EXPERIMENTAL; owner/auditor review pending)
@@ -314,3 +319,15 @@ See PROGRESS.md for the details. It's a small solo sample, so human playtests sh
 - **Dealership handler safety:** `DealershipService` calls the economy through `pcall` and always clears the player's in-flight flag. An error returns `SaveUnconfirmed`, and the next operation reconciles from the store.
 - **HTTP:** the place's "Allow HTTP Requests" (`HttpService.HttpEnabled`) is OFF. Game code only uses `GenerateGUID` and JSON helpers, which don't need it.
 - **Not built (by owner decision):** more vehicles, banks, garages as buildings, property, gangs, weapons, monetization.
+
+## New-player guidance (audit 4 onboarding batch)
+
+Display only: nothing here changes rewards, prices, police, validation or who decides a robbery start or purchase. Values live in `OnboardingConfig`; logic in `OnboardingRules` (`OnboardingRules.spec`).
+- **P1 spawn shortcut:** Spawn Car (and its tap on phones) spawns the car directly when the player owns one; with 2+ cars it opens the garage window. The server still checks ownership on every spawn.
+- **P2 markers:** client `BillboardGui`s over `StoreSign` and `DealerSign`, 190x46 px, drawn through buildings, shown 35-450 studs from the sign, with the distance and a status line.
+- **P3 tip:** once per session after the first spawn, at the left under the HUD row (12, 92), 250x84. Closes after 15 s, with X, or when a robbery starts. Only X takes input.
+- **P4 escape hint:** matches `WantedRules`: heat decays only after `DecayDelay` (8 s) with no sighting and no new crime; the escape counts when the stars reach 0.
+- **P5 store status:** the store marker shows Open / Being robbed / Reopens in m:ss from the server's store attributes; the register prompt shows "Reopens in m:ss" while cooling down.
+- **P6 Muscle progress:** the dealership window's message line shows "Muscle: $X of $15,000. About N more successful robberies." (`ceil((price - cash) / RobberyConfig.Reward)`: 8 from the $500 start).
+- **P7 compact robbery panel:** screens under 400 px tall get a 260x64 panel at y 92 (text 17/14 px) instead of 300x76 at y 136; `ScreenInsets = CoreUISafeInsets`.
+- **P8 milestones (Studio only):** `Server.Dev.MilestoneLog` prints `[Milestone] <player> FirstCar|FirstRobbery|FirstEscape <s>s after join` once per session; a no-op outside Studio.

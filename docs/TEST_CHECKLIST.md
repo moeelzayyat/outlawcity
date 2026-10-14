@@ -185,6 +185,18 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] `ProfileSession.spec`: FIFO order; heartbeat refused after leave; ambiguous multi-reward claim paid once
 - [ ] `RewardLedger.spec`: invalid rewards refused before reaching the ledger
 
+## Onboarding batch (audit 4)
+- [ ] `OnboardingRules.spec` (7) and `RobberyRules.spec` cooldown tests (+3) pass; `RewardLedger.spec` refuses ±infinity timestamps
+- [ ] One owned car: one click/tap on Spawn Car seats you; two cars: the garage window opens
+- [ ] On spawn, both markers show with distances; the store marker hides at the register
+- [ ] First-spawn tip shows once, closes after 15 s, with X, or when a robbery starts; driving works while it shows
+- [ ] Escape panel says "Break line of sight, then stay hidden until your stars are gone"; "Stars fading..." while evading
+- [ ] After a failed robbery the store marker counts down and the store reopens 90 s after the start; after a successful one, 180 s
+- [ ] Dealership window shows "Muscle: $X of $15,000. About N more successful robberies." (8 from $500)
+- [ ] Phone (666x374): robbery panel 260x64 at y 92, text fits, no overlap with the top HUD row
+- [ ] Studio Output prints `[Milestone] ... FirstCar / FirstRobbery / FirstEscape` once each
+- [ ] **Owner, real phone:** panel, tip and markers readable; nothing blocks the touch controls
+
 ## Police pursuit tuning (audit remediation, EXPERIMENTAL)
 - [ ] With SightRange 130 / ChaseSpeed 100 / ChaseGain 0.25: rob, drive away normally, lose the police -> paid once
 - [ ] Police still catch a robber who stops or crashes nearby (bust within 18 studs, slow for 2.5 s)

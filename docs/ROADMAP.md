@@ -52,7 +52,8 @@ Out of scope for Phase 3: robberies, weapons, gangs, helicopters, new districts,
 - **4B follow-up ✅:** recoverable robbery payouts; police sent at holdout end; police roadside stop proposed.
 - **Audit remediation ✅ (solo; awaiting audit):** write-through economy (acknowledged = stored), durable reward ledger, lock heartbeat, experimental police tuning (paid getaways 5/5 vs 3/5), Muscle touch check, HTTP off.
 - **Final targeted audit fixes ✅ (solo; awaiting audit + owner approval before Phase 5):** ambiguous-write reconciliation, durable reward dedupe (profile v3 `PaidRewards`), periodic ledger recovery with backoff, explicit ledger invalid states, leave/lock queue safety, dealership handler safety. Approved with conditions; conditions done (FIFO queue, leave-safe saves, reward validation).
-- **Next (planning, awaiting owner review):** five-minute player-experience plan, `docs/PLAYER_EXPERIENCE_AUDIT.md` (small usability/pacing changes P1–P8).
+- **Five-minute player-experience plan ✅ reviewed** (audit 4: APPROVE on Part A), `docs/PLAYER_EXPERIENCE_AUDIT.md`.
+- **Onboarding batch ✅ (solo; awaiting owner/auditor review):** one-car spawn shortcut, store/dealership markers, first-spawn tip, escape hint, store reopen time + 90 s failed-robbery cooldown trial, Muscle progress (price unchanged), compact phone robbery panel, Studio-only milestone timings; reward timestamps reject ±infinity. Next: the owner's human playtest.
 - **4C ✅ (solo; awaiting owner review):** OUTLAW MOTORS dealership, the $15,000 Muscle (faster, heavier handling), server purchase API (atomic cash + ownership, duplicate-safe), persistent ownership in profile v2 with safe migration from cash-only profiles, garage window, ownership-checked spawning, PC + mobile UI.
 - Original line: cash, server-authoritative rewards for arrests and robberies, DataStore persistence.
 - A first purchasable vehicle.
