@@ -1,0 +1,7 @@
+git diff --name-status 9b52d54..HEAD -- src docs
+
+A	src/ReplicatedStorage/Shared/Atmosphere/AtmosphereRules.luau
+A	src/ReplicatedStorage/Shared/Config/AtmosphereConfig.luau
+A	src/ServerStorage/Tests/AtmosphereRules.spec.luau
+A	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/AtmosphereController.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau

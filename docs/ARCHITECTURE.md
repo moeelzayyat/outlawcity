@@ -332,3 +332,11 @@ Display only: nothing here changes rewards, prices, police, validation or who de
 - **P6 Muscle progress:** the dealership window's message line shows "Muscle: $X of $15,000. About N more successful robberies." (`ceil((price - cash) / RobberyConfig.Reward)`: 8 from the $500 start).
 - **P7 compact robbery panel:** screens under 400 px tall get a 260x64 panel at y 92 (text 17/14 px) instead of 300x76 at y 136; `ScreenInsets = CoreUISafeInsets`.
 - **P8 milestones (Studio only):** `Server.Dev.MilestoneLog` prints `[Milestone] <player> FirstCar|FirstRobbery|FirstEscape <s>s after join` once per session; a no-op outside Studio.
+
+## City atmosphere (Batch 1)
+
+Presentation only, all on the client (`Client.Controllers.AtmosphereController`), configured by `Shared.Config.AtmosphereConfig` and backed by the pure `Shared.Atmosphere.AtmosphereRules` (`AtmosphereRules.spec`).
+- **Lighting flag:** applies the preset to this client's `Lighting`: ClockTime 16.5, warmer ambient, Atmosphere 0.32 / Haze 1 / Glare 0.2, Bloom 0.4, plus a local `ColorCorrectionEffect` named `OutlawAtmosphere`. The place's own Lighting (what the server and Studio hold) is never changed, so turning the flag off restores the original look on the next join. The original values are recorded in `AtmosphereConfig.OriginalLighting`.
+- **PoliceLights flag:** while `Workspace.NpcVehicles.PoliceUnit` exists, the two `LightBar` parts alternate via `LocalTransparencyModifier` every 0.25 s, and one local `PointLight` (range 14, no shadows) follows the lit side. Everything is created once per unit and removed when the unit leaves. The police unit, its AI and the pursuit values are untouched.
+- **Siren flag:** off. It plays only with `Siren = true` and an owner-approved `SirenSoundId` (`rbxassetid://<digits>`); it would be a looped Sound on the unit's chassis with roll-off 250 studs, removed with the unit.
+

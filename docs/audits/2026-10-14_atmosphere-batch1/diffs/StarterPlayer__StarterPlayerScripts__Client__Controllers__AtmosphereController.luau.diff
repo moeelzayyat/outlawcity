@@ -1,0 +1,194 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/AtmosphereController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/AtmosphereController.luau
+new file mode 100644
+index 0000000..419c69a
+--- /dev/null
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/AtmosphereController.luau
+@@ -0,0 +1,188 @@
++--!strict
++-- City atmosphere Batch 1, client-side presentation only (docs/CITY_ATMOSPHERE_AUDIO_AUDIT.md).
++--  * Lighting (P-A): applies the AtmosphereConfig preset to this client's Lighting. The place's
++--    own values are untouched, so turning the flag off restores the old look.
++--  * PoliceLights (P-C): while the NPC police unit exists, its two LightBar parts flash red/blue
++--    and one local PointLight flashes with them. Everything created here is local and removed
++--    when the unit goes away. The unit itself (server-owned, its AI and pursuit) is not touched.
++--  * Siren (P-C): only with its flag on and an owner-approved sound id.
++local Lighting = game:GetService("Lighting")
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local RunService = game:GetService("RunService")
++local Workspace = game:GetService("Workspace")
++
++local Shared = ReplicatedStorage.Shared
++local AtmosphereConfig = require(Shared.Config.AtmosphereConfig)
++local AtmosphereRules = require(Shared.Atmosphere.AtmosphereRules)
++
++local AtmosphereController = {}
++
++local config = AtmosphereConfig
++local LOCAL_TAG = "OutlawAtmosphere" -- name of every instance this controller creates
++
++type Decorated = { Model: Model, Bars: { BasePart }, Light: PointLight?, Siren: Sound?, Connections: { RBXScriptConnection } }
++local decorated: { [Model]: Decorated } = {}
++
++local function applyLighting()
++	local preset = config.Lighting
++	Lighting.ClockTime = preset.ClockTime
++	Lighting.Ambient = preset.Ambient
++	Lighting.OutdoorAmbient = preset.OutdoorAmbient
++	local atmosphere = Lighting:FindFirstChildOfClass("Atmosphere")
++	if atmosphere then
++		atmosphere.Density = preset.AtmosphereDensity
++		atmosphere.Haze = preset.AtmosphereHaze
++		atmosphere.Glare = preset.AtmosphereGlare
++	end
++	local bloom = Lighting:FindFirstChildOfClass("BloomEffect")
++	if bloom then
++		bloom.Intensity = preset.BloomIntensity
++	end
++	local correction = Lighting:FindFirstChild(LOCAL_TAG)
++	if not correction then
++		correction = Instance.new("ColorCorrectionEffect")
++		correction.Name = LOCAL_TAG
++		correction.Parent = Lighting
++	end
++	(correction :: ColorCorrectionEffect).Contrast = preset.ColorCorrectionContrast;
++	(correction :: ColorCorrectionEffect).Saturation = preset.ColorCorrectionSaturation
++end
++
++local function lightBars(model: Model): { BasePart }
++	local bars = {}
++	for _, d in model:GetDescendants() do
++		if d.Name == "LightBar" and d:IsA("BasePart") then
++			table.insert(bars, d)
++		end
++	end
++	-- Stable order (left, right) so the two halves alternate.
++	table.sort(bars, function(a, b)
++		local chassis = model.PrimaryPart
++		if not chassis then
++			return a:GetFullName() < b:GetFullName()
++		end
++		return chassis.CFrame:PointToObjectSpace(a.Position).X < chassis.CFrame:PointToObjectSpace(b.Position).X
++	end)
++	return bars
++end
++
++local function undecorate(model: Model)
++	local entry = decorated[model]
++	if not entry then
++		return
++	end
++	decorated[model] = nil
++	for _, connection in entry.Connections do
++		connection:Disconnect()
++	end
++	if entry.Light then
++		entry.Light:Destroy()
++	end
++	if entry.Siren then
++		entry.Siren:Stop()
++		entry.Siren:Destroy()
++	end
++	for _, bar in entry.Bars do
++		if bar.Parent then
++			bar.LocalTransparencyModifier = 0
++		end
++	end
++end
++
++local function decorate(model: Model)
++	if decorated[model] then
++		return -- never twice: no duplicate lights or sounds
++	end
++	local entry: Decorated = { Model = model, Bars = {}, Light = nil, Siren = nil, Connections = {} }
++	decorated[model] = entry
++	local function refreshBars()
++		entry.Bars = lightBars(model)
++		if config.Flags.PoliceLights and not entry.Light and #entry.Bars > 0 then
++			local light = Instance.new("PointLight")
++			light.Name = LOCAL_TAG
++			light.Range = config.PoliceLightRange
++			light.Brightness = config.PoliceLightBrightness
++			light.Shadows = false
++			light.Parent = entry.Bars[1]
++			entry.Light = light
++		end
++		local chassis = model.PrimaryPart
++		if AtmosphereRules.sirenEnabled(config.Flags, config.SirenSoundId) and not entry.Siren and chassis then
++			local siren = Instance.new("Sound")
++			siren.Name = LOCAL_TAG
++			siren.SoundId = config.SirenSoundId :: string
++			siren.Looped = true
++			siren.Volume = config.SirenVolume
++			siren.RollOffMode = Enum.RollOffMode.InverseTapered
++			siren.RollOffMaxDistance = config.SirenRollOffMaxDistance
++			siren.Parent = chassis
++			siren:Play()
++			entry.Siren = siren
++		end
++	end
++	refreshBars()
++	-- With streaming, parts can arrive after the model; pick them up when they do.
++	table.insert(entry.Connections, model.DescendantAdded:Connect(function(d)
++		if d.Name == "LightBar" or d == model.PrimaryPart then
++			refreshBars()
++		end
++	end))
++	table.insert(entry.Connections, model.AncestryChanged:Connect(function()
++		if not model:IsDescendantOf(Workspace) then
++			undecorate(model)
++		end
++	end))
++end
++
++local function onFlashStep()
++	if not config.Flags.PoliceLights then
++		return
++	end
++	local phase = AtmosphereRules.flashPhase(os.clock(), config.FlashInterval)
++	for model, entry in decorated do
++		if not model.Parent then
++			undecorate(model)
++			continue
++		end
++		for index, bar in entry.Bars do
++			bar.LocalTransparencyModifier = if index == phase then 0 else config.DimTransparency
++		end
++		local lit = entry.Bars[phase]
++		if entry.Light and lit then
++			entry.Light.Color = lit.Color
++			if entry.Light.Parent ~= lit then
++				entry.Light.Parent = lit
++			end
++		end
++	end
++end
++
++function AtmosphereController.init()
++	if config.Flags.Lighting then
++		applyLighting()
++	end
++	if not (config.Flags.PoliceLights or AtmosphereRules.sirenEnabled(config.Flags, config.SirenSoundId)) then
++		return
++	end
++	local folder = Workspace:WaitForChild(config.PoliceFolderName, 30)
++	if not folder then
++		return
++	end
++	local function consider(child: Instance)
++		if child:IsA("Model") and AtmosphereRules.isPoliceUnit(child.Name, folder.Name, config) then
++			decorate(child)
++		end
++	end
++	folder.ChildAdded:Connect(consider)
++	folder.ChildRemoved:Connect(function(child)
++		if child:IsA("Model") then
++			undecorate(child)
++		end
++	end)
++	for _, child in folder:GetChildren() do
++		consider(child)
++	end
++	RunService.Heartbeat:Connect(onFlashStep)
++end
++
++return AtmosphereController

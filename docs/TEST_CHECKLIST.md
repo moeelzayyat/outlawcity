@@ -203,6 +203,12 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] A second spawn within 3 s shows "Wait a moment before spawning again."; jailed players can't spawn; unknown/unowned cars are refused
 - [ ] Owner's 10-minute playtest: `docs/PLAYTEST_CHECKLIST.md` (no dev tools)
 
+## Atmosphere Batch 1
+- [ ] `AtmosphereRules.spec` passes; client Lighting shows the preset values; the place's own Lighting (server) is unchanged
+- [ ] The police unit's light bar alternates red/blue about every 0.25 s while it exists; one local PointLight; nothing left after despawn (repeat 5×)
+- [ ] `Lighting = false` gives the original look; `PoliceLights = false` gives the static bar; the siren plays only with `Siren = true` and an approved id
+- [ ] FPS and memory before vs after (Studio in front), idle and during a chase; phone simulator / real phone
+
 ## Police pursuit tuning (audit remediation, EXPERIMENTAL)
 - [ ] With SightRange 130 / ChaseSpeed 100 / ChaseGain 0.25: rob, drive away normally, lose the police -> paid once
 - [ ] Police still catch a robber who stops or crashes nearby (bust within 18 studs, slow for 2.5 s)

@@ -1,0 +1,59 @@
+diff --git a/src/ServerStorage/Tests/AtmosphereRules.spec.luau b/src/ServerStorage/Tests/AtmosphereRules.spec.luau
+new file mode 100644
+index 0000000..c923fbe
+--- /dev/null
++++ b/src/ServerStorage/Tests/AtmosphereRules.spec.luau
+@@ -0,0 +1,53 @@
++-- City atmosphere Batch 1: config values and pure helpers.
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local AtmosphereConfig = require(ReplicatedStorage.Shared.Config.AtmosphereConfig)
++local AtmosphereRules = require(ReplicatedStorage.Shared.Atmosphere.AtmosphereRules)
++local Assert = require(script.Parent.Assert)
++
++local C = AtmosphereConfig
++
++return {
++	["P-A lighting values match the approved plan"] = function()
++		local L = C.Lighting
++		Assert.equal(L.ClockTime, 16.5)
++		Assert.equal(L.Ambient, Color3.fromRGB(80, 80, 90))
++		Assert.equal(L.OutdoorAmbient, Color3.fromRGB(120, 115, 110))
++		Assert.equal(L.AtmosphereDensity, 0.32)
++		Assert.equal(L.AtmosphereHaze, 1)
++		Assert.equal(L.AtmosphereGlare, 0.2)
++		Assert.equal(L.BloomIntensity, 0.4)
++		Assert.equal(L.ColorCorrectionContrast, 0.08)
++		Assert.equal(L.ColorCorrectionSaturation, 0.12)
++		Assert.equal(C.OriginalLighting.ClockTime, 14.5, "original values kept for rollback")
++		Assert.equal(C.OriginalLighting.BloomIntensity, 1)
++	end,
++	["flags are separate; the siren is off until an asset is approved"] = function()
++		Assert.equal(type(C.Flags.Lighting), "boolean")
++		Assert.equal(type(C.Flags.PoliceLights), "boolean")
++		Assert.equal(C.Flags.Siren, false)
++		Assert.equal(C.SirenSoundId, nil)
++		Assert.equal(AtmosphereRules.sirenEnabled(C.Flags, C.SirenSoundId), false)
++		Assert.equal(AtmosphereRules.sirenEnabled({ Siren = true }, nil), false, "flag alone is not enough")
++		Assert.equal(AtmosphereRules.sirenEnabled({ Siren = false }, "rbxassetid://123"), false, "id alone is not enough")
++		Assert.equal(AtmosphereRules.sirenEnabled({ Siren = true }, "rbxassetid://123"), true)
++		Assert.equal(AtmosphereRules.sirenEnabled({ Siren = true }, "http://example.com/x"), false, "only Roblox asset ids")
++	end,
++	["police lights alternate about every 0.25 s"] = function()
++		Assert.equal(C.FlashInterval, 0.25)
++		Assert.equal(AtmosphereRules.flashPhase(0, 0.25), 1)
++		Assert.equal(AtmosphereRules.flashPhase(0.24, 0.25), 1)
++		Assert.equal(AtmosphereRules.flashPhase(0.25, 0.25), 2)
++		Assert.equal(AtmosphereRules.flashPhase(0.5, 0.25), 1)
++		Assert.equal(AtmosphereRules.flashPhase(1, 0), 1, "bad interval never errors")
++		Assert.equal(AtmosphereRules.flashPhase(0 / 0, 0.25), 1)
++	end,
++	["only the NPC police unit is decorated"] = function()
++		Assert.equal(AtmosphereRules.isPoliceUnit("PoliceUnit", "NpcVehicles", C), true)
++		Assert.equal(AtmosphereRules.isPoliceUnit("PoliceUnit", "Vehicles", C), false, "never a player's car")
++		Assert.equal(AtmosphereRules.isPoliceUnit("Coupe_1", "NpcVehicles", C), false)
++	end,
++	["mobile guardrails: one light, no shadows budget, bounded siren"] = function()
++		Assert.truthy(C.PoliceLightRange <= 16, "small light range")
++		Assert.truthy(C.SirenRollOffMaxDistance <= 300, "siren fades with distance")
++	end,
++}

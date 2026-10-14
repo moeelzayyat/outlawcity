@@ -1,6 +1,6 @@
 # OUTLAW CITY: city atmosphere and audio audit (PLAN ONLY)
 
-Status: **awaiting The Architect's review and owner approval. Nothing has been implemented or changed in Studio.** Prepared 2026-10-14. This file supersedes `ATMOSPHERE_AUDIO_PLAN.md` (the earlier draft; its measurements are reused here).
+Status: **Batch 1 implemented (2026-10-14), awaiting audit**: P-A lighting, P-C flashing lights (siren off until an asset is approved), P-F guardrails. Results in `PROGRESS.md`. P-B, P-D, P-E not started. The original plan follows. Prepared 2026-10-14. This file supersedes `ATMOSPHERE_AUDIO_PLAN.md` (the earlier draft; its measurements are reused here).
 
 **Constraints:**
 - Plan only.
