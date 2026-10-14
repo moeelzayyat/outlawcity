@@ -260,6 +260,7 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
   - (3) a siren only after the owner approves an exact Roblox-owned sound ID;
   - (4) owner gameplay feedback (`PLAYTEST_CHECKLIST.md`).
   
-  **Batch 2 (P-B, P-D, P-E) is not started.** It waits for owner feedback and the next Architect-approved task.; the next decisions follow that feedback. No broad Phase 5 content or monetization
+  **Batch 2 (P-B, P-D, P-E) is not started.** It waits for owner feedback and the next Architect-approved task.
+- City navigation and world polish audit — **PLAN AWAITING ARCHITECT REVIEW** (`CITY_NAVIGATION_WORLD_AUDIT.md`). Read-only inspection. Top 5: district look (N1), plain ground (N2), street-name signs (N4), stop lines (N5, same as atmosphere P-E), dealership clipping fix (N3). Proposed Batch 1 = N1 + N2 + N3 (0 new parts). Nothing changed in Studio; the next decisions follow that feedback. No broad Phase 5 content or monetization
 - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
 - 3F Studio-only test tools — maintained throughout
