@@ -186,7 +186,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
 8h. ~~On small phones the robbery panel covers the middle of the view~~: compact 260×64 panel at y 92 since the onboarding batch (checked in a 666×374 layout frame, not on a real phone). The `InVehicle` rejection is unit-tested only.
 8q. ~~Pressing Spawn Car while already driving left the player standing~~: fixed in the playability gate (seated in the new car and able to drive). Seat-to-seat moves for other players are MULTIPLAYER UNVERIFIED. Originally: pressing Spawn Car (or choosing a car in the garage) while already driving replaced the car but left the player standing next to the new one instead of seated. Seen while testing the conditions (one click from the Muscle → Coupe spawned, not seated). The server spawn path is unchanged since 4C, so choosing a car in the garage while driving most likely did the same before (inferred, not re-tested). Low; fix needs owner approval.
 8s. **Playability gate open items:** (a) no human feedback yet beyond the owner's one logged session (caught after briefly losing the police); (b) real-phone check pending; (c) escape difficulty, the experimental 90 s failed-robbery cooldown and the $15,000 Muscle price wait for that feedback (`docs/PLAYTEST_CHECKLIST.md`); (d) if no spawn pad is free, the old car is already gone and the player is left standing with `NoFreeSpawn` (unchanged, rare).
-8u. **Atmosphere Batch 1 open items** (closeout status: (a) resolved, 60 fps both configs with Studio in front; (c) resolved, not lighting-related; (b), (d) and (e) still open):
+8u. **Atmosphere Batch 1 open items** (Batch 1 + closeout APPROVED 2026-10-14; status: (a) resolved, 60 fps both configs with Studio in front; (c) resolved, not lighting-related; (b), (d) and (e) still open):
   - (a) ~~FPS before/after: PARTIAL.~~ The baseline was 60.0 fps idle and 60.0 in a chase. During the after-tests Studio throttled itself to about 15 fps for everything, including with the old lighting restored (14.9 vs 15.2 fps in the same session), so a fair after-number needs Studio in front. Memory about 2,711–2,716 MB both ways (Studio total).
   - (b) Device Simulator and real phone: NOT TESTED.
   - (c) In one capture the OUTLAW MOTORS sign text didn't show with the new lighting; it showed in the before capture. Probably streaming or capture timing, but the owner should check it by eye.
@@ -245,6 +245,21 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
 - ~~Five-minute player-experience plan~~ — reviewed (audit 4: APPROVE on Part A)
 - ~~Onboarding batch~~ — APPROVED WITH CONDITIONS by the auditor; the four conditions are done (solo)
 - Playability gate — re-spawn-while-driving fix + regression done (solo); auditor: APPROVE WITH CONDITIONS (follow-ups 8t tracked). **Next: the owner's 10-minute playtest (`PLAYTEST_CHECKLIST.md`)**; no new implementation until that feedback
-- City atmosphere and audio audit — Batch 1 done; Architect: APPROVE WITH CONDITIONS; **closeout done (partial-streaming fix, sign check, unthrottled FPS)**, awaiting audit. Siren off (no sound ID). Batch 2 (P-B, P-D, P-E) not started and needs owner approval; the next decisions follow that feedback. No broad Phase 5 content or monetization
+- City atmosphere and audio audit — **Batch 1 + closeout APPROVED by the Architect (2026-10-14, reviewed commit `34a2440`)** for the solo-Studio prototype. Recorded decisions:
+  - the individual LightBar streaming-removal fix is accepted, on code review and the simulated 2→1→0→1→2 test;
+  - real network streaming is MULTIPLAYER UNVERIFIED;
+  - the dealership-sign discrepancy isn't demonstrated to be a Batch 1 lighting regression;
+  - the desktop performance requirement is closed, on repeated unthrottled comparisons;
+  - mobile performance is NOT TESTED;
+  - the siren stays disabled (no approved audio asset);
+  - no gameplay tuning or feature-scope changes are authorized.
+  
+  **Remaining verification gates:**
+  - (1) a mobile performance and readability check (Device Simulator and a real phone);
+  - (2) real network streaming and other players seeing the lights (MULTIPLAYER UNVERIFIED);
+  - (3) a siren only after the owner approves an exact Roblox-owned sound ID;
+  - (4) owner gameplay feedback (`PLAYTEST_CHECKLIST.md`).
+  
+  **Batch 2 (P-B, P-D, P-E) is not started.** It waits for owner feedback and the next Architect-approved task.; the next decisions follow that feedback. No broad Phase 5 content or monetization
 - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
 - 3F Studio-only test tools — maintained throughout
