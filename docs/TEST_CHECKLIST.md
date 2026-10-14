@@ -149,6 +149,10 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] Client sets its own `Cash` / `RobberyPhase` and fires `OnRobberyNotice` -> server unchanged
 - [ ] Stop/start after a paid robbery -> same balance (`loaded (Existing)`)
 - [ ] Phone (iPhone 7): prompt usable by tap; panel and toasts readable, no overlap with the top row
+- [ ] Dev `SetCashUnavailable` true -> robbery refused "cash data isn't loaded"
+- [ ] Rob, set `SetCashUnavailable` true during the escape, escape -> "REWARD PENDING"; set it false -> one +$2,000, one `grant` line
+- [ ] Workspace `SimulateDataStoreFailure` = true, rob + escape (paid), leave -> "save on leave failed; keeping the profile"; set it false -> "saved after leaving"; rejoin -> same balance. **Clear the attribute afterwards.**
+- [ ] Driving getaway: park a car at the storefront, rob, drive away and lose the police -> one +$2,000
 
 ## Mobile (Device Simulator, phone landscape)
 - [ ] SAFE ZONE badge visible on iPhone 7 with the stars and the Combat button, no overlap

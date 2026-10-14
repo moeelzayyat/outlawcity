@@ -18,6 +18,7 @@ export type Command =
 	| { Name: "SetDataStoreFailure", Value: boolean }
 	| { Name: "SaveNow" }
 	| { Name: "ClearRobberyCooldown" }
+	| { Name: "SetCashUnavailable", Value: boolean } -- simulates losing cash data mid-session
 	| { Name: "TryRobStore" } -- same server checks as the register prompt, minus the prompt's own range limit
 
 local function finite(value: any): boolean
@@ -66,6 +67,11 @@ function DevCommandRules.parse(name: any, value: any): (Command?, string?)
 		return { Name = "SaveNow" }, nil
 	elseif name == "ClearRobberyCooldown" then
 		return { Name = "ClearRobberyCooldown" }, nil
+	elseif name == "SetCashUnavailable" then
+		if type(value) ~= "boolean" then
+			return nil, "SetCashUnavailable needs true or false"
+		end
+		return { Name = "SetCashUnavailable", Value = value }, nil
 	elseif name == "TryRobStore" then
 		return { Name = "TryRobStore" }, nil
 	end

@@ -20,7 +20,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
 |---|---|
 | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
 | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 144 passed, 0 failed` (after 4B) |
+| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 145 passed, 0 failed` (after the 4B follow-up) |
 | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
 | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
 | Chase camera | Playtest measurements above |
@@ -98,6 +98,10 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
 | **4B tampering** | Client set `Cash` = 999999 and `RobberyPhase` = Escaping on itself and fired `OnRobberyNotice` ("Paid", 1,000,000) at the server: server cash stayed 2700, server `RobberyPhase` nil |
 | **4B persistence** | Stop -> new playtest: `loaded (Existing) cash=2700`; after the iPhone 7 robbery, rejoin -> `cash=4700` |
 | **4B mobile** | iPhone 7 (666×374): prompt usable; "ROBBING THE STORE 11s" panel readable under the stars and cash badge, no overlap with the top row |
+| **4B follow-up: robbery refused while cash data is offline** | Dev `SetCashUnavailable` true -> prompt -> `Rejected:CashUnavailable` ("Your cash data isn't loaded right now"), no session, no stars |
+| **4B follow-up: grant fails before it is applied** | Rob, then cash data made unavailable during the escape -> on escape `PayoutPending:2000`, HUD "REWARD PENDING", Output `payout pending (DataNotLoaded); retrying`; 7 s later data restored -> one `grant 2000 ... tx robbery:<id>` (4700 -> 6700) and `Paid:2000`. No second grant |
+| **4B follow-up: reward accepted but saving fails** | Workspace `SimulateDataStoreFailure` on -> rob + escape -> paid in memory (6700 -> 8700); "Save data now" failed (logged). Player kicked while saves still failed -> `save on leave failed; keeping the profile and retrying (cash=8700)`; failure turned off -> `saved after leaving (cash=8700)`; next playtest `loaded (Existing) cash=8700` |
+| **4B follow-up: driving getaway (NOT PASSED)** | 10 attempts with the robber's car parked at the storefront: 7 with real keyboard input (W/A/S/D via the Studio input tool) and 3 with the real `VehiclePhysics` driven by a scripted waypoint driver. The route itself works: the scripted car drove store -> x=-100 connector -> highway -> x=748 in ~20 s at up to 119 studs/s, and in one keyboard run the police lost sight and heat fell 70 -> 45 while driving. **No attempt ended in a paid escape:** 5 busted at or near the storefront (the unit arrives during the holdout, then blocks or rams the getaway car, pushes it while parked, or busts within 2.5 s of the robber reaching it); 4 busted after the open-loop keyboard or first scripted route crashed into a highway barrier or wall while the unit followed; 1 died driving off the map edge (correctly no cash). Every failure paid nothing |
 | 4B regression | Police dispatch, chase, sighting, bust -> jail -> release, safe-zone enter/leave, cash load/save all normal; 0 vehicle-validation observations; no console errors |
 | 4A regression | Police dispatch -> bust -> jail -> release with cash unchanged (700); vehicle validation 0 observations; safe-zone enter/leave; driving; no console errors |
 | Jail regression | Police dispatch/chase/bust, wanted levels, safe-zone enter/leave, vehicle validation (0 observations in normal play), driving and spawning all working; no console errors |
@@ -118,7 +122,8 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
 8a. Cash persistence was tested in Studio against a real DataStore (`_Studio` suffix). Not tested: two real servers contending for one player's lock (needs two live servers; MULTIPLAYER UNVERIFIED), DataStore throttling under load, and the published game's live store.
 8c. **4B escape definition:** "escaped" means the wanted level decayed to zero (the police lost sight long enough). In tests the successful escapes were done by moving the character ~800 studs away; escaping the NPC unit by driving was not tested.
 8d. **4B holdout position** uses the character's replicated position (client-simulated physics, as for every character). A cheater could fake standing inside, but only for a robbery they started at the register, and they still get 2★ and must escape. Exploit testing is MULTIPLAYER UNVERIFIED.
-8e. **4B payout failure:** if cash data is `Unavailable` when the player escapes, the grant fails with `PayoutFailed` and is not retried.
+8e. ~~4B payout failure not retried~~ fixed in the 4B follow-up (pending payouts + orphan saves). Remaining gap: a pending reward is dropped if the player leaves while their cash data is still offline; a profile whose save keeps failing is lost if the server itself shuts down before the DataStore recovers.
+8i. **4B getaway balance (owner decision needed):** the NPC unit reaches the store before the 15 s holdout ends and waits in bust range of the door, so in 10 solo attempts no getaway succeeded. See ARCHITECTURE "NPC police at the storefront" for the issue and the roadside-stop proposal.
 8f. Robbery sessions and store cooldowns are per server and session-only: leaving mid-robbery forfeits it; a server restart clears cooldowns.
 8g. The NPC police car can't enter the store; at the storefront it hits hard recovery (`stalled repeatedly at (-113, -57)`) and re-routes. It still busted a player standing near the counter from 21 studs.
 8h. On small phones the robbery panel (y 136-212 on a 374-px-high screen) covers part of the middle of the view while active. The `InVehicle` rejection is unit-tested only.
@@ -150,6 +155,7 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
 - ~~3G server vehicle movement validation~~ — done (solo, **monitor-only**); awaiting owner review before any automatic correction or the jail
 - ~~Short jail (12 s, 10-15 configurable)~~ — provisionally approved (solo); Phase 3 signed off
 - ~~4A cash and persistence~~ — approved by the owner (solo, real Studio DataStore)
-- ~~4B one convenience-store robbery~~ — done (solo); **awaiting owner approval** before the dealership or a second vehicle
-- Dealership / second vehicle — after 4B review (not started)
+- ~~4B one convenience-store robbery~~ — provisionally approved by the owner
+- 4B follow-up — payout recovery done and tested; **driving getaway not passed** (police arrive during the holdout); waiting for an owner decision on police response before 4C
+- 4C dealership + second vehicle — conditionally authorized; starts after the 4B follow-up passes
 - 3F Studio-only test tools — maintained throughout

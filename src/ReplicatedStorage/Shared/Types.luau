@@ -117,7 +117,9 @@ export type EconomyError =
 
 -- Store robbery (Phase 4B).
 export type RobberyPhase = "Holding" | "Escaping" | "Paid" | "Failed"
-export type RobberyStartError = "Dead" | "Jailed" | "InSafeZone" | "InVehicle" | "TooFar" | "StoreCooldown" | "StoreBusy" | "AlreadyRobbing"
+-- What to do with a payout attempt's result: settle it, or keep the reward pending and retry.
+export type PayoutOutcome = "Paid" | "AlreadyPaid" | "Retry" | "Rejected"
+export type RobberyStartError = "Dead" | "Jailed" | "InSafeZone" | "InVehicle" | "TooFar" | "StoreCooldown" | "StoreBusy" | "AlreadyRobbing" | "CashUnavailable"
 export type RobberyFailReason = "Died" | "Busted" | "LeftArea" | "Disconnected" | "EscapeTimedOut"
 
 -- Errors from JailService.jailForBust.

@@ -7,6 +7,10 @@
 -- (2 stars) -> 15 s holdout inside the store -> Escaping -> WantedService.Escaped while
 -- Escaping -> EconomyService.grant(reward, "robbery:<id>") exactly once.
 -- Death/reset, bust/jail, leaving the store and disconnecting end the session with no cash.
+-- Recoverable payout: a robbery only starts while the player's cash data is loaded. If the
+-- grant still fails temporarily at escape time, the reward stays pending (same transaction
+-- id) and is retried every few seconds; the economy's duplicate-transaction guard makes any
+-- retry pay at most once.
 local HttpService = game:GetService("HttpService")
 local Players = game:GetService("Players")
 local ReplicatedStorage = game:GetService("ReplicatedStorage")
@@ -34,10 +38,13 @@ type Store = {
 	Area: BasePart,
 }
 type Live = { Session: RobberyRules.Session, Character: Model, LastInProgressReport: number }
+type Pending = { TxId: string, Amount: number, SessionId: string, StoreId: string, NextTry: number }
 
 local stores: { [string]: Store } = {}
 local live: { [Player]: Live } = {}
 local paidIds: { [string]: boolean } = {} -- belt and braces next to EconomyService's own tx guard
+local pendingPayouts: { [Player]: Pending } = {} -- escaped, reward not yet recorded
+local PAYOUT_RETRY_SECONDS = 2
 local noticeRemote: RemoteEvent
 
 local function now(): number
@@ -102,7 +109,8 @@ function RobberyService.tryStart(player: Player, storeId: string): (boolean, Typ
 		InSafeZone = player:GetAttribute(PlayerAttributes.InSafeZone) == true,
 		InVehicle = humanoid ~= nil and humanoid.SeatPart ~= nil,
 		DistanceToRegister = if root then (root.Position - store.Register.Position).Magnitude else math.huge,
-		HasActiveSession = live[player] ~= nil,
+		HasActiveSession = live[player] ~= nil or pendingPayouts[player] ~= nil,
+		CashReady = EconomyService.getStatus(player) == "Loaded",
 	}
 	local ok, err = RobberyRules.canStart(store.State, facts, t, RobberyConfig)
 	if not ok then
@@ -164,15 +172,47 @@ local function onEscaped(player: Player)
 	if paidIds[session.Id] then
 		return
 	end
-	paidIds[session.Id] = true
-	local ok, err = EconomyService.grant(player, session.Reward, "robbery:" .. session.Id, "store robbery " .. session.StoreId)
-	if ok then
-		notify(player, "Paid", { Id = session.Id, Amount = session.Reward })
-		print(`[Robbery] {player.Name} {session.Id} escaped; paid {session.Reward}`)
-	else
-		notify(player, "PayoutFailed", { Id = session.Id, Reason = err })
-		warn(`[Robbery] {player.Name} {session.Id} payout failed: {tostring(err)}`)
+	pendingPayouts[player] = {
+		TxId = "robbery:" .. session.Id, -- stable: every retry uses the same id
+		Amount = session.Reward,
+		SessionId = session.Id,
+		StoreId = session.StoreId,
+		NextTry = 0,
+	}
+	RobberyService.tryPayout(player)
+end
+
+-- One payout attempt for a pending reward. Returns the outcome (nil if nothing pending).
+function RobberyService.tryPayout(player: Player): Types.PayoutOutcome?
+	local pending = pendingPayouts[player]
+	if not pending then
+		return nil
 	end
+	local ok, err = EconomyService.grant(player, pending.Amount, pending.TxId, "store robbery " .. pending.StoreId)
+	local outcome = RobberyRules.payoutOutcome(ok, err)
+	if outcome == "Retry" then
+		if pending.NextTry == 0 then
+			player:SetAttribute(PlayerAttributes.RobberyPhase, "PayoutPending")
+			player:SetAttribute(PlayerAttributes.RobberyReward, pending.Amount)
+			notify(player, "PayoutPending", { Id = pending.SessionId, Amount = pending.Amount })
+			warn(`[Robbery] {player.Name} {pending.SessionId} payout pending ({tostring(err)}); retrying`)
+		end
+		pending.NextTry = now() + PAYOUT_RETRY_SECONDS
+		return outcome
+	end
+	pendingPayouts[player] = nil
+	paidIds[pending.SessionId] = true
+	publish(player, nil)
+	if outcome == "Paid" then
+		notify(player, "Paid", { Id = pending.SessionId, Amount = pending.Amount })
+		print(`[Robbery] {player.Name} {pending.SessionId} escaped; paid {pending.Amount}`)
+	elseif outcome == "AlreadyPaid" then
+		print(`[Robbery] {player.Name} {pending.SessionId} already paid (duplicate tx refused)`)
+	else
+		notify(player, "PayoutFailed", { Id = pending.SessionId, Reason = err })
+		warn(`[Robbery] {player.Name} {pending.SessionId} payout rejected: {tostring(err)}`)
+	end
+	return outcome
 end
 
 -- Studio dev tools only: lets a solo tester rob again without waiting out the cooldown.
@@ -213,6 +253,13 @@ end
 function RobberyService.start()
 	WantedService.Escaped:Connect(onEscaped)
 	Players.PlayerRemoving:Connect(function(player)
+		local pending = pendingPayouts[player]
+		if pending then
+			pendingPayouts[player] = nil
+			-- Only reachable if cash data was lost mid-session and never came back; the player
+			-- was told the reward is pending and to stay in the game.
+			warn(`[Robbery] {player.Name} left with an unpaid reward {pending.Amount} ({pending.TxId}); not recorded`)
+		end
 		local entry = live[player]
 		if entry then
 			RobberyRules.tick(entry.Session, stores[entry.Session.StoreId] and stores[entry.Session.StoreId].State, {
@@ -226,6 +273,12 @@ function RobberyService.start()
 		while true do
 			task.wait(RobberyConfig.TickInterval)
 			tick()
+			local t = now()
+			for player, pending in pendingPayouts do
+				if player.Parent == Players and t >= pending.NextTry then
+					RobberyService.tryPayout(player)
+				end
+			end
 		end
 	end)
 end

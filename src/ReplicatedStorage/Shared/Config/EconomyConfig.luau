@@ -15,6 +15,9 @@ local EconomyConfig = {
 	SessionLockTimeout = 180, -- seconds after which another server's lock counts as stale
 	AutosaveInterval = 60,
 	SaveAttempts = 3,
+	-- If the save on leave fails, the unsaved profile is kept on this server and retried.
+	OrphanRetryInterval = 10,
+	OrphanRetryLimit = 900, -- seconds; stops early if another server takes the lock
 }
 
 return table.freeze(EconomyConfig)
