@@ -1,0 +1,452 @@
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 8707abc..ea8467b 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -1,6 +1,6 @@
+ # OUTLAW CITY — Architecture
+ 
+-Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) provisionally approved; 4B follow-up fixes (recoverable payouts) done; police sent at holdout end; driving getaway still open. Phase 4C (dealership + second vehicle) built and solo-tested. Audit remediation (write-through economy, durable reward ledger, experimental police tuning, HTTP off) done. The final targeted fixes (ambiguous-write reconciliation, durable reward dedupe, ledger recovery and invalid states, leave/lock queue safety, dealership flag) are done and awaiting the auditor's review and owner approval before Phase 5. Last updated 2026-10-14.
++Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) provisionally approved; 4B follow-up fixes (recoverable payouts) done; police sent at holdout end; driving getaway still open. Phase 4C (dealership + second vehicle) built and solo-tested. Audit remediation (write-through economy, durable reward ledger, experimental police tuning, HTTP off) done. The final targeted fixes were APPROVED WITH CONDITIONS; the six conditions are done (FIFO profile queue, leave-safe saves, reward validation, extra tests, limitations tracked). A five-minute player-experience plan (`docs/PLAYER_EXPERIENCE_AUDIT.md`) awaits owner review. No broad Phase 5 work. Last updated 2026-10-14.
+ 
+ ## Source of truth and workflow
+ 
+@@ -254,15 +254,16 @@ Rules:
+ - **Retries:** 3 attempts per round with 1/2/4 s backoff. If they all fail, the player is `Unavailable`: grants and deductions return `DataNotLoaded`, nothing is ever saved for them, and loading is retried every 30 s until it succeeds.
+ - **Write-through changes (audit remediation):** every grant, deduction and purchase goes through `ProfileStore.commit`. The change is applied to a copy of the profile, the copy is written in one `UpdateAsync` while this server owns the lock, and only then is it copied into the live profile. If the rule refuses or the write fails (2 attempts), nothing changes and the caller gets `SaveFailed`. So anything `EconomyService` reports as done is already stored. It survives a server crash, a failed leave-save, and another server taking the lock later.
+ - **ProfileSession (final audit fixes):** every write for one player goes through their `ProfileSession` (`Server/Data/ProfileSession`).
+-  - Commits and saves run one at a time, in order.
++  - Commits and saves run one at a time, **strictly in arrival order** (ticketed FIFO queue; a refused ticket still passes the turn on).
+   - **Ambiguous writes:** a write that errors may still have been stored. The session is then marked Stale, and nothing is written from memory until the stored profile has been read back (`ProfileStore.read`, our lock only) and adopted. A retried commit is re-applied to that stored state. If the stored state already contains it (its transaction id), it reports success (`AlreadyApplied`) without applying it twice. If the store can't even be read, the caller gets `SaveUnconfirmed` and the next operation reconciles first. Heartbeat and leave saves also reconcile first, so a stale copy never overwrites a stored change.
+-  - **Leaving / lock loss:** when the player leaves (`beginLeave`), any commit still queued or started later is refused with `SessionClosed`; only the final release-save runs. When the lock is lost (another server took ownership), the session closes and every queued operation is refused.
++  - **Leaving / lock loss:** when the player leaves (`beginLeave`), any commit still queued or started later is refused with `SessionClosed`; only the final release-save runs. A heartbeat save that is queued or started after `beginLeave` is refused too, so nothing can interleave with or follow the release. When the lock is lost (another server took ownership), the session closes and every queued operation is refused.
+ - **Save / lock heartbeat** (`ProfileStore.save`): writes only while this server still owns the lock (`LockLost` otherwise). Every loaded profile is re-saved every 60 s, even with no changes, to keep its lock fresh. Before the remediation only changed profiles were saved, so a quiet player's lock could go stale while they were still in the game. Saves happen on leave (releasing the lock) and on shutdown (`BindToClose`, up to 25 s), with 3 attempts and backoff. A failed leave-save is retried in the background; it only releases the lock now, because every change was already stored when it happened.
+ - **Reward ledger (audit remediation):** earned rewards (robbery payouts, `EconomyService.grantReward`) are first written to a separate DataStore (`OutlawCity_PendingRewards_v1`, key `rewards_player_<UserId>`, `RewardLedger`), then granted write-through, then cleared from the ledger. If the grant can't be stored, `claimRewards` pays the ledger entry later. It runs right after each load (on any server) and then periodically during the session: every 300 s when nothing is outstanding, 30 s when something is, and on failure with backoff doubling from 30 s up to 900 s. A reward is lost only if the ledger write AND every grant retry fail and the player then leaves; that case is logged.
+ - **Durable reward dedupe (final audit fixes):** paying a ledger reward also records its id in the profile's `PaidRewards`, in the same write. The id stays there until a claim sees the ledger no longer lists it, then it is pruned. A reward can't pay twice however many other transactions follow; the 200-id `RecentTransactions` limit no longer matters for rewards.
+ - **Ledger invalid states (final audit fixes):**
+   - a record that isn't the expected shape is `LedgerCorrupt`: never overwritten, reported, claims back off;
+   - malformed entries are kept untouched and counted;
++  - a reward is validated before it may enter the ledger (`RewardLedger.validate`: transaction id and amount by the profile's own rules, reason ≤ 100 characters, numeric time); anything else is refused as `InvalidReward` and nothing is written;
+   - a full ledger (50 entries) refuses with `LedgerFull` (the reward is still paid directly if possible, otherwise it is retried in-session and logged);
+   - lasting refusals (`BalanceCap`, `RewardHistoryFull`, invalid amount or id) mark the entry `Blocked` with the reason. It is kept, retried at the claim pace and paid once it fits.
+ - **Transaction ids:** robbery rewards use `robbery:<sessionGUID>` and purchases `buy:<vehicle>:<GUID>`. The last 200 ids are kept in the profile.
+diff --git a/docs/PLAYER_EXPERIENCE_AUDIT.md b/docs/PLAYER_EXPERIENCE_AUDIT.md
+new file mode 100644
+index 0000000..ad73de3
+--- /dev/null
++++ b/docs/PLAYER_EXPERIENCE_AUDIT.md
+@@ -0,0 +1,68 @@
++# OUTLAW CITY: five-minute player-experience audit (plan for owner review)
++
++Status: **plan only, nothing implemented.** Prepared 2026-10-14 after the auditor's APPROVE WITH CONDITIONS. Every change below needs the owner's OK first. Police stay at one unit, vehicle validation stays monitor-only, and the experimental pursuit tuning (130 / 100 / 0.25, 8 s decay delay) stays until human playtests.
++
++## How this was measured
++- Solo Studio, place 132163592957463 only, on PC and in the iPhone 7 simulator (666×374).
++- **Distances and lines of sight:** measured from the 6 civilian spawn pads in Edit mode.
++- **HUD counts:** a client script counted the visible, non-transparent HUD elements in the player's screen GUIs (the Studio-only dev panel excluded).
++- **Mobile interactions:** counted by clicking through the real HUD with the simulator.
++- **Robbery and escape timings:** from the earlier logged runs (config values plus the 10 scripted getaways in PROGRESS.md).
++- **Not measured:** real first-time players. That needs the owner's human playtest (section 4).
++
++## 1. What a new player's first five minutes look like now
++| Time (solo, player already knows where to go) | What happens |
++|---|---|
++| 0:00–0:02 | Join; cash data loaded after ~2.0 s (Studio). Spawn in the plaza safe zone. |
++| ~0:05 | First car: PC 1 input (V or the button); mobile **2 taps** (Spawn Car → garage → Coupe). |
++| ~0:15 | Drive ~150 studs west to the 24/7 MART. **Nothing in the game says it exists or where it is.** |
++| ~0:30 | Hold E (or tap) at the register; 2★ + alarm; 15 s holdout standing inside. |
++| ~0:50 | Walk out to the car; police dispatched now, from 160–450 studs away. |
++| ~1:10–1:30 | Escape: scripted getaways with the tuned police paid in 18–35 s (5/5). +$2,000. |
++| 3:00 after the first robbery started | Store cooldown ends (180 s from start, also after a failed robbery). Second robbery possible. |
++| 5:00 | At most 2 robberies → about $4,500 from a $500 start. The Muscle ($15,000) is about 7 robberies ≈ 21+ minutes away. |
++
++## 2. Findings by area
++| Area | Measured now | Problem |
++|---|---|---|
++| Time to first vehicle | PC: 1 input. Mobile: 2 taps (the garage window opens even when the player owns only the Coupe). Server answers within one round-trip; 3 s spawn cooldown. | Mobile gained a tap in 4C for players with one car. |
++| Discovering the first robbery | Store 150 studs (straight line) from the spawns. Its sign (20×4 studs) is in line of sight from all 6 spawns, but small at that distance. The prompt only appears within 10 studs of the register inside. No hint text, marker or objective anywhere. | A new player may never find robberies in 5 minutes. **Biggest gap.** |
++| Escaping police | Panel says "ESCAPE THE POLICE / Lose your wanted stars to keep $2,000"; stars blink while evading. Rule underneath: 8 s unseen, then heat decays (70 heat ≈ 11 s). | The panel never says *how* to lose the stars (break line of sight). Scripted runs escape 18–35 s; human data missing. |
++| Robbery waiting time | 15 s standing still inside; police arrive 2–5 s after you leave. | 15 s of nothing to do; no feedback besides the countdown. Acceptable but flat. |
++| Jail and cooldown frustration | Jail 12 s (+ ~5 s respawn) at the plaza. Store cooldown 180 s from the START, also after a failed robbery. Only one store. | After a bust there is nothing to rob for up to ~2.5 minutes, and the store doesn't show when it reopens (only a rejection message after trying). |
++| Finding and understanding the Muscle | Dealership 237 studs from the spawns; its sign is in sight from 4 of 6 spawns. Prompt "Browse cars" at the desk. Buying takes walk + 2 inputs; spawning it later takes 2 taps. Price 7.5× a robbery. | No pointer. The goal ($15,000) is out of reach in a first session and the player isn't shown progress toward it. |
++| Mobile HUD clutter | On foot: 5 elements (~8% of the screen). Driving: 9 elements; touch controls ≈ 12% (bottom right); speedometer 3%. Robbery panel adds 300×76 (~9%) at y 136, in the upper middle of a 374-px screen. | Driving view is OK. During a robbery on a phone the panel sits over the upper-centre of the view. |
++
++## 3. Proposed small adjustments (none implemented)
++Each change is small, can be undone, and comes with a measurable target.
++
++| # | Change | Size | Target / how to measure |
++|---|---|---|---|
++| P1 | **One-car shortcut:** if the player owns only one car, Spawn Car spawns it directly. The garage window opens only with 2+ cars. | S | Mobile taps to first car: 2 → **1** (simulator click count). |
++| P2 | **Two world markers:** a small floating label above the 24/7 MART ("ROB · 24/7 MART") and above OUTLAW MOTORS ("CARS"), with the distance. Visible up to ~400 studs; hidden inside each building. | S | Playtest: time from spawn to first robbery start **< 90 s** for a first-time player; both labels readable from every spawn (line-of-sight check). |
++| P3 | **One-time first-spawn tip (6 s):** "Rob the 24/7 MART for cash · Buy cars at OUTLAW MOTORS". Shown once per session. | S | Playtest: player can say what to do after 30 s (yes/no). |
++| P4 | **Escape hint:** the escape panel's second line becomes "Break line of sight: hide 8 s to lose the police", and while evading it shows "Evading…" (the WantedEvading attribute already exists). | S | Playtest: player can explain how escaping works; scripted A/B escape rate unchanged (5/5). |
++| P5 | **Store reopen time on the sign:** "Restocking 2:41" under 24/7 MART while cooling down. Owner choice: cooldown 180 s → 120 s, or a shorter cooldown after a *failed* robbery (e.g. 90 s). | S | Idle time after a bust ≤ 2 min; rejections for "robbed recently" drop in playtests. |
++| P6 | **Show progress to the Muscle:** the dealership window shows "$4,500 / $15,000" and how many robberies are left. Owner choice on pacing: keep $15,000 (about 21 minutes), or $10,000 (about 13 minutes). | S | First-session player knows their next goal. Owner decides the price. |
++| P7 | **Mobile robbery panel position:** move it to just below the top row (y 92, like the garage and dealership windows) and shrink it to 260×60 on screens under 400 px tall. | S | Panel ≤ 7% of the iPhone 7 screen and clear of the screen's centre band. |
++| P8 | **Measurement hooks (Studio-only):** log time-to-first-car, time-to-first-robbery and time-to-first-escape per session, so every human playtest produces numbers. | S | Each playtest prints the three timings. |
++
++**Not proposed:**
++- more stores or content;
++- changes to police count, anti-cheat or the pursuit tuning;
++- monetization.
++
++## 4. What the owner's human playtest should check (≈10 minutes)
++1. Fresh join on PC and on a phone. How long until you're driving? Did you need help?
++2. Without being told: did you notice the store or the dealership? How long did it take?
++3. Rob the store and try to escape by driving. Did you understand what to do? How long did it take? Did you get away?
++4. Get busted once. How did jail and the store cooldown feel?
++5. On the phone: anything covering the view or hard to tap?
++
++## 5. Recommended order (after approval)
++1. P1, P7 and P8: mobile fixes and measurement.
++2. P2 and P3: discovery.
++3. P4: escape clarity.
++4. P5 and P6: pacing; needs the owner's numbers.
++
++Then run the owner's human playtest, followed by an audit package.
+diff --git a/docs/PROGRESS.md b/docs/PROGRESS.md
+index 2c3ab5d..e080b8d 100644
+--- a/docs/PROGRESS.md
++++ b/docs/PROGRESS.md
+@@ -20,7 +20,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ |---|---|
+ | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
+ | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
+-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 181 passed, 0 failed` (after the final targeted audit fixes) |
++| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 185 passed, 0 failed` (after the audit conditions) |
+ | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
+ | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
+ | Chase camera | Playtest measurements above |
+@@ -102,6 +102,8 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ | **4B follow-up: grant fails before it is applied** | Rob, then cash data made unavailable during the escape -> on escape `PayoutPending:2000`, HUD "REWARD PENDING", Output `payout pending (DataNotLoaded); retrying`; 7 s later data restored -> one `grant 2000 ... tx robbery:<id>` (4700 -> 6700) and `Paid:2000`. No second grant |
+ | **4B follow-up: reward accepted but saving fails** | Workspace `SimulateDataStoreFailure` on -> rob + escape -> paid in memory (6700 -> 8700); "Save data now" failed (logged). Player kicked while saves still failed -> `save on leave failed; keeping the profile and retrying (cash=8700)`; failure turned off -> `saved after leaving (cash=8700)`; next playtest `loaded (Existing) cash=8700` |
+ | **4B follow-up: driving getaway (NOT PASSED)** | 10 attempts with the robber's car parked at the storefront: 7 with real keyboard input (W/A/S/D via the Studio input tool) and 3 with the real `VehiclePhysics` driven by a scripted waypoint driver. The route itself works: the scripted car drove store -> x=-100 connector -> highway -> x=748 in ~20 s at up to 119 studs/s, and in one keyboard run the police lost sight and heat fell 70 -> 45 while driving. **No attempt ended in a paid escape:** 5 busted at or near the storefront (the unit arrives during the holdout, then blocks or rams the getaway car, pushes it while parked, or busts within 2.5 s of the robber reaching it); 4 busted after the open-loop keyboard or first scripted route crashed into a highway barrier or wall while the unit followed; 1 died driving off the map edge (correctly no cash). Every failure paid nothing |
++| **Audit conditions (APPROVE WITH CONDITIONS)** | Backup `backups\OutlawCity_Approved1.rbxl` (Studio log 16:54:48Z). New specs: `ProfileSession.spec` "operations run strictly in arrival order (FIFO)" (1..6 in order, all stored); "once leaving, a queued heartbeat save is refused and only the release-save runs" (heartbeat `SessionClosed`, release ok, lock released); "ambiguous multi-reward claim: every reward paid exactly once" (3 rewards, stored-then-errored claim write → all settled, cash +4500 once, PaidRewards 3, a second claim pays nothing). `RewardLedger.spec` "invalid rewards are refused before they reach the ledger" (10 bad shapes, nothing written). First run showed 2 test-timing failures (the overlap test relied on frame timing at server start); the tests now use a deterministic hold. Then `[Tests] 185 passed, 0 failed`. Regression: robbery → `reward 2000 (store robbery Store1, tx robbery:93672843-…) -> 11400 (stored)` |
++| **Five-minute player-experience audit (measurements only)** | See `PLAYER_EXPERIENCE_AUDIT.md`: data ready ~2.0 s; first car PC 1 input, mobile 2 taps; store 150 / dealership 237 studs from spawns, signs in sight from 6/6 and 4/6 spawns, no hint or marker; on-foot HUD 5 elements (~8%), driving 9 elements (touch ~12%); robbery panel ~9% of a phone screen. Proposals P1–P8 await owner review (nothing implemented) |
+ | **Final audit fixes: pre-work** | Backup `backups\OutlawCity_Remediation1.rbxl` (Studio log: place file downloaded 16:35:06Z). Only the `Outlaw City (placeId: 132163592957463)` Studio was used; two Lighthouse Keepers Studios were also open and never touched |
+ | **Final audit fixes: unit tests** | `ProfileSession.spec` (7): stored-then-errored purchase detected and counted once (`AlreadyApplied`); ambiguous write + unreadable store returns `SaveUnconfirmed`, and the next heartbeat reconciles instead of overwriting (stored purchase survives; retry -> `AlreadyOwned`, never charged twice); failed-before-storing write retried and applied once; unreachable store applies nothing; operations queued when the player leaves never run (only the in-flight one finishes); lock taken by another server closes the session and queued operations are refused, with nothing written over the new owner; a heartbeat after a lock move closes instead of writing. `RewardLedger.spec` (9): dedupe across 250 later transactions (no second payment, then pruned); unreadable ledger retried then paid; BalanceCap kept as Blocked then paid once it fits; full ledger -> `LedgerFull`; corrupt record never overwritten; malformed entries kept; plus earlier cases. `EconomyRules.spec` (+4): v2 -> v3 migration; payReward refuses after 200+ transactions; prune only when gone from the ledger; full paid-history refuses explicitly. **181/181** |
+ | **Final audit fixes: real profile migration** | `loaded (Migrated) cash=20900` (v2 -> v3, cash and cars kept) |
+@@ -160,6 +162,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ 8j. **4C:** the dealership and garage are MULTIPLAYER UNVERIFIED (two buyers, other players seeing the display car or someone else's Muscle). Purchases while another server holds the profile lock are refused until the lock clears (`SessionLocked`, up to 180 s); that path was seen in Studio but not across two real servers.
+ 8k. **4C:** a player whose cash data is unavailable can still spawn the starter Coupe, but not a bought car, until the data loads.
+ 8l. **4C:** Muscle touch GAS/BRAKE tested in the iPhone 7 simulator only. Thumbstick steering and a real phone are untested (owner).
++8o. **Tracked limitations (audit condition 5):** (a) **full ledger**: at 50 unpaid entries new rewards get `LedgerFull` and are only paid directly or retried in-session; (b) **complete outage**: if the ledger write and every grant retry fail and the player leaves, that reward is lost (logged). Both stay open by design and are re-checked in every audit. (Condition 6) No cross-server behaviour is labelled verified until tested on separate real servers.
+ 8n. **Final audit fixes:**
+   - `SaveUnconfirmed` (a write failed AND the store couldn't be read to check) tells the player the outcome is unknown. It is settled by the next operation's reconcile and is never applied twice.
+   - `PaidRewards` can hold up to 1000 ids. It only grows while ledger removals keep failing; at the limit, new ledger payouts are refused (`RewardHistoryFull`, kept as Blocked), never forgotten.
+@@ -198,6 +201,7 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
+ - 4B follow-up — done; police sent at holdout end (owner option 1)
+ - ~~4C dealership + second vehicle~~ — done (solo)
+ - ~~Audit remediation (CHANGES REQUIRED, 2026-10-14)~~ — done (solo)
+-- ~~Final targeted audit fixes (CHANGES REQUIRED, targeted, 2026-10-14)~~ — done (solo); **awaiting the auditor's review and owner approval before Phase 5**
++- ~~Final targeted audit fixes~~ — APPROVED WITH CONDITIONS by the auditor; the six conditions are done (solo)
++- Five-minute player-experience plan (`PLAYER_EXPERIENCE_AUDIT.md`) — **awaiting owner review**; small changes P1–P8 only after approval. No broad Phase 5 content or monetization
+ - Owner to do: human getaway playtest; Muscle on a real phone (touch steering); decide whether to keep the experimental police tuning
+ - 3F Studio-only test tools — maintained throughout
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index 164aa82..4d0837e 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -51,7 +51,8 @@ Out of scope for Phase 3: robberies, weapons, gangs, helicopters, new districts,
+ - **4B ✅ provisionally approved (solo):** one convenience-store robbery (24/7 MART): server-owned sessions, 15 s holdout, 2★, $2,000 paid once only after escaping, 180 s store cooldown, fails on death/bust/leaving/disconnect, robbery HUD. No banks, more stores, gangs or weapons.
+ - **4B follow-up ✅:** recoverable robbery payouts; police sent at holdout end; police roadside stop proposed.
+ - **Audit remediation ✅ (solo; awaiting audit):** write-through economy (acknowledged = stored), durable reward ledger, lock heartbeat, experimental police tuning (paid getaways 5/5 vs 3/5), Muscle touch check, HTTP off.
+-- **Final targeted audit fixes ✅ (solo; awaiting audit + owner approval before Phase 5):** ambiguous-write reconciliation, durable reward dedupe (profile v3 `PaidRewards`), periodic ledger recovery with backoff, explicit ledger invalid states, leave/lock queue safety, dealership handler safety.
++- **Final targeted audit fixes ✅ (solo; awaiting audit + owner approval before Phase 5):** ambiguous-write reconciliation, durable reward dedupe (profile v3 `PaidRewards`), periodic ledger recovery with backoff, explicit ledger invalid states, leave/lock queue safety, dealership handler safety. Approved with conditions; conditions done (FIFO queue, leave-safe saves, reward validation).
++- **Next (planning, awaiting owner review):** five-minute player-experience plan, `docs/PLAYER_EXPERIENCE_AUDIT.md` (small usability/pacing changes P1–P8).
+ - **4C ✅ (solo; awaiting owner review):** OUTLAW MOTORS dealership, the $15,000 Muscle (faster, heavier handling), server purchase API (atomic cash + ownership, duplicate-safe), persistent ownership in profile v2 with safe migration from cash-only profiles, garage window, ownership-checked spawning, PC + mobile UI.
+ - Original line: cash, server-authoritative rewards for arrests and robberies, DataStore persistence.
+ - A first purchasable vehicle.
+diff --git a/docs/TEST_CHECKLIST.md b/docs/TEST_CHECKLIST.md
+index 72fbad7..5cd9dd9 100644
+--- a/docs/TEST_CHECKLIST.md
++++ b/docs/TEST_CHECKLIST.md
+@@ -181,6 +181,10 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
+ - [ ] `SimulatePurchaseError` = true, buy -> "couldn't confirm" message; switch off, buy again within 2 s -> works (no "Busy")
+ - [ ] Dev `AddLedgerReward` 500, restart with `SimulateStoreFailure_OutlawCity_PendingRewards_v1` set -> "ledger unreadable; retrying later" (backing off); clear it -> paid once. **Clear the attribute afterwards.**
+ 
++## Audit conditions
++- [ ] `ProfileSession.spec`: FIFO order; heartbeat refused after leave; ambiguous multi-reward claim paid once
++- [ ] `RewardLedger.spec`: invalid rewards refused before reaching the ledger
++
+ ## Police pursuit tuning (audit remediation, EXPERIMENTAL)
+ - [ ] With SightRange 130 / ChaseSpeed 100 / ChaseGain 0.25: rob, drive away normally, lose the police -> paid once
+ - [ ] Police still catch a robber who stops or crashes nearby (bust within 18 studs, slow for 2.5 s)
+diff --git a/src/ServerScriptService/Server/Data/ProfileSession.luau b/src/ServerScriptService/Server/Data/ProfileSession.luau
+index d3f0123..6f9b006 100644
+--- a/src/ServerScriptService/Server/Data/ProfileSession.luau
++++ b/src/ServerScriptService/Server/Data/ProfileSession.luau
+@@ -1,6 +1,9 @@
+ --!strict
+ -- One player's profile on this server, and the ONLY way it is written (audit remediation).
+---  * Operations (commits and saves) run one at a time, in order (`run`).
++--  * Operations (commits and saves) run one at a time, strictly in arrival order (`run` hands
++--    out tickets: first come, first served).
++--  * Once the player is leaving, only the final release-save may still run: queued commits and
++--    heartbeat saves are refused, so nothing can interleave with or follow the release.
+ --  * Once a session is closed (the player left, this server lost the lock, or another server
+ --    took ownership), every operation still queued or started later is refused with
+ --    "SessionClosed" and writes nothing.
+@@ -31,7 +34,8 @@ export type Session = {
+ 	Closed: boolean,
+ 	CloseReason: string?,
+ 	Busy: boolean,
+-	Queue: number, -- operations waiting for their turn
++	NextTicket: number, -- FIFO queue: the ticket the next operation gets...
++	Serving: number, -- ...and the ticket whose turn it is
+ 	Wait: (number) -> (),
+ 	Now: () -> number,
+ 	Log: (string) -> (),
+@@ -50,7 +54,8 @@ function ProfileSession.new(store: any, key: string, sessionId: string, profile:
+ 		Closed = false,
+ 		CloseReason = nil,
+ 		Busy = false,
+-		Queue = 0,
++		NextTicket = 1,
++		Serving = 1,
+ 		Wait = opts.Wait or function(seconds: number)
+ 			task.wait(seconds)
+ 		end,
+@@ -73,23 +78,26 @@ function ProfileSession.close(session: Session, reason: string)
+ 	end
+ end
+ 
+--- Runs fn with the profile to itself, in arrival order. Refuses if the session is (or becomes)
+--- closed before fn's turn comes.
++-- Runs fn with the profile to itself, strictly in arrival order (FIFO tickets). Refuses if the
++-- session is (or becomes) closed before fn's turn comes; a refused ticket still passes the
++-- turn on, so the queue never stalls.
+ function ProfileSession.run<T...>(session: Session, fn: () -> T...): (boolean, ...any)
+ 	if session.Closed then
+ 		return false, "SessionClosed"
+ 	end
+-	session.Queue += 1
+-	while session.Busy do
++	local ticket = session.NextTicket
++	session.NextTicket += 1
++	while session.Serving ~= ticket do
+ 		task.wait()
+ 	end
+-	session.Queue -= 1
+ 	if session.Closed then
++		session.Serving += 1
+ 		return false, "SessionClosed"
+ 	end
+ 	session.Busy = true
+ 	local results = table.pack(pcall(fn))
+ 	session.Busy = false
++	session.Serving += 1
+ 	if not results[1] then
+ 		error(results[2], 0)
+ 	end
+@@ -201,6 +209,9 @@ end
+ -- written. release=true drops the lock and closes the session. Returns (ok, err).
+ function ProfileSession.save(session: Session, release: boolean): (boolean, string?)
+ 	local ran, ok, err = ProfileSession.run(session, function(): (boolean, string?)
++		if session.Leaving and not release then
++			return false, "SessionClosed" -- only the final release-save may run once leaving
++		end
+ 		if session.Stale then
+ 			local reconciled, recErr = reconcile(session)
+ 			if not reconciled then
+diff --git a/src/ServerScriptService/Server/Data/RewardLedger.luau b/src/ServerScriptService/Server/Data/RewardLedger.luau
+index cf94f80..309a59d 100644
+--- a/src/ServerScriptService/Server/Data/RewardLedger.luau
++++ b/src/ServerScriptService/Server/Data/RewardLedger.luau
+@@ -18,6 +18,7 @@
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ local Types = require(ReplicatedStorage.Shared.Types)
+ local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
++local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
+ 
+ local RewardLedger = {}
+ 
+@@ -69,9 +70,39 @@ local function build(valid: { Reward }, malformed: { any }): any
+ 	return { Rewards = list }
+ end
+ 
++local MAX_REASON = 100
++
++-- Checks a reward before it may enter the ledger (audit condition 4): a valid transaction id
++-- and amount by the same rules the profile uses, a short reason and a numeric time. Returns
++-- (ok, problem?).
++function RewardLedger.validate(reward: any): (boolean, string?)
++	if type(reward) ~= "table" then
++		return false, "not a table"
++	end
++	local okTx, txErr = EconomyRules.validateTransactionId(reward.TxId, EconomyConfig)
++	if not okTx then
++		return false, txErr
++	end
++	local okAmount, amountErr = EconomyRules.validateAmount(reward.Amount, EconomyConfig)
++	if not okAmount then
++		return false, amountErr
++	end
++	if type(reward.Reason) ~= "string" or #reward.Reason > MAX_REASON then
++		return false, "InvalidReason"
++	end
++	if type(reward.At) ~= "number" or reward.At ~= reward.At then
++		return false, "InvalidTime"
++	end
++	return true, nil
++end
++
+ -- Adds a reward (no-op if its TxId is already recorded). Returns (ok, err?):
+--- err is "LedgerFull", "LedgerCorrupt" or a store error.
++-- err is "InvalidReward: <why>" (nothing written), "LedgerFull", "LedgerCorrupt" or a store error.
+ function RewardLedger.record(store: Store, key: string, reward: Reward, maxEntries: number?): (boolean, string?)
++	local valid, why = RewardLedger.validate(reward)
++	if not valid then
++		return false, `InvalidReward: {why}`
++	end
+ 	local limit = maxEntries or DEFAULT_MAX
+ 	local refusal: string? = nil
+ 	local ok, err = pcall(function()
+diff --git a/src/ServerStorage/Tests/ProfileSession.spec.luau b/src/ServerStorage/Tests/ProfileSession.spec.luau
+index 52e6ce6..1d31862 100644
+--- a/src/ServerStorage/Tests/ProfileSession.spec.luau
++++ b/src/ServerStorage/Tests/ProfileSession.spec.luau
+@@ -8,6 +8,7 @@ local ProfileSession = require(ServerScriptService.Server.Data.ProfileSession)
+ local ProfileStore = require(ServerScriptService.Server.Data.ProfileStore)
+ local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
+ local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
++local RewardLedger = require(ServerScriptService.Server.Data.RewardLedger)
+ local Assert = require(script.Parent.Assert)
+ 
+ local C = EconomyConfig
+@@ -20,14 +21,18 @@ local function deepCopy(value)
+ end
+ 
+ -- Fail: every call errors. CommitThenError = n: the next n writes are stored, then error.
+--- Yield = seconds: each call waits (lets other operations queue up).
++-- Yield = seconds: each call waits (lets other operations queue up). Hold = true: calls wait
++-- until the test sets it back to false (deterministic overlap, independent of frame timing).
+ local function fakeStore()
+ 	local data = {}
+-	local store = { Fail = false, CommitThenError = 0, Yield = 0, Writes = 0, Data = data }
++	local store = { Fail = false, CommitThenError = 0, Yield = 0, Hold = false, Writes = 0, Data = data }
+ 	function store.UpdateAsync(self, key, transform)
+ 		if self.Yield > 0 then
+ 			task.wait(self.Yield)
+ 		end
++		while self.Hold do
++			task.wait()
++		end
+ 		if self.Fail then
+ 			error("simulated outage")
+ 		end
+@@ -200,6 +205,83 @@ return {
+ 		Assert.equal(store.Data.k.Lock.Id, "B", "B's ownership untouched")
+ 		Assert.equal(store.Data.k.Profile.Cash, 20000, "nothing written over B")
+ 	end,
++	["operations run strictly in arrival order (FIFO)"] = function()
++		local store = fakeStore()
++		local s = session(store, 0)
++		store.Yield = 0.02
++		local order = {}
++		local done = 0
++		for i = 1, 6 do
++			task.spawn(function()
++				ProfileSession.commit(s, function(draft)
++					table.insert(order, i)
++					return EconomyRules.grant(draft, 1, "f" .. i, C)
++				end)
++				done += 1
++			end)
++		end
++		local t0 = os.clock()
++		while done < 6 and os.clock() - t0 < 5 do
++			task.wait(0.05)
++		end
++		Assert.equal(table.concat(order, ","), "1,2,3,4,5,6")
++		Assert.equal(store.Data.k.Profile.Cash, 6)
++	end,
++	["once leaving, a queued heartbeat save is refused and only the release-save runs"] = function()
++		local store = fakeStore()
++		local s = session(store, 100)
++		store.Hold = true -- the commit's write stays in flight until released below
++		local results = {}
++		task.spawn(function()
++			results.commit = table.pack(ProfileSession.commit(s, function(draft)
++				return EconomyRules.grant(draft, 1, "c1", C)
++			end))
++		end)
++		task.spawn(function()
++			results.heartbeat = table.pack(ProfileSession.save(s, false)) -- queued behind the commit
++		end)
++		ProfileSession.beginLeave(s) -- the player leaves while both are pending
++		task.spawn(function()
++			results.release = table.pack(ProfileSession.save(s, true))
++		end)
++		store.Hold = false
++		local t0 = os.clock()
++		while (not results.commit or not results.heartbeat or not results.release) and os.clock() - t0 < 3 do
++			task.wait(0.05)
++		end
++		Assert.equal(results.commit[1], true)
++		Assert.equal(results.heartbeat[1], false)
++		Assert.equal(results.heartbeat[2], "SessionClosed")
++		Assert.equal(results.release[1], true)
++		Assert.equal(store.Data.k.Lock, nil, "released by the final save")
++		Assert.equal(s.Closed, true)
++	end,
++	["ambiguous multi-reward claim: every reward paid exactly once"] = function()
++		local store = fakeStore()
++		local s = session(store, 1000)
++		local rewards = {
++			{ TxId = "robbery:1", Amount = 2000, Reason = "r", At = 1 },
++			{ TxId = "robbery:2", Amount = 2000, Reason = "r", At = 1 },
++			{ TxId = "robbery:3", Amount = 500, Reason = "r", At = 1 },
++		}
++		store.CommitThenError = 1 -- the claim's write is stored, then errors
++		local result
++		local ok, err = ProfileSession.commit(s, function(draft)
++			result = RewardLedger.applyAll(draft, rewards, C)
++			return true, nil
++		end)
++		Assert.equal(ok, true, tostring(err))
++		Assert.equal(#result.Settled, 3, "all three settled (already paid on the retry)")
++		Assert.equal(s.Profile.Cash, 1000 + 4500, "paid once, not twice")
++		Assert.equal(store.Data.k.Profile.Cash, 1000 + 4500)
++		Assert.equal(#store.Data.k.Profile.PaidRewards, 3)
++		-- a later claim of the same rewards pays nothing
++		ProfileSession.commit(s, function(draft)
++			result = RewardLedger.applyAll(draft, rewards, C)
++			return true, nil
++		end)
++		Assert.equal(store.Data.k.Profile.Cash, 1000 + 4500)
++	end,
+ 	["a heartbeat after the lock moved closes the session instead of writing"] = function()
+ 		local store = fakeStore()
+ 		local s = session(store, 20000)
+diff --git a/src/ServerStorage/Tests/RewardLedger.spec.luau b/src/ServerStorage/Tests/RewardLedger.spec.luau
+index 169b0ed..765c15d 100644
+--- a/src/ServerStorage/Tests/RewardLedger.spec.luau
++++ b/src/ServerStorage/Tests/RewardLedger.spec.luau
+@@ -187,6 +187,27 @@ return {
+ 		Assert.equal(#rewards.Data.r2.Rewards, 1)
+ 		Assert.equal(rewards.Data.r2.Rewards[1].TxId, 5, "malformed entry kept as found")
+ 	end,
++	["invalid rewards are refused before they reach the ledger"] = function()
++		local rewards = fakeStore()
++		local bad = {
++			{ TxId = "", Amount = 10, Reason = "x", At = 1 },
++			{ TxId = string.rep("a", C.TransactionIdMaxLength + 1), Amount = 10, Reason = "x", At = 1 },
++			{ TxId = 5, Amount = 10, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = 0, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = -5, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = 1.5, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = 0 / 0, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = C.MaxTransaction + 1, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = 10, Reason = string.rep("r", 101), At = 1 },
++			{ TxId = "t", Amount = 10, Reason = "x", At = 0 / 0 },
++		}
++		for i, r in bad do
++			local ok, err = RewardLedger.record(rewards, "r", r :: any)
++			Assert.equal(ok, false, `bad reward {i} accepted`)
++			Assert.truthy(type(err) == "string" and err:find("InvalidReward", 1, true) ~= nil, `bad reward {i}: {tostring(err)}`)
++		end
++		Assert.equal(rewards.Data.r, nil, "nothing was written")
++	end,
+ 	["several recorded rewards are paid together and each once"] = function()
+ 		local profiles, rewards = fakeStore(), fakeStore()
+ 		local a = ProfileStore.load(profiles, "k", "A", 1000, C)

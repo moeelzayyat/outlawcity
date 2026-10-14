@@ -1,0 +1,77 @@
+diff --git a/src/ServerScriptService/Server/Data/ProfileSession.luau b/src/ServerScriptService/Server/Data/ProfileSession.luau
+index d3f0123..6f9b006 100644
+--- a/src/ServerScriptService/Server/Data/ProfileSession.luau
++++ b/src/ServerScriptService/Server/Data/ProfileSession.luau
+@@ -1,6 +1,9 @@
+ --!strict
+ -- One player's profile on this server, and the ONLY way it is written (audit remediation).
+---  * Operations (commits and saves) run one at a time, in order (`run`).
++--  * Operations (commits and saves) run one at a time, strictly in arrival order (`run` hands
++--    out tickets: first come, first served).
++--  * Once the player is leaving, only the final release-save may still run: queued commits and
++--    heartbeat saves are refused, so nothing can interleave with or follow the release.
+ --  * Once a session is closed (the player left, this server lost the lock, or another server
+ --    took ownership), every operation still queued or started later is refused with
+ --    "SessionClosed" and writes nothing.
+@@ -31,7 +34,8 @@ export type Session = {
+ 	Closed: boolean,
+ 	CloseReason: string?,
+ 	Busy: boolean,
+-	Queue: number, -- operations waiting for their turn
++	NextTicket: number, -- FIFO queue: the ticket the next operation gets...
++	Serving: number, -- ...and the ticket whose turn it is
+ 	Wait: (number) -> (),
+ 	Now: () -> number,
+ 	Log: (string) -> (),
+@@ -50,7 +54,8 @@ function ProfileSession.new(store: any, key: string, sessionId: string, profile:
+ 		Closed = false,
+ 		CloseReason = nil,
+ 		Busy = false,
+-		Queue = 0,
++		NextTicket = 1,
++		Serving = 1,
+ 		Wait = opts.Wait or function(seconds: number)
+ 			task.wait(seconds)
+ 		end,
+@@ -73,23 +78,26 @@ function ProfileSession.close(session: Session, reason: string)
+ 	end
+ end
+ 
+--- Runs fn with the profile to itself, in arrival order. Refuses if the session is (or becomes)
+--- closed before fn's turn comes.
++-- Runs fn with the profile to itself, strictly in arrival order (FIFO tickets). Refuses if the
++-- session is (or becomes) closed before fn's turn comes; a refused ticket still passes the
++-- turn on, so the queue never stalls.
+ function ProfileSession.run<T...>(session: Session, fn: () -> T...): (boolean, ...any)
+ 	if session.Closed then
+ 		return false, "SessionClosed"
+ 	end
+-	session.Queue += 1
+-	while session.Busy do
++	local ticket = session.NextTicket
++	session.NextTicket += 1
++	while session.Serving ~= ticket do
+ 		task.wait()
+ 	end
+-	session.Queue -= 1
+ 	if session.Closed then
++		session.Serving += 1
+ 		return false, "SessionClosed"
+ 	end
+ 	session.Busy = true
+ 	local results = table.pack(pcall(fn))
+ 	session.Busy = false
++	session.Serving += 1
+ 	if not results[1] then
+ 		error(results[2], 0)
+ 	end
+@@ -201,6 +209,9 @@ end
+ -- written. release=true drops the lock and closes the session. Returns (ok, err).
+ function ProfileSession.save(session: Session, release: boolean): (boolean, string?)
+ 	local ran, ok, err = ProfileSession.run(session, function(): (boolean, string?)
++		if session.Leaving and not release then
++			return false, "SessionClosed" -- only the final release-save may run once leaving
++		end
+ 		if session.Stale then
+ 			local reconciled, recErr = reconcile(session)
+ 			if not reconciled then

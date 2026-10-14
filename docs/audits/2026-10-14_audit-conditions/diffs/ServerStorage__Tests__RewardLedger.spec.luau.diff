@@ -1,0 +1,32 @@
+diff --git a/src/ServerStorage/Tests/RewardLedger.spec.luau b/src/ServerStorage/Tests/RewardLedger.spec.luau
+index 169b0ed..765c15d 100644
+--- a/src/ServerStorage/Tests/RewardLedger.spec.luau
++++ b/src/ServerStorage/Tests/RewardLedger.spec.luau
+@@ -187,6 +187,27 @@ return {
+ 		Assert.equal(#rewards.Data.r2.Rewards, 1)
+ 		Assert.equal(rewards.Data.r2.Rewards[1].TxId, 5, "malformed entry kept as found")
+ 	end,
++	["invalid rewards are refused before they reach the ledger"] = function()
++		local rewards = fakeStore()
++		local bad = {
++			{ TxId = "", Amount = 10, Reason = "x", At = 1 },
++			{ TxId = string.rep("a", C.TransactionIdMaxLength + 1), Amount = 10, Reason = "x", At = 1 },
++			{ TxId = 5, Amount = 10, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = 0, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = -5, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = 1.5, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = 0 / 0, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = C.MaxTransaction + 1, Reason = "x", At = 1 },
++			{ TxId = "t", Amount = 10, Reason = string.rep("r", 101), At = 1 },
++			{ TxId = "t", Amount = 10, Reason = "x", At = 0 / 0 },
++		}
++		for i, r in bad do
++			local ok, err = RewardLedger.record(rewards, "r", r :: any)
++			Assert.equal(ok, false, `bad reward {i} accepted`)
++			Assert.truthy(type(err) == "string" and err:find("InvalidReward", 1, true) ~= nil, `bad reward {i}: {tostring(err)}`)
++		end
++		Assert.equal(rewards.Data.r, nil, "nothing was written")
++	end,
+ 	["several recorded rewards are paid together and each once"] = function()
+ 		local profiles, rewards = fakeStore(), fakeStore()
+ 		local a = ProfileStore.load(profiles, "k", "A", 1000, C)

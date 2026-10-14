@@ -1,0 +1,11 @@
+git diff --name-status 1057d17..d442381 -- src docs
+
+M	docs/ARCHITECTURE.md
+A	docs/PLAYER_EXPERIENCE_AUDIT.md
+M	docs/PROGRESS.md
+M	docs/ROADMAP.md
+M	docs/TEST_CHECKLIST.md
+M	src/ServerScriptService/Server/Data/ProfileSession.luau
+M	src/ServerScriptService/Server/Data/RewardLedger.luau
+M	src/ServerStorage/Tests/ProfileSession.spec.luau
+M	src/ServerStorage/Tests/RewardLedger.spec.luau
