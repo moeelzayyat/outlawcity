@@ -1,0 +1,76 @@
+diff --git a/src/ServerScriptService/Server/Services/RobberyService.luau b/src/ServerScriptService/Server/Services/RobberyService.luau
+index b25cfe3..48e92ba 100644
+--- a/src/ServerScriptService/Server/Services/RobberyService.luau
++++ b/src/ServerScriptService/Server/Services/RobberyService.luau
+@@ -39,7 +39,7 @@ type Store = {
+ 	Area: BasePart,
+ }
+ type Live = { Session: RobberyRules.Session, Character: Model, LastInProgressReport: number }
+-type Pending = { TxId: string, Amount: number, SessionId: string, StoreId: string, NextTry: number }
++type Pending = { TxId: string, Amount: number, SessionId: string, StoreId: string, NextTry: number, InFlight: boolean, Recorded: boolean }
+ 
+ local stores: { [string]: Store } = {}
+ local live: { [Player]: Live } = {}
+@@ -184,6 +184,8 @@ local function onEscaped(player: Player)
+ 		SessionId = session.Id,
+ 		StoreId = session.StoreId,
+ 		NextTry = 0,
++		InFlight = false,
++		Recorded = false,
+ 	}
+ 	RobberyService.tryPayout(player)
+ end
+@@ -191,17 +193,21 @@ end
+ -- One payout attempt for a pending reward. Returns the outcome (nil if nothing pending).
+ function RobberyService.tryPayout(player: Player): Types.PayoutOutcome?
+ 	local pending = pendingPayouts[player]
+-	if not pending then
++	if not pending or pending.InFlight then
+ 		return nil
+ 	end
+-	local ok, err = EconomyService.grant(player, pending.Amount, pending.TxId, "store robbery " .. pending.StoreId)
++	-- Recorded in the durable reward ledger first, then granted write-through (EconomyService).
++	pending.InFlight = true
++	local ok, err, recorded = EconomyService.grantReward(player, pending.Amount, pending.TxId, "store robbery " .. pending.StoreId)
++	pending.InFlight = false
++	pending.Recorded = pending.Recorded or recorded
+ 	local outcome = RobberyRules.payoutOutcome(ok, err)
+ 	if outcome == "Retry" then
+ 		if pending.NextTry == 0 then
+ 			player:SetAttribute(PlayerAttributes.RobberyPhase, "PayoutPending")
+ 			player:SetAttribute(PlayerAttributes.RobberyReward, pending.Amount)
+-			notify(player, "PayoutPending", { Id = pending.SessionId, Amount = pending.Amount })
+-			warn(`[Robbery] {player.Name} {pending.SessionId} payout pending ({tostring(err)}); retrying`)
++			notify(player, "PayoutPending", { Id = pending.SessionId, Amount = pending.Amount, Recorded = pending.Recorded })
++			warn(`[Robbery] {player.Name} {pending.SessionId} payout pending ({tostring(err)}; recorded in ledger: {pending.Recorded}); retrying`)
+ 		end
+ 		pending.NextTry = now() + PAYOUT_RETRY_SECONDS
+ 		return outcome
+@@ -262,9 +268,13 @@ function RobberyService.start()
+ 		local pending = pendingPayouts[player]
+ 		if pending then
+ 			pendingPayouts[player] = nil
+-			-- Only reachable if cash data was lost mid-session and never came back; the player
+-			-- was told the reward is pending and to stay in the game.
+-			warn(`[Robbery] {player.Name} left with an unpaid reward {pending.Amount} ({pending.TxId}); not recorded`)
++			if pending.Recorded then
++				-- Durable: the reward ledger pays it on the player's next successful load.
++				print(`[Robbery] {player.Name} left before {pending.TxId} could be stored; it is in the reward ledger and will be paid on their next join`)
++			else
++				-- Only if BOTH the profile and the ledger writes failed for the whole time.
++				warn(`[Robbery] {player.Name} left with an unpaid reward {pending.Amount} ({pending.TxId}) that could not be recorded anywhere`)
++			end
+ 		end
+ 		local entry = live[player]
+ 		if entry then
+@@ -281,8 +291,8 @@ function RobberyService.start()
+ 			tick()
+ 			local t = now()
+ 			for player, pending in pendingPayouts do
+-				if player.Parent == Players and t >= pending.NextTry then
+-					RobberyService.tryPayout(player)
++				if player.Parent == Players and t >= pending.NextTry and not pending.InFlight then
++					task.spawn(RobberyService.tryPayout, player) -- writes yield; keep the tick loop running
+ 				end
+ 			end
+ 		end

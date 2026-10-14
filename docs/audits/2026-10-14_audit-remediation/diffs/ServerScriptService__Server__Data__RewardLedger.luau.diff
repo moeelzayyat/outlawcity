@@ -1,0 +1,106 @@
+diff --git a/src/ServerScriptService/Server/Data/RewardLedger.luau b/src/ServerScriptService/Server/Data/RewardLedger.luau
+new file mode 100644
+index 0000000..12317a6
+--- /dev/null
++++ b/src/ServerScriptService/Server/Data/RewardLedger.luau
+@@ -0,0 +1,100 @@
++--!strict
++-- Durable record of earned-but-unpaid rewards (audit remediation). Kept in its OWN DataStore
++-- (EconomyConfig.RewardStoreName), separate from the player profile, so a reward survives a
++-- failed profile save, a disconnect or a server crash. Each entry carries the reward's stable
++-- transaction id, so paying it later (on any server, on the player's next load) can never pay
++-- twice: the profile's duplicate-transaction guard refuses a second grant.
++-- Record: { Rewards = { { TxId: string, Amount: number, Reason: string, At: number } } }
++-- Unit-tested with a fake store in ServerStorage.Tests.RewardLedger.spec.
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local Types = require(ReplicatedStorage.Shared.Types)
++local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
++
++local RewardLedger = {}
++
++export type Reward = { TxId: string, Amount: number, Reason: string, At: number }
++export type Store = { UpdateAsync: (self: any, key: string, transform: (any) -> any) -> any }
++
++local MAX_ENTRIES = 50
++
++local function entriesOf(record: any): { Reward }
++	local list = {}
++	if type(record) == "table" and type(record.Rewards) == "table" then
++		for _, r in record.Rewards do
++			if type(r) == "table" and type(r.TxId) == "string" and type(r.Amount) == "number" then
++				table.insert(list, { TxId = r.TxId, Amount = r.Amount, Reason = tostring(r.Reason or ""), At = tonumber(r.At) or 0 })
++			end
++		end
++	end
++	return list
++end
++
++-- Adds a reward (no-op if its TxId is already recorded). Returns (ok, err?).
++function RewardLedger.record(store: Store, key: string, reward: Reward): (boolean, string?)
++	local ok, err = pcall(function()
++		store:UpdateAsync(key, function(old: any)
++			local list = entriesOf(old)
++			for _, r in list do
++				if r.TxId == reward.TxId then
++					return nil -- already recorded: leave untouched
++				end
++			end
++			if #list >= MAX_ENTRIES then
++				error("reward ledger full")
++			end
++			table.insert(list, reward)
++			return { Rewards = list }
++		end)
++	end)
++	return ok, if ok then nil else tostring(err)
++end
++
++-- Reads the outstanding rewards without changing them. Returns (rewards?, err?).
++function RewardLedger.list(store: Store, key: string): ({ Reward }?, string?)
++	local result: { Reward }? = nil
++	local ok, err = pcall(function()
++		store:UpdateAsync(key, function(old: any)
++			result = entriesOf(old)
++			return nil -- read only
++		end)
++	end)
++	if not ok then
++		return nil, tostring(err)
++	end
++	return result or {}, nil
++end
++
++-- Removes settled rewards by TxId. Returns (ok, err?).
++function RewardLedger.remove(store: Store, key: string, txIds: { string }): (boolean, string?)
++	local ok, err = pcall(function()
++		store:UpdateAsync(key, function(old: any)
++			local list = entriesOf(old)
++			local kept = {}
++			for _, r in list do
++				if not table.find(txIds, r.TxId) then
++					table.insert(kept, r)
++				end
++			end
++			if #kept == #list then
++				return nil
++			end
++			return { Rewards = kept }
++		end)
++	end)
++	return ok, if ok then nil else tostring(err)
++end
++
++-- Applies every outstanding reward to `draft` (a profile copy inside ProfileStore.commit).
++-- Already-paid ones (duplicate tx) are skipped. Returns the TxIds that are now settled.
++function RewardLedger.applyAll(draft: Types.Profile, rewards: { Reward }, config: any): { string }
++	local settled = {}
++	for _, r in rewards do
++		local ok, err = EconomyRules.grant(draft, r.Amount, r.TxId, config)
++		if ok or err == "DuplicateTransaction" then
++			table.insert(settled, r.TxId)
++		end
++	end
++	return settled
++end
++
++return RewardLedger

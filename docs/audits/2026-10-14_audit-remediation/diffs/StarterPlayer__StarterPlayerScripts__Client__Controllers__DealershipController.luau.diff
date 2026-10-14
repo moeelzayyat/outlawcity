@@ -1,0 +1,12 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+index e7d00fa..bc99ddf 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+@@ -29,6 +29,7 @@ local RESULT_TEXT: { [string]: string } = {
+ 	NotForSale = "That car isn't for sale.",
+ 	DuplicateTransaction = "That purchase was already processed.",
+ 	TooManyVehicles = "Your garage is full.",
++	SaveFailed = "Couldn't save your purchase right now. Nothing was charged; try again.",
+ 	NetworkError = "Couldn't reach the server. Nothing was charged.",
+ }
+ 

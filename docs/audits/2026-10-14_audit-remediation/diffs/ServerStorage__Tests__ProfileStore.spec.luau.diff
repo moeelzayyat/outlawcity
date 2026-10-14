@@ -1,0 +1,99 @@
+diff --git a/src/ServerStorage/Tests/ProfileStore.spec.luau b/src/ServerStorage/Tests/ProfileStore.spec.luau
+index 2be6648..7bca483 100644
+--- a/src/ServerStorage/Tests/ProfileStore.spec.luau
++++ b/src/ServerStorage/Tests/ProfileStore.spec.luau
+@@ -4,6 +4,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ local ProfileStore = require(ServerScriptService.Server.Data.ProfileStore)
+ local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
++local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
+ local Assert = require(script.Parent.Assert)
+ 
+ local C = EconomyConfig
+@@ -83,6 +84,86 @@ return {
+ 		Assert.equal(again.Cash, 0)
+ 		Assert.equal(table.find(again.OwnedVehicles, "Muscle") ~= nil, true, "owned after rejoin")
+ 	end,
++	["write-through: a committed purchase is stored before it takes effect"] = function()
++		local store = fakeStore()
++		local profile = ProfileStore.load(store, "k", "A", 1000, C)
++		profile.Cash = 20000
++		ProfileStore.save(store, "k", "A", profile, 1000, false)
++		local ok = ProfileStore.commit(store, "k", "A", profile, 1001, function(draft)
++			return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, "buy:1", C)
++		end)
++		Assert.equal(ok, true)
++		Assert.equal(profile.Cash, 5000)
++		Assert.equal(store.Data.k.Profile.Cash, 5000, "stored at the moment it is acknowledged")
++		Assert.equal(table.find(store.Data.k.Profile.OwnedVehicles, "Muscle") ~= nil, true)
++	end,
++	["write-through: a failed write changes nothing, in memory or stored, and burns no tx id"] = function()
++		local store = fakeStore()
++		local profile = ProfileStore.load(store, "k", "A", 1000, C)
++		profile.Cash = 20000
++		ProfileStore.save(store, "k", "A", profile, 1000, false)
++		store.Fail = true
++		local ok, err = ProfileStore.commit(store, "k", "A", profile, 1001, function(draft)
++			return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, "buy:1", C)
++		end)
++		Assert.equal(ok, false)
++		Assert.equal(err, "StoreError")
++		Assert.equal(profile.Cash, 20000)
++		Assert.equal(EconomyRules.ownsVehicle(profile, "Muscle"), false)
++		Assert.equal(EconomyRules.hasTransaction(profile, "buy:1"), false, "the same request can be retried")
++		store.Fail = false
++		Assert.equal(store.Data.k.Profile.Cash, 20000)
++		Assert.equal((ProfileStore.commit(store, "k", "A", profile, 1002, function(draft)
++			return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, "buy:1", C)
++		end)), true, "retry after the outage succeeds once")
++		Assert.equal(profile.Cash, 5000)
++	end,
++	["a rule refusal writes nothing"] = function()
++		local store = fakeStore()
++		local profile = ProfileStore.load(store, "k", "A", 1000, C)
++		local writes = store.Writes
++		local ok, err = ProfileStore.commit(store, "k", "A", profile, 1001, function(draft)
++			return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, "buy:1", C)
++		end)
++		Assert.equal(ok, false)
++		Assert.equal(err, "InsufficientFunds")
++		Assert.equal(store.Writes, writes)
++	end,
++	["lock expiry: an acknowledged purchase survives another server taking over"] = function()
++		local store = fakeStore()
++		local a = ProfileStore.load(store, "k", "A", 1000, C)
++		a.Cash = 15000
++		ProfileStore.save(store, "k", "A", a, 1000, false)
++		assert(ProfileStore.commit(store, "k", "A", a, 1001, function(draft)
++			return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, "buy:1", C)
++		end))
++		-- Server A's leave-save then keeps failing and its lock goes stale; server B takes over.
++		local b, result = ProfileStore.load(store, "k", "B", 1001 + C.SessionLockTimeout + 1, C)
++		Assert.equal(result, "Existing")
++		Assert.equal(b.Cash, 0)
++		Assert.equal(EconomyRules.ownsVehicle(b, "Muscle"), true, "the purchase A acknowledged is there")
++		-- A comes back late: it can no longer write over B.
++		local ok, err = ProfileStore.save(store, "k", "A", a, 1300, true)
++		Assert.equal(ok, false)
++		Assert.equal(err, "LockLost")
++		local ok2, err2 = ProfileStore.commit(store, "k", "A", a, 1301, function(draft)
++			return EconomyRules.grant(draft, 999, "late", C)
++		end)
++		Assert.equal(ok2, false)
++		Assert.equal(err2, "LockLost")
++		Assert.equal(store.Data.k.Profile.Cash, 0)
++	end,
++	["sequential commits never lose an update"] = function()
++		local store = fakeStore()
++		local profile = ProfileStore.load(store, "k", "A", 1000, C)
++		for i = 1, 5 do
++			assert(ProfileStore.commit(store, "k", "A", profile, 1000 + i, function(draft)
++				return EconomyRules.grant(draft, 100, "g" .. i, C)
++			end))
++		end
++		Assert.equal(store.Data.k.Profile.Cash, C.StartingCash + 500)
++		Assert.equal(#store.Data.k.Profile.RecentTransactions, 5)
++	end,
+ 	["a store outage during load never creates or overwrites data"] = function()
+ 		local store = fakeStore()
+ 		store.Data.k = { Profile = { Version = 1, Cash = 9000, RecentTransactions = {} } }

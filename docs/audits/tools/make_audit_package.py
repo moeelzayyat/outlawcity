@@ -38,9 +38,9 @@ def build(task_id, base, head, screenshots):
         if not os.path.exists(target):
             shutil.copyfile(os.path.join(TEMPLATES, name), target)
             print("template ", os.path.relpath(target, ROOT))
-    changed = [line for line in git("diff", "--name-status", f"{base}..{head}", "--", "src", "docs").splitlines() if line]
+    changed = [line for line in git("diff", "--name-status", f"{base}..{head}", "--", "src", "docs", ":(exclude)docs/audits").splitlines() if line]
     with open(os.path.join(folder, "diffs", "ALL.diff"), "w", encoding="utf-8", newline="\n") as f:
-        f.write(git("diff", f"{base}..{head}", "--", "src", "docs"))
+        f.write(git("diff", f"{base}..{head}", "--", "src", "docs", ":(exclude)docs/audits"))
     for line in changed:
         status, path = line.split("\t")[0], line.split("\t")[-1]
         if not path.startswith("src/"):

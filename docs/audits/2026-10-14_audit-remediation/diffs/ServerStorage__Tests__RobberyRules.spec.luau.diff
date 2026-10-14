@@ -1,0 +1,12 @@
+diff --git a/src/ServerStorage/Tests/RobberyRules.spec.luau b/src/ServerStorage/Tests/RobberyRules.spec.luau
+index 89ccef6..0062704 100644
+--- a/src/ServerStorage/Tests/RobberyRules.spec.luau
++++ b/src/ServerStorage/Tests/RobberyRules.spec.luau
+@@ -121,6 +121,7 @@ return {
+ 		Assert.equal(RobberyRules.payoutOutcome(true, nil), "Paid")
+ 		Assert.equal(RobberyRules.payoutOutcome(false, "DuplicateTransaction"), "AlreadyPaid")
+ 		Assert.equal(RobberyRules.payoutOutcome(false, "DataNotLoaded"), "Retry")
++		Assert.equal(RobberyRules.payoutOutcome(false, "SaveFailed"), "Retry")
+ 		Assert.equal(RobberyRules.payoutOutcome(false, "NotInGame"), "Rejected")
+ 		Assert.equal(RobberyRules.payoutOutcome(false, "InvalidAmount"), "Rejected")
+ 	end,

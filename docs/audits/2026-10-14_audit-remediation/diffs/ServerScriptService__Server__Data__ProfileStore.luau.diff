@@ -1,0 +1,50 @@
+diff --git a/src/ServerScriptService/Server/Data/ProfileStore.luau b/src/ServerScriptService/Server/Data/ProfileStore.luau
+index 9b1cba2..56da08a 100644
+--- a/src/ServerScriptService/Server/Data/ProfileStore.luau
++++ b/src/ServerScriptService/Server/Data/ProfileStore.luau
+@@ -49,6 +49,45 @@ function ProfileStore.load(store: Store, key: string, sessionId: string, now: nu
+ 	return profile, outcome :: any, nil
+ end
+ 
++local function copyProfile(profile: Types.Profile): Types.Profile
++	return {
++		Version = profile.Version,
++		Cash = profile.Cash,
++		RecentTransactions = table.clone(profile.RecentTransactions),
++		OwnedVehicles = table.clone(profile.OwnedVehicles),
++	}
++end
++
++-- Write-through change (audit remediation): applies `mutate` to a COPY of `profile`, writes
++-- that copy in one UpdateAsync while this session owns the lock, and only then copies it into
++-- `profile`. If the rule refuses or the write fails, `profile` is left exactly as it was, so a
++-- change the caller acknowledges is always already stored. Callers must serialise commits for
++-- one profile (EconomyService does, per player).
++-- Returns (ok, err, detail): err is the rule's error, "StoreError" or "LockLost".
++function ProfileStore.commit(
++	store: Store,
++	key: string,
++	sessionId: string,
++	profile: Types.Profile,
++	now: number,
++	mutate: (Types.Profile) -> (boolean, string?)
++): (boolean, string?, string?)
++	local draft = copyProfile(profile)
++	local ok, err = mutate(draft)
++	if not ok then
++		return false, err, nil
++	end
++	local saved, saveErr, detail = ProfileStore.save(store, key, sessionId, draft, now, false)
++	if not saved then
++		return false, saveErr, detail
++	end
++	profile.Version = draft.Version
++	profile.Cash = draft.Cash
++	profile.RecentTransactions = draft.RecentTransactions
++	profile.OwnedVehicles = draft.OwnedVehicles
++	return true, nil, nil
++end
++
+ -- Writes the profile if this session still owns the lock. `release` drops the lock (leaving).
+ function ProfileStore.save(store: Store, key: string, sessionId: string, profile: Types.Profile, now: number, release: boolean): (boolean, SaveError?, string?)
+ 	local owned = false

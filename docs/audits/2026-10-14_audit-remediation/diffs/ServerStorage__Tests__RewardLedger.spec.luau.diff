@@ -1,0 +1,131 @@
+diff --git a/src/ServerStorage/Tests/RewardLedger.spec.luau b/src/ServerStorage/Tests/RewardLedger.spec.luau
+new file mode 100644
+index 0000000..ed69b5a
+--- /dev/null
++++ b/src/ServerStorage/Tests/RewardLedger.spec.luau
+@@ -0,0 +1,125 @@
++-- Durable reward ledger (audit remediation): earned rewards survive failed profile saves,
++-- disconnects and server crashes, and are paid exactly once.
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local ServerScriptService = game:GetService("ServerScriptService")
++local HttpService = game:GetService("HttpService")
++local RewardLedger = require(ServerScriptService.Server.Data.RewardLedger)
++local ProfileStore = require(ServerScriptService.Server.Data.ProfileStore)
++local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
++local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
++local Assert = require(script.Parent.Assert)
++
++local C = EconomyConfig
++
++local function deepCopy(value)
++	if value == nil then
++		return nil
++	end
++	return HttpService:JSONDecode(HttpService:JSONEncode(value))
++end
++
++local function fakeStore()
++	local data = {}
++	local store = { Fail = false, Data = data }
++	function store.UpdateAsync(self, key, transform)
++		if self.Fail then
++			error("simulated outage")
++		end
++		local result = transform(deepCopy(data[key]))
++		if result ~= nil then
++			data[key] = deepCopy(result)
++		end
++		return deepCopy(result)
++	end
++	return store
++end
++
++local function reward(tx: string, amount: number?)
++	return { TxId = tx, Amount = amount or 2000, Reason = "store robbery", At = 1 }
++end
++
++-- What EconomyService does on a load: pay everything recorded, then clear it.
++local function claim(profiles, rewards, profile, sessionId, now)
++	local list = assert(RewardLedger.list(rewards, "r"))
++	local settled = {}
++	local ok = ProfileStore.commit(profiles, "k", sessionId, profile, now, function(draft)
++		settled = RewardLedger.applyAll(draft, list, C)
++		return true, nil
++	end)
++	if ok then
++		RewardLedger.remove(rewards, "r", settled)
++	end
++	return ok
++end
++
++return {
++	["recording is idempotent per transaction id"] = function()
++		local rewards = fakeStore()
++		Assert.equal((RewardLedger.record(rewards, "r", reward("robbery:1"))), true)
++		Assert.equal((RewardLedger.record(rewards, "r", reward("robbery:1"))), true)
++		Assert.equal(#assert(RewardLedger.list(rewards, "r")), 1)
++	end,
++	["profile write fails after escape: the reward is paid once on the next load (any server)"] = function()
++		local profiles, rewards = fakeStore(), fakeStore()
++		local a = ProfileStore.load(profiles, "k", "A", 1000, C)
++		local startCash = a.Cash
++		-- escape: ledger write succeeds, profile write fails
++		assert(RewardLedger.record(rewards, "r", reward("robbery:1")))
++		profiles.Fail = true
++		local ok = ProfileStore.commit(profiles, "k", "A", a, 1001, function(draft)
++			return EconomyRules.grant(draft, 2000, "robbery:1", C)
++		end)
++		Assert.equal(ok, false)
++		Assert.equal(profiles.Data.k.Profile.Cash, startCash)
++		-- server A dies; later server B loads after the lock expires and claims the ledger
++		profiles.Fail = false
++		local b = ProfileStore.load(profiles, "k", "B", 1001 + C.SessionLockTimeout + 1, C)
++		Assert.equal(claim(profiles, rewards, b, "B", 1300), true)
++		Assert.equal(b.Cash, startCash + 2000)
++		Assert.equal(profiles.Data.k.Profile.Cash, startCash + 2000)
++		Assert.equal(#assert(RewardLedger.list(rewards, "r")), 0, "ledger cleared")
++		-- claiming again (another rejoin) pays nothing more
++		Assert.equal(claim(profiles, rewards, b, "B", 1301), true)
++		Assert.equal(b.Cash, startCash + 2000)
++	end,
++	["a reward already paid but not cleared from the ledger is never paid twice"] = function()
++		local profiles, rewards = fakeStore(), fakeStore()
++		local a = ProfileStore.load(profiles, "k", "A", 1000, C)
++		assert(RewardLedger.record(rewards, "r", reward("robbery:1")))
++		assert(ProfileStore.commit(profiles, "k", "A", a, 1001, function(draft)
++			return EconomyRules.grant(draft, 2000, "robbery:1", C)
++		end))
++		-- the ledger removal failed (outage), so the entry is still there on the next load
++		local cash = a.Cash
++		Assert.equal(claim(profiles, rewards, a, "A", 1002), true)
++		Assert.equal(a.Cash, cash, "duplicate transaction: not paid again")
++		Assert.equal(#assert(RewardLedger.list(rewards, "r")), 0, "and now cleared")
++	end,
++	["claim during a profile outage pays nothing and keeps the ledger entry"] = function()
++		local profiles, rewards = fakeStore(), fakeStore()
++		local a = ProfileStore.load(profiles, "k", "A", 1000, C)
++		local cash = a.Cash
++		assert(RewardLedger.record(rewards, "r", reward("robbery:1")))
++		profiles.Fail = true
++		Assert.equal(claim(profiles, rewards, a, "A", 1001), false)
++		Assert.equal(a.Cash, cash)
++		Assert.equal(#assert(RewardLedger.list(rewards, "r")), 1, "still recorded for the next try")
++	end,
++	["several recorded rewards are paid together and each once"] = function()
++		local profiles, rewards = fakeStore(), fakeStore()
++		local a = ProfileStore.load(profiles, "k", "A", 1000, C)
++		local cash = a.Cash
++		assert(RewardLedger.record(rewards, "r", reward("robbery:1", 2000)))
++		assert(RewardLedger.record(rewards, "r", reward("robbery:2", 2000)))
++		Assert.equal(claim(profiles, rewards, a, "A", 1001), true)
++		Assert.equal(a.Cash, cash + 4000)
++	end,
++	["a ledger outage is reported, not hidden"] = function()
++		local rewards = fakeStore()
++		rewards.Fail = true
++		local ok, err = RewardLedger.record(rewards, "r", reward("robbery:1"))
++		Assert.equal(ok, false)
++		Assert.truthy(err ~= nil)
++		Assert.equal((RewardLedger.list(rewards, "r")), nil)
++	end,
++}

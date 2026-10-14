@@ -1,0 +1,1174 @@
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 895a31d..040955a 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -1,6 +1,6 @@
+ # OUTLAW CITY — Architecture
+ 
+-Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) provisionally approved; 4B follow-up fixes (recoverable payouts) done; police sent at holdout end; driving getaway still open. Phase 4C (dealership + second vehicle) built and solo-tested, awaiting owner review. Last updated 2026-10-14.
++Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) provisionally approved; 4B follow-up fixes (recoverable payouts) done; police sent at holdout end; driving getaway still open. Phase 4C (dealership + second vehicle) built and solo-tested. Audit remediation (write-through economy, durable reward ledger, experimental police tuning, HTTP off) done and awaiting the auditor's review. Last updated 2026-10-14.
+ 
+ ## Source of truth and workflow
+ 
+@@ -252,8 +252,11 @@ Rules:
+   - Another server's lock less than 180 s old -> `SessionLocked`.
+   - Any store error -> `StoreError`.
+ - **Retries:** 3 attempts per round with 1/2/4 s backoff. If they all fail, the player is `Unavailable`: grants and deductions return `DataNotLoaded`, nothing is ever saved for them, and loading is retried every 30 s until it succeeds.
+-- **Save** (`ProfileStore.save`): writes only while this server still owns the lock (`LockLost` otherwise). Autosave runs every 60 s for changed profiles. Saves happen on leave (releasing the lock) and on shutdown (`BindToClose`, up to 25 s). Each save makes 3 attempts with backoff, and failures are logged and kept for the next save.
+-- **Future use:** robbery rewards and vehicle purchases will call grant/deduct with their own unique ids (e.g. `robbery:<id>`, `buy:<vehicle>:<id>`). `Profile.Version` allows adding owned vehicles later via a migration.
++- **Write-through changes (audit remediation):** every grant, deduction and purchase goes through `ProfileStore.commit`. The change is applied to a copy of the profile, the copy is written in one `UpdateAsync` while this server owns the lock, and only then is it copied into the live profile. If the rule refuses or the write fails (2 attempts), nothing changes and the caller gets `SaveFailed`. So anything `EconomyService` reports as done is already stored. It survives a server crash, a failed leave-save, and another server taking the lock later.
++- **One change at a time per player:** `EconomyService` serialises commits and saves per player (`withLock`), so concurrent requests can't overwrite each other.
++- **Save / lock heartbeat** (`ProfileStore.save`): writes only while this server still owns the lock (`LockLost` otherwise). Every loaded profile is re-saved every 60 s, even with no changes, to keep its lock fresh. Before the remediation only changed profiles were saved, so a quiet player's lock could go stale while they were still in the game. Saves happen on leave (releasing the lock) and on shutdown (`BindToClose`, up to 25 s), with 3 attempts and backoff. A failed leave-save is retried in the background; it only releases the lock now, because every change was already stored when it happened.
++- **Reward ledger (audit remediation):** earned rewards (robbery payouts, `EconomyService.grantReward`) are first written to a separate DataStore (`OutlawCity_PendingRewards_v1`, key `rewards_player_<UserId>`, `RewardLedger`), then granted write-through, then cleared from the ledger. If the grant can't be stored, the ledger entry is paid on the player's next successful load on any server (`claimRewards`), exactly once, because it reuses the same transaction id. A reward is lost only if the ledger write AND every grant retry fail and the player then leaves; that case is logged.
++- **Transaction ids:** robbery rewards use `robbery:<sessionGUID>` and purchases `buy:<vehicle>:<GUID>`. The last 200 ids are kept in the profile.
+ - **Studio-only tools:** dev commands `GrantCash`, `DeductCash` (raw values, so the server-side validation is what gets tested), `GrantCashTx` (fixed transaction id), `SetDataStoreFailure`, `SaveNow`. A Workspace attribute `SimulateDataStoreFailureOnStart` tests outages during load. All are gated by `RunService:IsStudio()`.
+ 
+ ## Store robbery (Phase 4B)
+@@ -265,16 +268,24 @@ Rules:
+ - **Session:** id = `HttpService:GenerateGUID()` made on the server. Start reports `StoreRobbery` (70 heat = 2★) through `WantedService.reportCrime`; while holding it re-reports `RobberyInProgress` (0 heat) once a second so heat can't decay before the holdout ends. The store's 180 s cooldown starts when the robbery starts (success or failure).
+ - **Holdout (15 s, server clock):** fails with no cash on `Died` (death, reset or any character change), `Busted` (jailed), `LeftArea` (outside the store box), `Disconnected`.
+ - **Escape:** after the holdout the session becomes `Escaping` and the store frees up. The player must lose their wanted level (`WantedService.Escaped`, fired only when heat decays to zero, never for a bust or a reset). Fails with no cash on `Busted`, `Died`, `Disconnected`, or no escape within 300 s (`EscapeTimedOut`). Leaving the store is fine once escaping.
+-- **Payout:** `RobberyRules.onEscaped` moves `Escaping -> Paid` exactly once; then the reward becomes a *pending payout* with a stable transaction id `robbery:<sessionId>` and `EconomyService.grant` is tried. Three guards stop a second payout: the phase transition, a per-server paid-id set, and EconomyService's persisted duplicate-transaction check (a retry that hits `DuplicateTransaction` counts as already paid). An ordinary escape with no robbery session pays nothing.
++- **Payout:** `RobberyRules.onEscaped` moves `Escaping -> Paid` exactly once; then the reward becomes a *pending payout* with a stable transaction id `robbery:<sessionId>` and `EconomyService.grantReward` records it in the reward ledger and then grants it write-through. Three guards stop a second payout: the phase transition, a per-server paid-id set, and EconomyService's persisted duplicate-transaction check (a retry that hits `DuplicateTransaction` counts as already paid). An ordinary escape with no robbery session pays nothing.
+ - **Recoverable payout (4B follow-up):**
+   - A robbery can't start unless the player's cash data is `Loaded` (`CashUnavailable`), so a reward is never earned when it couldn't be recorded.
+-  - If the grant fails temporarily (`DataNotLoaded`), `RobberyRules.payoutOutcome` says `Retry`: the reward stays pending (same tx id), `RobberyPhase = "PayoutPending"`, the HUD shows "REWARD PENDING", and it is retried every 2 s until it is paid. Other errors are final (`PayoutFailed`).
+-  - Pending rewards survive death, respawn and jail (they belong to the player, not the character). Leaving the game while still pending is the one case that drops it; it is logged with a warning and the player was told to stay.
+-  - Once granted, the cash lives in the profile. If saves then fail, autosave keeps retrying; if the save on leave fails, EconomyService keeps the profile as an *orphan* on this server and retries every 10 s for up to 15 min (stopping if another server takes the lock), plus once more at shutdown. A player who rejoins the same server before it saves gets the newer in-memory profile back.
++  - If the grant can't be stored (`DataNotLoaded` or `SaveFailed`), `RobberyRules.payoutOutcome` says `Retry`. The reward stays pending (same tx id) and `RobberyPhase = "PayoutPending"`. The HUD says the reward is safely recorded (or, if even the ledger failed, to stay in the game). Payment is retried every 2 s without blocking the robbery tick loop. Other errors are final (`PayoutFailed`).
++  - Pending rewards survive death, respawn and jail (they belong to the player, not the character). If recorded in the ledger, they also survive leaving and server crashes: they are paid on the next join.
++  - Granted cash is stored at the moment it is granted (write-through).
+ - **Client:** `RobberyHudController` shows "ROBBING THE STORE Ns / Stay inside" while holding, "ESCAPE THE POLICE / Lose your wanted stars to keep $2,000" while escaping (from server attributes), and toasts for the alarm, rejections, failure reasons and the cash reward. It can't start, finish or pay anything.
+ - **Tuning:** `RobberyConfig` (hold, reward, cooldown, ranges, escape limit) and `WantedConfig.Crimes.StoreRobbery` are the only places to change values.
+ - **Not built (by owner decision):** banks, more stores, gangs, weapons, new vehicles, monetization. Police stay at one NPC unit.
+ 
++### Police pursuit tuning (audit remediation, EXPERIMENTAL; owner/auditor review pending)
++
++`PoliceConfig`: `SightRange` 160 → 130, `ChaseSpeed` 110 → 100, `ChaseGain` 1.0 → 0.25. `WantedConfig.DecayDelay` stays 8 s. `PoliceDriveRules` is unchanged; the tuning is config only. In a solo A/B with the same scripted getaway (real `VehiclePhysics`):
++- baseline: 3 of 5 runs paid;
++- tuned: 5 of 5 runs paid, in 18–35 s.
++
++See PROGRESS.md for the details. It's a small solo sample, so human playtests should decide the final values.
++
+ ### NPC police at the storefront (recorded issue + proposal, not built)
+ 
+ - **Issue:** the single NPC unit is dispatched the moment the robbery starts and reaches the store in about 3-10 s, well inside the 15 s holdout. It drives at the player, so at the storefront it stalls against the building (`hard recovery: stalled repeatedly at (-113, -57..-64)`), pushes or blocks parked cars, and waits within bust range of the door. In 10 solo getaway attempts none succeeded: 5 busts at or near the door, 4 busts after crashing while the unit followed, and 1 death off the map edge.
+@@ -284,10 +295,11 @@ Rules:
+ 
+ - **Profile v2:** `{ Version = 2, Cash, RecentTransactions, OwnedVehicles = { "Coupe", ... } }`. Every profile owns the starters (`EconomyConfig.StarterVehicles = { "Coupe" }`).
+ - **Migration** (`EconomyRules.validateSaved`, inside the load's `UpdateAsync`): a v1 (cash-only) record keeps its cash and transaction history exactly, gains `OwnedVehicles = { "Coupe" }`, and is written back as v2 in the same atomic update that claims the session lock (`loaded (Migrated)`). A record from a newer version, or a v2 record without its ownership list, is refused untouched (`Corrupt`), so an older server can never downgrade or wipe it.
+-- **Purchase (atomic):** `EconomyRules.purchaseVehicle(profile, vehicleId, price, txId)` checks the id, amount, duplicate transaction, not already owned, garage limit and funds, then takes the price, adds the car and remembers the transaction in one step on the same profile. Nothing yields in between. That profile is saved as one record, so cash and ownership are always stored together: never cash without the car, never the car without the cash. `EconomyService.purchaseVehicle` saves right away; if that save fails, autosave, leave and orphan retries keep trying with both changes.
++- **Purchase (atomic):** `EconomyRules.purchaseVehicle(profile, vehicleId, price, txId)` checks the id, amount, duplicate transaction, not already owned, garage limit and funds, then takes the price, adds the car and remembers the transaction in one step on the same profile. Nothing yields in between. `EconomyService.purchaseVehicle` commits it write-through, so cash and ownership are stored together in one write BEFORE the purchase is acknowledged. A failed write returns `SaveFailed`: nothing is charged, there is no car, and the transaction id isn't used, so the player can simply retry.
+ - **Server API:** `DealershipService` handles `RequestPurchaseVehicle` (see the network table). Prices live only in `DealershipConfig` (Muscle: 15000). A second request for an owned car returns `AlreadyOwned` without charging.
+ - **Place:** `Workspace.City.Dealership` ("OUTLAW MOTORS") on the north edge of block (200, 200), facing the z = 100 road. It has a sales desk with `ShopPrompt` (opens the client window) and an anchored, non-drivable display Muscle.
+ - **Second vehicle:** `Muscle` (VehicleConfig): top speed 138 (Coupe 120), acceleration 68 (55), and heavier handling. It has less grip (9 vs 12), slower turning (yaw 1.85 vs 2.2), steering response 8 (10) and longer braking (100 vs 120).
+ - **Client:** the Spawn Car button opens the garage window (owned cars from `OwnedVehicles`); V spawns the last car chosen there (Coupe at first). The dealership window shows each car's price, its stats and Owned/Buy, plus a clear success or failure message. Both windows sit top-centre below the HUD row and use 44-48 px touch targets.
+-- **Studio-only test hooks:** dev `WriteLegacyProfile` rewrites the stored record as v1 and stops saving that session (rejoin to migrate); Workspace `SimulateDataStoreFailure` makes every store call fail.
++- **Studio-only test hooks:** dev `WriteLegacyProfile` rewrites the stored record as v1 and stops saving that session (rejoin to migrate). Workspace `SimulateDataStoreFailure` makes every store call fail; `SimulateStoreFailure_<storeName>` fails only that store (for example only the profile store while the reward ledger works).
++- **HTTP:** the place's "Allow HTTP Requests" (`HttpService.HttpEnabled`) is OFF. Game code only uses `GenerateGUID` and JSON helpers, which don't need it.
+ - **Not built (by owner decision):** more vehicles, banks, garages as buildings, property, gangs, weapons, monetization.
+diff --git a/docs/MULTIPLAYER_TESTS.md b/docs/MULTIPLAYER_TESTS.md
+index cb3570c..9a793c9 100644
+--- a/docs/MULTIPLAYER_TESTS.md
++++ b/docs/MULTIPLAYER_TESTS.md
+@@ -79,3 +79,9 @@ Mark each item with the date and result when finally run.
+ - [ ] Another player can't spawn, buy for, or see into someone else's garage; spawning someone else's car id is refused (`NotOwned`)
+ - [ ] A player who rejoins onto another server right after buying keeps the car (session lock hand-over between two real servers)
+ - [ ] Other players see the display car and a player's Muscle correctly (models, wheels, colour)
++
++## Audit remediation (economy durability, police tuning)
++- [ ] Two real servers: buy on server A, rejoin onto server B right away -> the car and the charge are there (write-through; the lock hand-over waits for A's release or expiry)
++- [ ] A robbery reward recorded in the ledger on server A is paid on server B after A shuts down mid-outage
++- [ ] DataStore request budgets with many players (one write per cash change + 60 s heartbeat each)
++- [ ] Police tuning with real human drivers and latency: escapes are possible but not trivial
+diff --git a/docs/PROGRESS.md b/docs/PROGRESS.md
+index 029b148..1a123e2 100644
+--- a/docs/PROGRESS.md
++++ b/docs/PROGRESS.md
+@@ -20,7 +20,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ |---|---|
+ | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
+ | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
+-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 156 passed, 0 failed` (after 4C) |
++| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 167 passed, 0 failed` (after the audit remediation) |
+ | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
+ | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
+ | Chase camera | Playtest measurements above |
+@@ -102,6 +102,15 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ | **4B follow-up: grant fails before it is applied** | Rob, then cash data made unavailable during the escape -> on escape `PayoutPending:2000`, HUD "REWARD PENDING", Output `payout pending (DataNotLoaded); retrying`; 7 s later data restored -> one `grant 2000 ... tx robbery:<id>` (4700 -> 6700) and `Paid:2000`. No second grant |
+ | **4B follow-up: reward accepted but saving fails** | Workspace `SimulateDataStoreFailure` on -> rob + escape -> paid in memory (6700 -> 8700); "Save data now" failed (logged). Player kicked while saves still failed -> `save on leave failed; keeping the profile and retrying (cash=8700)`; failure turned off -> `saved after leaving (cash=8700)`; next playtest `loaded (Existing) cash=8700` |
+ | **4B follow-up: driving getaway (NOT PASSED)** | 10 attempts with the robber's car parked at the storefront: 7 with real keyboard input (W/A/S/D via the Studio input tool) and 3 with the real `VehiclePhysics` driven by a scripted waypoint driver. The route itself works: the scripted car drove store -> x=-100 connector -> highway -> x=748 in ~20 s at up to 119 studs/s, and in one keyboard run the police lost sight and heat fell 70 -> 45 while driving. **No attempt ended in a paid escape:** 5 busted at or near the storefront (the unit arrives during the holdout, then blocks or rams the getaway car, pushes it while parked, or busts within 2.5 s of the robber reaching it); 4 busted after the open-loop keyboard or first scripted route crashed into a highway barrier or wall while the unit followed; 1 died driving off the map edge (correctly no cash). Every failure paid nothing |
++| **Audit remediation: pre-work** | Backup `OutlawCity_4B3.rbxl` (Studio log: place file downloaded 14:41:37Z, after 4C). Two Studio instances were open; all work and evidence used only `Outlaw City (placeId: 132163592957463)` |
++| **Remediation unit tests** | `ProfileStore.spec` (+5): commit stores before it takes effect; failed write changes nothing and burns no tx id (retry succeeds once); rule refusal writes nothing; acknowledged purchase survives another server taking over after lock expiry, and the old server can no longer write; 5 sequential commits lose no update. `RewardLedger.spec` (6): idempotent recording; profile write fails after escape -> paid once on the next load on another server, ledger cleared, a second claim pays nothing; already-paid-but-not-cleared is never paid twice; claim during an outage keeps the entry; several rewards each paid once; ledger outage reported. `RobberyRules.spec`: `SaveFailed` -> Retry. **167/167** |
++| **Fault: purchase write fails** | Profile store failing only -> buy Muscle: `purchase Muscle write attempt 1 failed (StoreError…)`, `attempt 2 failed`, `purchase Muscle NOT applied (StoreError); nothing changed`, client `false/SaveFailed`, cash 15800, owned `Coupe`. Store restored -> buy again `true`, `bought Muscle for 15000 … -> cash 800 (stored)` |
++| **Fault: acknowledged purchase + reward across a server shutdown** | After the purchase above, profile store failing (ledger OK) -> rob + escape -> `PayoutPending:2000 recorded=true`. Server stopped with the profile store still failing (every save failed). Next server: `loaded … cash=2800`, `Coupe,Muscle`. The stored record confirms it: cash 2800, Muscle owned, ledger `{"Rewards":[]}` (paid once, cleared). The acknowledged purchase was never lost |
++| **Fault: total outage during escape** | All stores failing -> `reward robbery:22c0500e-… could not be recorded in the ledger`, `grant 2000 NOT applied`, `payout pending (SaveFailed; recorded in ledger: false); retrying`. Outage ended -> `grant 2000 … -> 4800 (stored)`, `escaped; paid 2000` once |
++| **Police tuning A/B (scripted driver, real VehiclePhysics)** | Same harness for both sets: car parked at the storefront facing north, robbery via dev `TryRobStore`, walk to the car, then waypoint steering around the outer grid roads (route chosen away from the police unit), up to 120 s. **Baseline** (160 / 110 / 1.0): 3 of 5 paid (24 s, 28 s, 18 s); 2 runs ended still wanted after 120 s, with the unit never more than 128–129 studs away. **Tuned** (130 / 100 / 0.25): 5 of 5 paid (34, 34, 25, 18, 35 s), including both runs where the unit started within ~230 studs. Tuned values kept as EXPERIMENTAL |
++| **Paid getaway (normal vehicle movement)** | PASS: 8 paid getaways in total (3 baseline + 5 tuned), each `Paid` once with cash +2000, driven by the real car physics (no teleport after the robbery). Human playtest still needed (owner) |
++| **Muscle on touch controls** | iPhone 7 simulator (666×374): touch panel shown; holding GAS took the Muscle to 124 studs/s (HUD "76 MPH" mid-run); BRAKE slowed it to 30. Steering with the touch thumbstick and a real phone are NOT tested (owner) |
++| **HTTP access** | `src/` grep: no `RequestAsync`/`GetAsync`/`PostAsync` in game code (only `GenerateGUID`, JSON). `HttpService.HttpEnabled` set to false |
+ | **4C pre-work** | Backup `OutlawCity_4B2.rbxl` confirmed in the Studio log (place file downloaded 13:47:45Z). Vehicle validation still monitor-only; police still one unit |
+ | **4C unit tests** | `EconomyRules.spec` (+5): new profiles own exactly the Coupe; v1 and versionless records migrate keeping cash and tx history; v2 ownership kept, junk/duplicates dropped, v2-without-list / newer / bad versions refused; purchase takes the price once and records ownership, duplicate tx and already-owned never charge twice; a failed purchase changes nothing (not even the tx list). `ProfileStore.spec` (+2): v1 record migrates on load and is written back as v2; a purchase saves cash + ownership together and a failed save leaves the stored record unchanged. `Dealership.spec` (4): $15,000 Muscle, catalogue cars exist and are drivable, Muscle handles differently, prices read-only, showroom clear of the roads. **156/156** |
+ | **4C migration (real Studio DataStore)** | The existing cash-only profile loaded as `loaded (Migrated) cash=9800`; `OwnedVehicles` = `Coupe`. Repeated with dev `WriteLegacyProfile` (cash 800, v1) -> rejoin `loaded (Migrated) cash=800`, Coupe only |
+@@ -135,14 +144,15 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ 8a. Cash persistence was tested in Studio against a real DataStore (`_Studio` suffix). Not tested: two real servers contending for one player's lock (needs two live servers; MULTIPLAYER UNVERIFIED), DataStore throttling under load, and the published game's live store.
+ 8c. **4B escape definition:** "escaped" means the wanted level decayed to zero (the police lost sight long enough). In tests the successful escapes were done by moving the character ~800 studs away; escaping the NPC unit by driving was not tested.
+ 8d. **4B holdout position** uses the character's replicated position (client-simulated physics, as for every character). A cheater could fake standing inside, but only for a robbery they started at the register, and they still get 2★ and must escape. Exploit testing is MULTIPLAYER UNVERIFIED.
+-8e. ~~4B payout failure not retried~~ fixed in the 4B follow-up (pending payouts + orphan saves). Remaining gap: a pending reward is dropped if the player leaves while their cash data is still offline; a profile whose save keeps failing is lost if the server itself shuts down before the DataStore recovers.
+-8i. **4B getaway balance (owner decision needed):** fixed part: the unit is now only sent when the holdout ends, so robbers reach their car. Still open: once chasing, the single unit keeps pace and sight (chase speed + gap catch-up vs the Coupe), so no solo getaway has ended in a payout yet. Tuning options for the owner: lower `ChaseGain`/`ChaseSpeed`, a shorter `SightRange`, or a shorter `WantedConfig.DecayDelay` for 2★. The roadside-stop proposal (ARCHITECTURE) is still unbuilt.
++8e. ~~Rewards/purchases lost after failed saves~~ fixed by the audit remediation: changes are written before they are acknowledged, and earned rewards go to a separate ledger. Remaining gap: if the ledger write AND every grant retry fail (a total DataStore outage) and the player leaves, that one reward is lost and logged. The ledger dedupes by transaction id, and the profile remembers the last 200 ids; a ledger entry older than 200 newer transactions could in theory be paid again.
++8i. **Getaway balance:** experimental tuning (SightRange 130, ChaseSpeed 100, ChaseGain 0.25) gave 5/5 paid scripted getaways vs 3/5 at baseline. That's a small solo sample, and with the tuning escapes may now be too easy (18–35 s). Needs human playtests and an owner decision. The roadside-stop proposal (ARCHITECTURE) is still unbuilt.
+ 8f. Robbery sessions and store cooldowns are per server and session-only: leaving mid-robbery forfeits it; a server restart clears cooldowns.
+ 8g. The NPC police car can't enter the store; at the storefront it hits hard recovery (`stalled repeatedly at (-113, -57)`) and re-routes. It still busted a player standing near the counter from 21 studs.
+ 8h. On small phones the robbery panel (y 136-212 on a 374-px-high screen) covers part of the middle of the view while active. The `InVehicle` rejection is unit-tested only.
+ 8j. **4C:** the dealership and garage are MULTIPLAYER UNVERIFIED (two buyers, other players seeing the display car or someone else's Muscle). Purchases while another server holds the profile lock are refused until the lock clears (`SessionLocked`, up to 180 s); that path was seen in Studio but not across two real servers.
+ 8k. **4C:** a player whose cash data is unavailable can still spawn the starter Coupe, but not a bought car, until the data loads.
+-8l. **4C:** driving the Muscle on mobile touch controls was not separately tested. The touch driving buttons are shared with the Coupe and were tested in Phase 2.
++8l. **4C:** Muscle touch GAS/BRAKE tested in the iPhone 7 simulator only. Thumbstick steering and a real phone are untested (owner).
++8m. **Remediation:** every cash change is now a DataStore write (about one per robbery, purchase or dev grant, plus a 60 s heartbeat per player). Fine at current scale. Budgets under many players are MULTIPLAYER UNVERIFIED.
+ 8b. The Studio-only dev panel is now taller than a small phone screen (it is clipped; F8 hides it; never in published servers).
+ 9. Player-vs-player harm (combat rules, safe zones, spawn protection) is verified only with mock players: no PvP damage exists yet.
+ 10. Parked cars have a tiny vertical velocity jitter at rest (positions stable to ±0.01 stud).
+@@ -172,7 +182,8 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
+ - ~~Short jail (12 s, 10-15 configurable)~~ — provisionally approved (solo); Phase 3 signed off
+ - ~~4A cash and persistence~~ — approved by the owner (solo, real Studio DataStore)
+ - ~~4B one convenience-store robbery~~ — provisionally approved by the owner
+-- 4B follow-up — payout recovery done and tested; police now sent at holdout end (owner option 1); **driving getaway still not passed** (pursuit keeps pace); pursuit tuning left for an owner decision
+-- ~~4C dealership + second vehicle~~ — done (solo); **awaiting owner review**
+-- Open owner decision: police pursuit tuning for robbery getaways (see known issue 8i)
++- 4B follow-up — done; police sent at holdout end (owner option 1)
++- ~~4C dealership + second vehicle~~ — done (solo)
++- ~~Audit remediation (CHANGES REQUIRED, 2026-10-14)~~ — done (solo); **awaiting the auditor's review and owner approval**. No Phase 5 or new features until then
++- Owner to do: human getaway playtest; Muscle on a real phone (touch steering); decide whether to keep the experimental police tuning
+ - 3F Studio-only test tools — maintained throughout
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index bbfc451..ff5e10b 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -49,7 +49,8 @@ Out of scope for Phase 3: robberies, weapons, gangs, helicopters, new districts,
+ ## Phase 4 — Economy
+ - **4A ✅ approved (solo; real Studio DataStore):** server-authoritative cash, starting cash, DataStore persistence with retries and session safety, one EconomyService, pure economy rules, duplicate-transaction protection, cash HUD, Studio-only cash dev tools. No robberies, purchases or monetization yet.
+ - **4B ✅ provisionally approved (solo):** one convenience-store robbery (24/7 MART): server-owned sessions, 15 s holdout, 2★, $2,000 paid once only after escaping, 180 s store cooldown, fails on death/bust/leaving/disconnect, robbery HUD. No banks, more stores, gangs or weapons.
+-- **4B follow-up (in progress):** recoverable robbery payouts ✅; police sent at holdout end ✅; driving getaway ❌ not yet passed (pursuit keeps pace; tuning needs owner decision); police roadside stop proposed.
++- **4B follow-up ✅:** recoverable robbery payouts; police sent at holdout end; police roadside stop proposed.
++- **Audit remediation ✅ (solo; awaiting audit):** write-through economy (acknowledged = stored), durable reward ledger, lock heartbeat, experimental police tuning (paid getaways 5/5 vs 3/5), Muscle touch check, HTTP off.
+ - **4C ✅ (solo; awaiting owner review):** OUTLAW MOTORS dealership, the $15,000 Muscle (faster, heavier handling), server purchase API (atomic cash + ownership, duplicate-safe), persistent ownership in profile v2 with safe migration from cash-only profiles, garage window, ownership-checked spawning, PC + mobile UI.
+ - Original line: cash, server-authoritative rewards for arrests and robberies, DataStore persistence.
+ - A first purchasable vehicle.
+diff --git a/docs/TEST_CHECKLIST.md b/docs/TEST_CHECKLIST.md
+index f094244..cc288c2 100644
+--- a/docs/TEST_CHECKLIST.md
++++ b/docs/TEST_CHECKLIST.md
+@@ -165,6 +165,19 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
+ - [ ] Rejoin -> Muscle still owned, same cash
+ - [ ] Workspace `SimulateDataStoreFailure` = true, buy, leave with it still on -> next join (after the old lock clears) has neither the charge nor the car; buy during an outage that ends before leaving -> both saved. **Clear the attribute afterwards.**
+ - [ ] Phone (iPhone 7): garage and dealership windows below the top row, buttons tappable, cash badge visible
++- [ ] Phone: Muscle with GAS / BRAKE / DRIFT / EXIT and thumbstick steering (real device: owner)
++
++## Economy durability (audit remediation, solo; Workspace attributes are Studio-only)
++- [ ] `ProfileStore.spec` and `RewardLedger.spec` pass
++- [ ] `SimulateStoreFailure_OutlawCity_PlayerData_v1` = true, buy a car -> "Couldn't save your purchase… Nothing was charged"; Output `NOT applied`; cash and garage unchanged. Set it false, buy again -> bought once
++- [ ] Same attribute on, rob + escape -> "Your reward is safely recorded"; stop the server with it still on; next session (after the old lock clears, up to 3 min) -> +2000 once, ledger empty
++- [ ] `SimulateDataStoreFailure` = true during an escape -> pending (not recorded); set it false -> paid once
++- [ ] Idle 3+ minutes in game: Output shows no lock problems; rejoin works (heartbeat keeps the lock fresh)
++
++## Police pursuit tuning (audit remediation, EXPERIMENTAL)
++- [ ] With SightRange 130 / ChaseSpeed 100 / ChaseGain 0.25: rob, drive away normally, lose the police -> paid once
++- [ ] Police still catch a robber who stops or crashes nearby (bust within 18 studs, slow for 2.5 s)
++- [ ] **Human playtest (owner):** does escaping feel fair, too easy or too hard?
+ 
+ ## Mobile (Device Simulator, phone landscape)
+ - [ ] SAFE ZONE badge visible on iPhone 7 with the stars and the Combat button, no overlap
+diff --git a/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau b/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+index b84949e..3d72d1d 100644
+--- a/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
++++ b/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+@@ -20,6 +20,10 @@ local EconomyConfig = {
+ 	SessionLockTimeout = 180, -- seconds after which another server's lock counts as stale
+ 	AutosaveInterval = 60,
+ 	SaveAttempts = 3,
++	-- Earned-but-unpaid rewards are recorded here first (separate store), so they survive a
++	-- failed profile save, a disconnect or a server crash. Claimed on the next load.
++	RewardStoreName = "OutlawCity_PendingRewards_v1",
++	CommitAttempts = 2, -- write-through tries per cash change before it is refused as SaveFailed
+ 	-- If the save on leave fails, the unsaved profile is kept on this server and retried.
+ 	OrphanRetryInterval = 10,
+ 	OrphanRetryLimit = 900, -- seconds; stops early if another server takes the lock
+diff --git a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+index 13aff00..61c6b63 100644
+--- a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
++++ b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+@@ -152,8 +152,8 @@ function RobberyRules.payoutOutcome(ok: boolean, err: string?): Types.PayoutOutc
+ 		return "Paid"
+ 	elseif err == "DuplicateTransaction" then
+ 		return "AlreadyPaid"
+-	elseif err == "DataNotLoaded" then
+-		return "Retry"
++	elseif err == "DataNotLoaded" or err == "SaveFailed" then
++		return "Retry" -- temporary: the data isn't loaded, or the write didn't go through
+ 	end
+ 	return "Rejected"
+ end
+diff --git a/src/ReplicatedStorage/Shared/Types.luau b/src/ReplicatedStorage/Shared/Types.luau
+index aa7f263..cb3dfc8 100644
+--- a/src/ReplicatedStorage/Shared/Types.luau
++++ b/src/ReplicatedStorage/Shared/Types.luau
+@@ -120,6 +120,7 @@ export type EconomyError =
+ 	| "InvalidVehicle"
+ 	| "AlreadyOwned"
+ 	| "TooManyVehicles"
++	| "SaveFailed" -- the change could not be stored, so it was NOT applied
+ 	| "NotInGame"
+ 
+ -- Store robbery (Phase 4B).
+diff --git a/src/ServerScriptService/Server/Data/DataStoreAdapter.luau b/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
+index cec75ea..7bd98b2 100644
+--- a/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
++++ b/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
+@@ -28,9 +28,11 @@ end
+ 
+ function DataStoreAdapter.get(baseName: string): any
+ 	local store = DataStoreService:GetDataStore(DataStoreAdapter.storeName(baseName))
++	-- Studio-only: Workspace attribute SimulateStoreFailure_<baseName> fails just this store.
++	local perStore = "SimulateStoreFailure_" .. baseName
+ 	return {
+ 		UpdateAsync = function(_, key: string, transform: (any) -> any): any
+-			if DataStoreAdapter.isSimulatingFailure() then
++			if DataStoreAdapter.isSimulatingFailure() or (RunService:IsStudio() and Workspace:GetAttribute(perStore) == true) then
+ 				error("Simulated DataStore failure (Studio test)")
+ 			end
+ 			return store:UpdateAsync(key, transform)
+diff --git a/src/ServerScriptService/Server/Data/ProfileStore.luau b/src/ServerScriptService/Server/Data/ProfileStore.luau
+index 9b1cba2..56da08a 100644
+--- a/src/ServerScriptService/Server/Data/ProfileStore.luau
++++ b/src/ServerScriptService/Server/Data/ProfileStore.luau
+@@ -49,6 +49,45 @@ function ProfileStore.load(store: Store, key: string, sessionId: string, now: nu
+ 	return profile, outcome :: any, nil
+ end
+ 
++local function copyProfile(profile: Types.Profile): Types.Profile
++	return {
++		Version = profile.Version,
++		Cash = profile.Cash,
++		RecentTransactions = table.clone(profile.RecentTransactions),
++		OwnedVehicles = table.clone(profile.OwnedVehicles),
++	}
++end
++
++-- Write-through change (audit remediation): applies `mutate` to a COPY of `profile`, writes
++-- that copy in one UpdateAsync while this session owns the lock, and only then copies it into
++-- `profile`. If the rule refuses or the write fails, `profile` is left exactly as it was, so a
++-- change the caller acknowledges is always already stored. Callers must serialise commits for
++-- one profile (EconomyService does, per player).
++-- Returns (ok, err, detail): err is the rule's error, "StoreError" or "LockLost".
++function ProfileStore.commit(
++	store: Store,
++	key: string,
++	sessionId: string,
++	profile: Types.Profile,
++	now: number,
++	mutate: (Types.Profile) -> (boolean, string?)
++): (boolean, string?, string?)
++	local draft = copyProfile(profile)
++	local ok, err = mutate(draft)
++	if not ok then
++		return false, err, nil
++	end
++	local saved, saveErr, detail = ProfileStore.save(store, key, sessionId, draft, now, false)
++	if not saved then
++		return false, saveErr, detail
++	end
++	profile.Version = draft.Version
++	profile.Cash = draft.Cash
++	profile.RecentTransactions = draft.RecentTransactions
++	profile.OwnedVehicles = draft.OwnedVehicles
++	return true, nil, nil
++end
++
+ -- Writes the profile if this session still owns the lock. `release` drops the lock (leaving).
+ function ProfileStore.save(store: Store, key: string, sessionId: string, profile: Types.Profile, now: number, release: boolean): (boolean, SaveError?, string?)
+ 	local owned = false
+diff --git a/src/ServerScriptService/Server/Data/RewardLedger.luau b/src/ServerScriptService/Server/Data/RewardLedger.luau
+new file mode 100644
+index 0000000..12317a6
+--- /dev/null
++++ b/src/ServerScriptService/Server/Data/RewardLedger.luau
+@@ -0,0 +1,100 @@
++--!strict
++-- Durable record of earned-but-unpaid rewards (audit remediation). Kept in its OWN DataStore
++-- (EconomyConfig.RewardStoreName), separate from the player profile, so a reward survives a
++-- failed profile save, a disconnect or a server crash. Each entry carries the reward's stable
++-- transaction id, so paying it later (on any server, on the player's next load) can never pay
++-- twice: the profile's duplicate-transaction guard refuses a second grant.
++-- Record: { Rewards = { { TxId: string, Amount: number, Reason: string, At: number } } }
++-- Unit-tested with a fake store in ServerStorage.Tests.RewardLedger.spec.
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local Types = require(ReplicatedStorage.Shared.Types)
++local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
++
++local RewardLedger = {}
++
++export type Reward = { TxId: string, Amount: number, Reason: string, At: number }
++export type Store = { UpdateAsync: (self: any, key: string, transform: (any) -> any) -> any }
++
++local MAX_ENTRIES = 50
++
++local function entriesOf(record: any): { Reward }
++	local list = {}
++	if type(record) == "table" and type(record.Rewards) == "table" then
++		for _, r in record.Rewards do
++			if type(r) == "table" and type(r.TxId) == "string" and type(r.Amount) == "number" then
++				table.insert(list, { TxId = r.TxId, Amount = r.Amount, Reason = tostring(r.Reason or ""), At = tonumber(r.At) or 0 })
++			end
++		end
++	end
++	return list
++end
++
++-- Adds a reward (no-op if its TxId is already recorded). Returns (ok, err?).
++function RewardLedger.record(store: Store, key: string, reward: Reward): (boolean, string?)
++	local ok, err = pcall(function()
++		store:UpdateAsync(key, function(old: any)
++			local list = entriesOf(old)
++			for _, r in list do
++				if r.TxId == reward.TxId then
++					return nil -- already recorded: leave untouched
++				end
++			end
++			if #list >= MAX_ENTRIES then
++				error("reward ledger full")
++			end
++			table.insert(list, reward)
++			return { Rewards = list }
++		end)
++	end)
++	return ok, if ok then nil else tostring(err)
++end
++
++-- Reads the outstanding rewards without changing them. Returns (rewards?, err?).
++function RewardLedger.list(store: Store, key: string): ({ Reward }?, string?)
++	local result: { Reward }? = nil
++	local ok, err = pcall(function()
++		store:UpdateAsync(key, function(old: any)
++			result = entriesOf(old)
++			return nil -- read only
++		end)
++	end)
++	if not ok then
++		return nil, tostring(err)
++	end
++	return result or {}, nil
++end
++
++-- Removes settled rewards by TxId. Returns (ok, err?).
++function RewardLedger.remove(store: Store, key: string, txIds: { string }): (boolean, string?)
++	local ok, err = pcall(function()
++		store:UpdateAsync(key, function(old: any)
++			local list = entriesOf(old)
++			local kept = {}
++			for _, r in list do
++				if not table.find(txIds, r.TxId) then
++					table.insert(kept, r)
++				end
++			end
++			if #kept == #list then
++				return nil
++			end
++			return { Rewards = kept }
++		end)
++	end)
++	return ok, if ok then nil else tostring(err)
++end
++
++-- Applies every outstanding reward to `draft` (a profile copy inside ProfileStore.commit).
++-- Already-paid ones (duplicate tx) are skipped. Returns the TxIds that are now settled.
++function RewardLedger.applyAll(draft: Types.Profile, rewards: { Reward }, config: any): { string }
++	local settled = {}
++	for _, r in rewards do
++		local ok, err = EconomyRules.grant(draft, r.Amount, r.TxId, config)
++		if ok or err == "DuplicateTransaction" then
++			table.insert(settled, r.TxId)
++		end
++	end
++	return settled
++end
++
++return RewardLedger
+diff --git a/src/ServerScriptService/Server/Police/PoliceConfig.luau b/src/ServerScriptService/Server/Police/PoliceConfig.luau
+index 5b4987c..7a4287c 100644
+--- a/src/ServerScriptService/Server/Police/PoliceConfig.luau
++++ b/src/ServerScriptService/Server/Police/PoliceConfig.luau
+@@ -10,12 +10,15 @@ local PoliceConfig = {
+ 	LostTargetSeconds = 10,
+ 
+ 	-- Perception
+-	SightRange = 160, -- studs; plus a clear line of sight
++	-- Audit remediation, EXPERIMENTAL pursuit tuning (owner/auditor review pending):
++	-- SightRange 160 -> 130, ChaseSpeed 110 -> 100, ChaseGain 1.0 -> 0.25. Baseline values in
++	-- the comments; WantedConfig.DecayDelay stays 8 s.
++	SightRange = 130, -- studs; plus a clear line of sight (baseline 160)
+ 	DirectChaseRange = 90, -- within this and in sight, drive straight at the target
+ 
+ 	-- Driving (studs/s, studs, radians)
+ 	CruiseSpeed = 95,
+-	ChaseSpeed = 110,
++	ChaseSpeed = 100, -- baseline 110
+ 	CornerSpeedMin = 30,
+ 	CornerDecel = 1.1, -- allowed speed grows by this per stud of distance before a corner
+ 	WaypointRadius = 16,
+@@ -27,7 +30,7 @@ local PoliceConfig = {
+ 	ReplanInterval = 1,
+ 	ChaseLookAhead = 0.5, -- seconds of target velocity to lead by in direct chase
+ 	ChaseFollowDistance = 10, -- gap the chase-speed rule closes down to
+-	ChaseGain = 1.0, -- extra studs/s per stud of gap beyond the follow distance
++	ChaseGain = 0.25, -- extra studs/s per stud of gap beyond the follow distance (baseline 1.0)
+ 
+ 	-- Stuck handling
+ 	StuckSpeed = 3,
+diff --git a/src/ServerScriptService/Server/Services/EconomyService.luau b/src/ServerScriptService/Server/Services/EconomyService.luau
+index 51bf17d..1d0f64d 100644
+--- a/src/ServerScriptService/Server/Services/EconomyService.luau
++++ b/src/ServerScriptService/Server/Services/EconomyService.luau
+@@ -1,18 +1,23 @@
+ --!strict
+--- The ONE place player cash changes. Server-authoritative balances, persisted in a DataStore.
++-- The ONE place player cash and vehicle ownership change. Server-authoritative, persisted in a
++-- DataStore.
+ --  * Load on join with retries + exponential backoff and a session lock (ProfileStore).
+---  * If loading fails, the player is marked "Unavailable": no cash changes, and NOTHING is
+---    saved for them (so a DataStore outage can never overwrite real progress with defaults).
+---    Loading is retried in the background until it succeeds.
+---  * grant/deduct go through EconomyRules (whole positive amounts, caps, duplicate
+---    transaction ids, insufficient funds). There is no client remote that changes cash.
+---  * Autosave every AutosaveInterval for changed profiles; save + release on leave and on
+---    server shutdown.
+---  * If the save on leave fails, the profile is kept as an "orphan" and its save retried in
+---    the background (and at shutdown), so cash already earned isn't silently dropped. A
+---    player who rejoins this server before it saves gets that newer profile back.
+--- Future systems (robbery rewards, vehicle purchases) call grant/deduct with their own
+--- unique transaction ids, e.g. "robbery:<serverJob>:<n>", so retries can't pay twice.
++--  * If loading fails, the player is marked "Unavailable": no changes, and NOTHING is saved for
++--    them (so a DataStore outage can never overwrite real progress with defaults). Loading is
++--    retried in the background until it succeeds.
++--  * WRITE-THROUGH (audit remediation): every grant, deduction and purchase is applied to a copy
++--    of the profile and written with ProfileStore.commit BEFORE it takes effect. If the write
++--    fails, nothing changes and the caller gets "SaveFailed". So anything this service reports
++--    as done is already stored and survives a crash, a failed leave-save or another server
++--    taking the lock later.
++--  * Changes for one player are serialised (one commit or save at a time), so concurrent
++--    requests can't overwrite each other.
++--  * Earned rewards (grantReward) are first recorded in a separate reward ledger, then granted.
++--    If the grant can't be stored now, the ledger entry is paid on the player's next successful
++--    load on any server, exactly once (same transaction id).
++--  * Every loaded profile is re-saved every AutosaveInterval to refresh its session lock (a
++--    quiet session's lock must never go stale while the player is still here); saved and
++--    released on leave and on shutdown. A failed leave-save is retried in the background.
+ local HttpService = game:GetService("HttpService")
+ local Players = game:GetService("Players")
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+@@ -26,6 +31,7 @@ local EconomyRules = require(Shared.Economy.EconomyRules)
+ local PlayerAttributes = require(Shared.Player.PlayerAttributes)
+ local Data = script.Parent.Parent.Data
+ local ProfileStore = require(Data.ProfileStore)
++local RewardLedger = require(Data.RewardLedger)
+ local DataStoreAdapter = require(Data.DataStoreAdapter)
+ 
+ local EconomyService = {}
+@@ -33,15 +39,16 @@ local EconomyService = {}
+ type Session = {
+ 	Status: "Loading" | "Loaded" | "Unavailable",
+ 	Profile: Types.Profile?,
+-	Dirty: boolean,
+ 	Key: string,
+ 	Leaving: boolean,
++	Busy: boolean, -- a commit or save is in progress for this player
+ }
+ 
+ local sessions: { [Player]: Session } = {}
+ type Orphan = { Name: string, Profile: Types.Profile, Since: number }
+ local orphans: { [string]: Orphan } = {} -- key -> profile whose save on leave failed
+ local store: any
++local rewardStore: any
+ -- A Studio playtest has no JobId; give each server a unique lock id either way.
+ local sessionId = if game.JobId ~= "" then game.JobId else "studio-" .. HttpService:GenerateGUID(false)
+ 
+@@ -61,6 +68,80 @@ local function keyFor(player: Player): string
+ 	return `player_{player.UserId}`
+ end
+ 
++local function rewardKeyFor(key: string): string
++	return `rewards_{key}`
++end
++
++-- Runs fn with this player's profile to itself: no other commit or save interleaves.
++local function withLock<T...>(session: Session, fn: () -> T...): T...
++	while session.Busy do
++		task.wait()
++	end
++	session.Busy = true
++	local results = table.pack(pcall(fn))
++	session.Busy = false
++	if not results[1] then
++		error(results[2], 0)
++	end
++	return table.unpack(results, 2, results.n)
++end
++
++-- Write-through commit for a loaded session. Returns (ok, err): rule errors pass through,
++-- store failures become "SaveFailed" (nothing applied). Losing the lock means another server
++-- owns this profile now, so this session stops writing.
++local function commit(player: Player, session: Session, label: string, mutate: (Types.Profile) -> (boolean, string?)): (boolean, Types.EconomyError?)
++	local profile = session.Profile :: Types.Profile
++	local lastErr: string? = nil
++	for attempt = 1, EconomyConfig.CommitAttempts do
++		local ok, err, detail = ProfileStore.commit(store, session.Key, sessionId, profile, os.time(), mutate)
++		if ok then
++			return true, nil
++		end
++		if err ~= "StoreError" and err ~= "LockLost" then
++			return false, err :: any -- refused by the rules: nothing to retry
++		end
++		lastErr = err
++		log(`{player.Name}: {label} write attempt {attempt} failed ({err}{if detail then ": " .. detail else ""})`)
++		if err == "LockLost" then
++			session.Status = "Unavailable"
++			publish(player, session)
++			warn(`[Economy] {player.Name}: another server owns this profile; this session stops changing it`)
++			break
++		end
++		if attempt < EconomyConfig.CommitAttempts then
++			task.wait(EconomyConfig.RetryBaseDelay * 2 ^ (attempt - 1))
++		end
++	end
++	log(`{player.Name}: {label} NOT applied ({lastErr}); nothing changed`)
++	return false, "SaveFailed"
++end
++
++-- Pays rewards recorded in the ledger (earned earlier, here or on another server, but not
++-- stored then). Runs once after each successful load; safe to repeat.
++local function claimRewards(player: Player, session: Session)
++	local rewards, listErr = RewardLedger.list(rewardStore, rewardKeyFor(session.Key))
++	if not rewards then
++		log(`{player.Name}: reward ledger unreadable ({listErr}); will retry on the next load`)
++		return
++	end
++	if #rewards == 0 then
++		return
++	end
++	local settled: { string } = {}
++	local ok = withLock(session, function()
++		local committed = commit(player, session, "claim rewards", function(draft)
++			settled = RewardLedger.applyAll(draft, rewards, EconomyConfig)
++			return true, nil
++		end)
++		return committed
++	end)
++	if ok then
++		publish(player, session)
++		log(`{player.Name}: paid {#settled} recorded reward(s) -> {(session.Profile :: Types.Profile).Cash}`)
++		RewardLedger.remove(rewardStore, rewardKeyFor(session.Key), settled)
++	end
++end
++
+ local function tryLoad(player: Player, session: Session): boolean
+ 	for attempt = 1, EconomyConfig.LoadAttempts do
+ 		local profile, result, detail = ProfileStore.load(store, session.Key, sessionId, os.time(), EconomyConfig)
+@@ -69,6 +150,7 @@ local function tryLoad(player: Player, session: Session): boolean
+ 			session.Status = "Loaded"
+ 			publish(player, session)
+ 			log(`{player.Name}: loaded ({result}) cash={profile.Cash}`)
++			task.spawn(claimRewards, player, session)
+ 			return true
+ 		end
+ 		log(`{player.Name}: load attempt {attempt} failed ({result}{if detail then ": " .. detail else ""})`)
+@@ -119,17 +201,18 @@ local function saveProfile(name: string, key: string, profile: Types.Profile, re
+ end
+ 
+ local function save(player: Player, session: Session, release: boolean): boolean
+-	if session.Status ~= "Loaded" or not session.Profile then
+-		return false -- never write for a profile we didn't load
+-	end
+-	local ok = saveProfile(player.Name, session.Key, session.Profile :: Types.Profile, release, EconomyConfig.SaveAttempts)
+-	if ok then
+-		session.Dirty = false
+-	end
+-	return ok
++	return withLock(session, function()
++		if session.Status ~= "Loaded" or not session.Profile then
++			return false -- never write for a profile we didn't load
++		end
++		local ok = saveProfile(player.Name, session.Key, session.Profile :: Types.Profile, release, EconomyConfig.SaveAttempts)
++		return ok
++	end)
+ end
+ 
+--- Background retries for profiles whose save on leave failed.
++-- Background retries for profiles whose save on leave failed. Since every cash change is
++-- already stored when it happens, this only refreshes/releases the lock; nothing acknowledged
++-- depends on it.
+ local function retryOrphan(key: string, orphan: Orphan)
+ 	while orphans[key] == orphan do
+ 		task.wait(EconomyConfig.OrphanRetryInterval)
+@@ -142,40 +225,52 @@ local function retryOrphan(key: string, orphan: Orphan)
+ 			log(`{orphan.Name}: saved after leaving (cash={orphan.Profile.Cash})`)
+ 		elseif lockLost then
+ 			orphans[key] = nil
+-			warn(`[Economy] {orphan.Name}: another server owns this profile now; unsaved changes dropped (cash={orphan.Profile.Cash})`)
++			log(`{orphan.Name}: another server owns this profile now; nothing to release`)
+ 		elseif os.clock() - orphan.Since > EconomyConfig.OrphanRetryLimit then
+ 			orphans[key] = nil
+-			warn(`[Economy] {orphan.Name}: gave up saving after {EconomyConfig.OrphanRetryLimit}s; unsaved cash={orphan.Profile.Cash}`)
++			warn(`[Economy] {orphan.Name}: gave up releasing the lock after {EconomyConfig.OrphanRetryLimit}s (it expires by itself)`)
+ 		end
+ 	end
+ end
+ 
+-local function change(player: Player, kind: "grant" | "deduct", amount: any, txId: any, reason: string): (boolean, Types.EconomyError?)
++local function loadedSession(player: Player): (Session?, Types.EconomyError?)
+ 	local session = sessions[player]
+ 	if not session or player.Parent ~= Players then
+-		return false, "NotInGame"
++		return nil, "NotInGame"
+ 	end
+ 	if session.Status ~= "Loaded" or not session.Profile then
+-		return false, "DataNotLoaded"
++		return nil, "DataNotLoaded"
+ 	end
+-	local profile = session.Profile :: Types.Profile
+-	local ok, err
+-	if kind == "grant" then
+-		ok, err = EconomyRules.grant(profile, amount, txId, EconomyConfig)
+-	else
+-		ok, err = EconomyRules.deduct(profile, amount, txId, EconomyConfig)
++	return session, nil
++end
++
++local function change(player: Player, kind: "grant" | "deduct", amount: any, txId: any, reason: string): (boolean, Types.EconomyError?)
++	local session, err = loadedSession(player)
++	if not session then
++		return false, err
+ 	end
++	local ok, changeErr = withLock(session, function()
++		if session.Status ~= "Loaded" then
++			return false, "DataNotLoaded" :: Types.EconomyError?
++		end
++		return commit(player, session, `{kind} {tostring(amount)}`, function(draft)
++			if kind == "grant" then
++				return EconomyRules.grant(draft, amount, txId, EconomyConfig)
++			end
++			return EconomyRules.deduct(draft, amount, txId, EconomyConfig)
++		end)
++	end)
+ 	if ok then
+-		session.Dirty = true
+ 		publish(player, session)
+-		log(`{player.Name}: {kind} {amount} ({reason}, tx {txId}) -> {profile.Cash}`)
++		log(`{player.Name}: {kind} {amount} ({reason}, tx {txId}) -> {(session.Profile :: Types.Profile).Cash} (stored)`)
+ 	else
+-		log(`{player.Name}: {kind} {tostring(amount)} refused: {err} ({reason}, tx {tostring(txId)})`)
++		log(`{player.Name}: {kind} {tostring(amount)} refused: {changeErr} ({reason}, tx {tostring(txId)})`)
+ 	end
+-	return ok, err
++	return ok, changeErr
+ end
+ 
+--- Server-only API. txId must be unique per real-world event; repeats are refused.
++-- Server-only API. txId must be unique per real-world event; repeats are refused. Returns true
++-- only once the change is stored.
+ function EconomyService.grant(player: Player, amount: number, txId: string, reason: string): (boolean, Types.EconomyError?)
+ 	return change(player, "grant", amount, txId, reason)
+ end
+@@ -184,6 +279,23 @@ function EconomyService.deduct(player: Player, amount: number, txId: string, rea
+ 	return change(player, "deduct", amount, txId, reason)
+ end
+ 
++-- A reward the player has EARNED (robbery payout). Recorded in the reward ledger first, then
++-- granted write-through. Returns (paid, err, recorded): if not paid but recorded, the reward
++-- will be paid on the player's next successful load (any server), never twice.
++function EconomyService.grantReward(player: Player, amount: number, txId: string, reason: string): (boolean, Types.EconomyError?, boolean)
++	local recorded, recordErr = RewardLedger.record(rewardStore, rewardKeyFor(keyFor(player)), { TxId = txId, Amount = amount, Reason = reason, At = os.time() })
++	if not recorded then
++		log(`{player.Name}: reward {txId} could not be recorded in the ledger ({recordErr})`)
++	end
++	local paid, err = change(player, "grant", amount, txId, reason)
++	if paid or err == "DuplicateTransaction" then
++		-- Settled now (or earlier): clear it from the ledger. If this fails, the next load's
++		-- claim finds it already paid (duplicate tx) and clears it then.
++		RewardLedger.remove(rewardStore, rewardKeyFor(keyFor(player)), { txId })
++	end
++	return paid, err, recorded
++end
++
+ function EconomyService.getBalance(player: Player): number?
+ 	local session = sessions[player]
+ 	return if session and session.Status == "Loaded" and session.Profile then session.Profile.Cash else nil
+@@ -209,31 +321,29 @@ function EconomyService.ownsVehicle(player: Player, vehicleId: string): boolean
+ 	return session ~= nil and session.Status == "Loaded" and session.Profile ~= nil and EconomyRules.ownsVehicle(session.Profile, vehicleId)
+ end
+ 
+--- Server-only purchase: price and ownership change together on the profile, then it is saved
+--- right away (and again by autosave/leave if that save fails; both always travel together).
++-- Server-only purchase: the price and the ownership are applied together to a profile copy and
++-- stored in one write; only then does the purchase take effect and return true. A failed write
++-- returns "SaveFailed" with nothing charged and no car.
+ function EconomyService.purchaseVehicle(player: Player, vehicleId: string, price: number, txId: string): (boolean, Types.EconomyError?)
+-	local session = sessions[player]
+-	if not session or player.Parent ~= Players then
+-		return false, "NotInGame"
+-	end
+-	if session.Status ~= "Loaded" or not session.Profile then
+-		return false, "DataNotLoaded"
+-	end
+-	local profile = session.Profile :: Types.Profile
+-	local ok, err = EconomyRules.purchaseVehicle(profile, vehicleId, price, txId, EconomyConfig)
+-	if not ok then
+-		log(`{player.Name}: purchase {tostring(vehicleId)} for {tostring(price)} refused: {err} (tx {tostring(txId)})`)
++	local session, err = loadedSession(player)
++	if not session then
+ 		return false, err
+ 	end
+-	session.Dirty = true
+-	publish(player, session)
+-	log(`{player.Name}: bought {vehicleId} for {price} (tx {txId}) -> cash {profile.Cash}`)
+-	task.spawn(function()
+-		if save(player, session, false) then
+-			log(`{player.Name}: purchase saved`)
++	local ok, buyErr = withLock(session, function()
++		if session.Status ~= "Loaded" then
++			return false, "DataNotLoaded" :: Types.EconomyError?
+ 		end
++		return commit(player, session, `purchase {tostring(vehicleId)}`, function(draft)
++			return EconomyRules.purchaseVehicle(draft, vehicleId, price, txId, EconomyConfig)
++		end)
+ 	end)
+-	return true, nil
++	if ok then
++		publish(player, session)
++		log(`{player.Name}: bought {vehicleId} for {price} (tx {txId}) -> cash {(session.Profile :: Types.Profile).Cash} (stored)`)
++	else
++		log(`{player.Name}: purchase {tostring(vehicleId)} for {tostring(price)} refused: {buyErr} (tx {tostring(txId)})`)
++	end
++	return ok, buyErr
+ end
+ 
+ -- Unique transaction id helper for server systems.
+@@ -285,18 +395,18 @@ function EconomyService.writeLegacyRecordForTesting(player: Player): boolean
+ end
+ 
+ local function onPlayerAdded(player: Player)
+-	local session: Session = { Status = "Loading", Profile = nil, Dirty = false, Key = keyFor(player), Leaving = false }
++	local session: Session = { Status = "Loading", Profile = nil, Key = keyFor(player), Leaving = false, Busy = false }
+ 	sessions[player] = session
+ 	local orphan = orphans[session.Key]
+ 	if orphan then
+-		-- Rejoined this server before its unsaved profile was written: that copy is the newest
+-		-- data and this server still holds the lock, so use it instead of the stored record.
++		-- Rejoined this server before its leave-save went through: this server still holds the
++		-- lock and the copy matches what was stored by the write-through commits.
+ 		orphans[session.Key] = nil
+ 		session.Profile = orphan.Profile
+ 		session.Status = "Loaded"
+-		session.Dirty = true
+ 		publish(player, session)
+-		log(`{player.Name}: rejoined; using the unsaved profile kept on this server (cash={orphan.Profile.Cash})`)
++		log(`{player.Name}: rejoined; using the profile kept on this server (cash={orphan.Profile.Cash})`)
++		task.spawn(claimRewards, player, session)
+ 		return
+ 	end
+ 	publish(player, session)
+@@ -316,7 +426,7 @@ local function onPlayerRemoving(player: Player)
+ 		elseif sessions[player] == session then
+ 			local orphan: Orphan = { Name = player.Name, Profile = profile, Since = os.clock() }
+ 			orphans[session.Key] = orphan
+-			warn(`[Economy] {player.Name}: save on leave failed; keeping the profile and retrying (cash={profile.Cash})`)
++			warn(`[Economy] {player.Name}: save on leave failed; retrying in the background (every change was already stored when it happened)`)
+ 			task.spawn(retryOrphan, session.Key, orphan)
+ 		end
+ 	else
+@@ -327,6 +437,7 @@ end
+ 
+ function EconomyService.init()
+ 	store = DataStoreAdapter.get(EconomyConfig.DataStoreName)
++	rewardStore = DataStoreAdapter.get(EconomyConfig.RewardStoreName)
+ 	if RunService:IsStudio() and Workspace:GetAttribute("SimulateDataStoreFailureOnStart") == true then
+ 		DataStoreAdapter.setSimulatedFailure(true)
+ 		log("Studio test: simulating DataStore failure from server start")
+@@ -365,11 +476,13 @@ function EconomyService.start()
+ 			task.wait(0.1)
+ 		end
+ 	end)
++	-- Lock heartbeat: re-save every loaded profile so its session lock stays fresh while the
++	-- player is here (a lock older than SessionLockTimeout could be claimed by another server).
+ 	task.spawn(function()
+ 		while true do
+ 			task.wait(EconomyConfig.AutosaveInterval)
+ 			for player, session in sessions do
+-				if session.Dirty and not session.Leaving then
++				if session.Status == "Loaded" and not session.Leaving then
+ 					task.spawn(save, player, session, false)
+ 				end
+ 			end
+diff --git a/src/ServerScriptService/Server/Services/RobberyService.luau b/src/ServerScriptService/Server/Services/RobberyService.luau
+index b25cfe3..48e92ba 100644
+--- a/src/ServerScriptService/Server/Services/RobberyService.luau
++++ b/src/ServerScriptService/Server/Services/RobberyService.luau
+@@ -39,7 +39,7 @@ type Store = {
+ 	Area: BasePart,
+ }
+ type Live = { Session: RobberyRules.Session, Character: Model, LastInProgressReport: number }
+-type Pending = { TxId: string, Amount: number, SessionId: string, StoreId: string, NextTry: number }
++type Pending = { TxId: string, Amount: number, SessionId: string, StoreId: string, NextTry: number, InFlight: boolean, Recorded: boolean }
+ 
+ local stores: { [string]: Store } = {}
+ local live: { [Player]: Live } = {}
+@@ -184,6 +184,8 @@ local function onEscaped(player: Player)
+ 		SessionId = session.Id,
+ 		StoreId = session.StoreId,
+ 		NextTry = 0,
++		InFlight = false,
++		Recorded = false,
+ 	}
+ 	RobberyService.tryPayout(player)
+ end
+@@ -191,17 +193,21 @@ end
+ -- One payout attempt for a pending reward. Returns the outcome (nil if nothing pending).
+ function RobberyService.tryPayout(player: Player): Types.PayoutOutcome?
+ 	local pending = pendingPayouts[player]
+-	if not pending then
++	if not pending or pending.InFlight then
+ 		return nil
+ 	end
+-	local ok, err = EconomyService.grant(player, pending.Amount, pending.TxId, "store robbery " .. pending.StoreId)
++	-- Recorded in the durable reward ledger first, then granted write-through (EconomyService).
++	pending.InFlight = true
++	local ok, err, recorded = EconomyService.grantReward(player, pending.Amount, pending.TxId, "store robbery " .. pending.StoreId)
++	pending.InFlight = false
++	pending.Recorded = pending.Recorded or recorded
+ 	local outcome = RobberyRules.payoutOutcome(ok, err)
+ 	if outcome == "Retry" then
+ 		if pending.NextTry == 0 then
+ 			player:SetAttribute(PlayerAttributes.RobberyPhase, "PayoutPending")
+ 			player:SetAttribute(PlayerAttributes.RobberyReward, pending.Amount)
+-			notify(player, "PayoutPending", { Id = pending.SessionId, Amount = pending.Amount })
+-			warn(`[Robbery] {player.Name} {pending.SessionId} payout pending ({tostring(err)}); retrying`)
++			notify(player, "PayoutPending", { Id = pending.SessionId, Amount = pending.Amount, Recorded = pending.Recorded })
++			warn(`[Robbery] {player.Name} {pending.SessionId} payout pending ({tostring(err)}; recorded in ledger: {pending.Recorded}); retrying`)
+ 		end
+ 		pending.NextTry = now() + PAYOUT_RETRY_SECONDS
+ 		return outcome
+@@ -262,9 +268,13 @@ function RobberyService.start()
+ 		local pending = pendingPayouts[player]
+ 		if pending then
+ 			pendingPayouts[player] = nil
+-			-- Only reachable if cash data was lost mid-session and never came back; the player
+-			-- was told the reward is pending and to stay in the game.
+-			warn(`[Robbery] {player.Name} left with an unpaid reward {pending.Amount} ({pending.TxId}); not recorded`)
++			if pending.Recorded then
++				-- Durable: the reward ledger pays it on the player's next successful load.
++				print(`[Robbery] {player.Name} left before {pending.TxId} could be stored; it is in the reward ledger and will be paid on their next join`)
++			else
++				-- Only if BOTH the profile and the ledger writes failed for the whole time.
++				warn(`[Robbery] {player.Name} left with an unpaid reward {pending.Amount} ({pending.TxId}) that could not be recorded anywhere`)
++			end
+ 		end
+ 		local entry = live[player]
+ 		if entry then
+@@ -281,8 +291,8 @@ function RobberyService.start()
+ 			tick()
+ 			local t = now()
+ 			for player, pending in pendingPayouts do
+-				if player.Parent == Players and t >= pending.NextTry then
+-					RobberyService.tryPayout(player)
++				if player.Parent == Players and t >= pending.NextTry and not pending.InFlight then
++					task.spawn(RobberyService.tryPayout, player) -- writes yield; keep the tick loop running
+ 				end
+ 			end
+ 		end
+diff --git a/src/ServerStorage/Tests/PoliceNavigation.spec.luau b/src/ServerStorage/Tests/PoliceNavigation.spec.luau
+index d55a3c4..b31fff5 100644
+--- a/src/ServerStorage/Tests/PoliceNavigation.spec.luau
++++ b/src/ServerStorage/Tests/PoliceNavigation.spec.luau
+@@ -113,7 +113,11 @@ return {
+ 	["chase speed matches the target and closes the gap"] = function()
+ 		local C = PoliceConfig
+ 		Assert.equal(PoliceDriveRules.chaseSpeed(35, C.ChaseFollowDistance, C.ChaseFollowDistance, C.ChaseGain, C.ChaseSpeed), 35)
+-		Assert.truthy(PoliceDriveRules.chaseSpeed(35, 65, C.ChaseFollowDistance, C.ChaseGain, C.ChaseSpeed) > 35 + 40, "closes a 65-stud gap")
++		-- Closes a gap in proportion to ChaseGain (tuning lives in PoliceConfig; the audit
++		-- remediation lowered it from 1.0 to 0.25), never faster than ChaseSpeed.
++		local closing = PoliceDriveRules.chaseSpeed(35, 65, C.ChaseFollowDistance, C.ChaseGain, C.ChaseSpeed)
++		Assert.truthy(closing > 35, "closes a 65-stud gap")
++		Assert.equal(closing, math.min(35 + (65 - C.ChaseFollowDistance) * C.ChaseGain, C.ChaseSpeed))
+ 		Assert.equal(PoliceDriveRules.chaseSpeed(0, 0, C.ChaseFollowDistance, C.ChaseGain, C.ChaseSpeed), 0)
+ 		Assert.equal(PoliceDriveRules.chaseSpeed(200, 500, C.ChaseFollowDistance, C.ChaseGain, C.ChaseSpeed), C.ChaseSpeed)
+ 	end,
+diff --git a/src/ServerStorage/Tests/ProfileStore.spec.luau b/src/ServerStorage/Tests/ProfileStore.spec.luau
+index 2be6648..7bca483 100644
+--- a/src/ServerStorage/Tests/ProfileStore.spec.luau
++++ b/src/ServerStorage/Tests/ProfileStore.spec.luau
+@@ -4,6 +4,7 @@ local ServerScriptService = game:GetService("ServerScriptService")
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ local ProfileStore = require(ServerScriptService.Server.Data.ProfileStore)
+ local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
++local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
+ local Assert = require(script.Parent.Assert)
+ 
+ local C = EconomyConfig
+@@ -83,6 +84,86 @@ return {
+ 		Assert.equal(again.Cash, 0)
+ 		Assert.equal(table.find(again.OwnedVehicles, "Muscle") ~= nil, true, "owned after rejoin")
+ 	end,
++	["write-through: a committed purchase is stored before it takes effect"] = function()
++		local store = fakeStore()
++		local profile = ProfileStore.load(store, "k", "A", 1000, C)
++		profile.Cash = 20000
++		ProfileStore.save(store, "k", "A", profile, 1000, false)
++		local ok = ProfileStore.commit(store, "k", "A", profile, 1001, function(draft)
++			return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, "buy:1", C)
++		end)
++		Assert.equal(ok, true)
++		Assert.equal(profile.Cash, 5000)
++		Assert.equal(store.Data.k.Profile.Cash, 5000, "stored at the moment it is acknowledged")
++		Assert.equal(table.find(store.Data.k.Profile.OwnedVehicles, "Muscle") ~= nil, true)
++	end,
++	["write-through: a failed write changes nothing, in memory or stored, and burns no tx id"] = function()
++		local store = fakeStore()
++		local profile = ProfileStore.load(store, "k", "A", 1000, C)
++		profile.Cash = 20000
++		ProfileStore.save(store, "k", "A", profile, 1000, false)
++		store.Fail = true
++		local ok, err = ProfileStore.commit(store, "k", "A", profile, 1001, function(draft)
++			return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, "buy:1", C)
++		end)
++		Assert.equal(ok, false)
++		Assert.equal(err, "StoreError")
++		Assert.equal(profile.Cash, 20000)
++		Assert.equal(EconomyRules.ownsVehicle(profile, "Muscle"), false)
++		Assert.equal(EconomyRules.hasTransaction(profile, "buy:1"), false, "the same request can be retried")
++		store.Fail = false
++		Assert.equal(store.Data.k.Profile.Cash, 20000)
++		Assert.equal((ProfileStore.commit(store, "k", "A", profile, 1002, function(draft)
++			return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, "buy:1", C)
++		end)), true, "retry after the outage succeeds once")
++		Assert.equal(profile.Cash, 5000)
++	end,
++	["a rule refusal writes nothing"] = function()
++		local store = fakeStore()
++		local profile = ProfileStore.load(store, "k", "A", 1000, C)
++		local writes = store.Writes
++		local ok, err = ProfileStore.commit(store, "k", "A", profile, 1001, function(draft)
++			return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, "buy:1", C)
++		end)
++		Assert.equal(ok, false)
++		Assert.equal(err, "InsufficientFunds")
++		Assert.equal(store.Writes, writes)
++	end,
++	["lock expiry: an acknowledged purchase survives another server taking over"] = function()
++		local store = fakeStore()
++		local a = ProfileStore.load(store, "k", "A", 1000, C)
++		a.Cash = 15000
++		ProfileStore.save(store, "k", "A", a, 1000, false)
++		assert(ProfileStore.commit(store, "k", "A", a, 1001, function(draft)
++			return EconomyRules.purchaseVehicle(draft, "Muscle", 15000, "buy:1", C)
++		end))
++		-- Server A's leave-save then keeps failing and its lock goes stale; server B takes over.
++		local b, result = ProfileStore.load(store, "k", "B", 1001 + C.SessionLockTimeout + 1, C)
++		Assert.equal(result, "Existing")
++		Assert.equal(b.Cash, 0)
++		Assert.equal(EconomyRules.ownsVehicle(b, "Muscle"), true, "the purchase A acknowledged is there")
++		-- A comes back late: it can no longer write over B.
++		local ok, err = ProfileStore.save(store, "k", "A", a, 1300, true)
++		Assert.equal(ok, false)
++		Assert.equal(err, "LockLost")
++		local ok2, err2 = ProfileStore.commit(store, "k", "A", a, 1301, function(draft)
++			return EconomyRules.grant(draft, 999, "late", C)
++		end)
++		Assert.equal(ok2, false)
++		Assert.equal(err2, "LockLost")
++		Assert.equal(store.Data.k.Profile.Cash, 0)
++	end,
++	["sequential commits never lose an update"] = function()
++		local store = fakeStore()
++		local profile = ProfileStore.load(store, "k", "A", 1000, C)
++		for i = 1, 5 do
++			assert(ProfileStore.commit(store, "k", "A", profile, 1000 + i, function(draft)
++				return EconomyRules.grant(draft, 100, "g" .. i, C)
++			end))
++		end
++		Assert.equal(store.Data.k.Profile.Cash, C.StartingCash + 500)
++		Assert.equal(#store.Data.k.Profile.RecentTransactions, 5)
++	end,
+ 	["a store outage during load never creates or overwrites data"] = function()
+ 		local store = fakeStore()
+ 		store.Data.k = { Profile = { Version = 1, Cash = 9000, RecentTransactions = {} } }
+diff --git a/src/ServerStorage/Tests/RewardLedger.spec.luau b/src/ServerStorage/Tests/RewardLedger.spec.luau
+new file mode 100644
+index 0000000..ed69b5a
+--- /dev/null
++++ b/src/ServerStorage/Tests/RewardLedger.spec.luau
+@@ -0,0 +1,125 @@
++-- Durable reward ledger (audit remediation): earned rewards survive failed profile saves,
++-- disconnects and server crashes, and are paid exactly once.
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local ServerScriptService = game:GetService("ServerScriptService")
++local HttpService = game:GetService("HttpService")
++local RewardLedger = require(ServerScriptService.Server.Data.RewardLedger)
++local ProfileStore = require(ServerScriptService.Server.Data.ProfileStore)
++local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
++local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
++local Assert = require(script.Parent.Assert)
++
++local C = EconomyConfig
++
++local function deepCopy(value)
++	if value == nil then
++		return nil
++	end
++	return HttpService:JSONDecode(HttpService:JSONEncode(value))
++end
++
++local function fakeStore()
++	local data = {}
++	local store = { Fail = false, Data = data }
++	function store.UpdateAsync(self, key, transform)
++		if self.Fail then
++			error("simulated outage")
++		end
++		local result = transform(deepCopy(data[key]))
++		if result ~= nil then
++			data[key] = deepCopy(result)
++		end
++		return deepCopy(result)
++	end
++	return store
++end
++
++local function reward(tx: string, amount: number?)
++	return { TxId = tx, Amount = amount or 2000, Reason = "store robbery", At = 1 }
++end
++
++-- What EconomyService does on a load: pay everything recorded, then clear it.
++local function claim(profiles, rewards, profile, sessionId, now)
++	local list = assert(RewardLedger.list(rewards, "r"))
++	local settled = {}
++	local ok = ProfileStore.commit(profiles, "k", sessionId, profile, now, function(draft)
++		settled = RewardLedger.applyAll(draft, list, C)
++		return true, nil
++	end)
++	if ok then
++		RewardLedger.remove(rewards, "r", settled)
++	end
++	return ok
++end
++
++return {
++	["recording is idempotent per transaction id"] = function()
++		local rewards = fakeStore()
++		Assert.equal((RewardLedger.record(rewards, "r", reward("robbery:1"))), true)
++		Assert.equal((RewardLedger.record(rewards, "r", reward("robbery:1"))), true)
++		Assert.equal(#assert(RewardLedger.list(rewards, "r")), 1)
++	end,
++	["profile write fails after escape: the reward is paid once on the next load (any server)"] = function()
++		local profiles, rewards = fakeStore(), fakeStore()
++		local a = ProfileStore.load(profiles, "k", "A", 1000, C)
++		local startCash = a.Cash
++		-- escape: ledger write succeeds, profile write fails
++		assert(RewardLedger.record(rewards, "r", reward("robbery:1")))
++		profiles.Fail = true
++		local ok = ProfileStore.commit(profiles, "k", "A", a, 1001, function(draft)
++			return EconomyRules.grant(draft, 2000, "robbery:1", C)
++		end)
++		Assert.equal(ok, false)
++		Assert.equal(profiles.Data.k.Profile.Cash, startCash)
++		-- server A dies; later server B loads after the lock expires and claims the ledger
++		profiles.Fail = false
++		local b = ProfileStore.load(profiles, "k", "B", 1001 + C.SessionLockTimeout + 1, C)
++		Assert.equal(claim(profiles, rewards, b, "B", 1300), true)
++		Assert.equal(b.Cash, startCash + 2000)
++		Assert.equal(profiles.Data.k.Profile.Cash, startCash + 2000)
++		Assert.equal(#assert(RewardLedger.list(rewards, "r")), 0, "ledger cleared")
++		-- claiming again (another rejoin) pays nothing more
++		Assert.equal(claim(profiles, rewards, b, "B", 1301), true)
++		Assert.equal(b.Cash, startCash + 2000)
++	end,
++	["a reward already paid but not cleared from the ledger is never paid twice"] = function()
++		local profiles, rewards = fakeStore(), fakeStore()
++		local a = ProfileStore.load(profiles, "k", "A", 1000, C)
++		assert(RewardLedger.record(rewards, "r", reward("robbery:1")))
++		assert(ProfileStore.commit(profiles, "k", "A", a, 1001, function(draft)
++			return EconomyRules.grant(draft, 2000, "robbery:1", C)
++		end))
++		-- the ledger removal failed (outage), so the entry is still there on the next load
++		local cash = a.Cash
++		Assert.equal(claim(profiles, rewards, a, "A", 1002), true)
++		Assert.equal(a.Cash, cash, "duplicate transaction: not paid again")
++		Assert.equal(#assert(RewardLedger.list(rewards, "r")), 0, "and now cleared")
++	end,
++	["claim during a profile outage pays nothing and keeps the ledger entry"] = function()
++		local profiles, rewards = fakeStore(), fakeStore()
++		local a = ProfileStore.load(profiles, "k", "A", 1000, C)
++		local cash = a.Cash
++		assert(RewardLedger.record(rewards, "r", reward("robbery:1")))
++		profiles.Fail = true
++		Assert.equal(claim(profiles, rewards, a, "A", 1001), false)
++		Assert.equal(a.Cash, cash)
++		Assert.equal(#assert(RewardLedger.list(rewards, "r")), 1, "still recorded for the next try")
++	end,
++	["several recorded rewards are paid together and each once"] = function()
++		local profiles, rewards = fakeStore(), fakeStore()
++		local a = ProfileStore.load(profiles, "k", "A", 1000, C)
++		local cash = a.Cash
++		assert(RewardLedger.record(rewards, "r", reward("robbery:1", 2000)))
++		assert(RewardLedger.record(rewards, "r", reward("robbery:2", 2000)))
++		Assert.equal(claim(profiles, rewards, a, "A", 1001), true)
++		Assert.equal(a.Cash, cash + 4000)
++	end,
++	["a ledger outage is reported, not hidden"] = function()
++		local rewards = fakeStore()
++		rewards.Fail = true
++		local ok, err = RewardLedger.record(rewards, "r", reward("robbery:1"))
++		Assert.equal(ok, false)
++		Assert.truthy(err ~= nil)
++		Assert.equal((RewardLedger.list(rewards, "r")), nil)
++	end,
++}
+diff --git a/src/ServerStorage/Tests/RobberyRules.spec.luau b/src/ServerStorage/Tests/RobberyRules.spec.luau
+index 89ccef6..0062704 100644
+--- a/src/ServerStorage/Tests/RobberyRules.spec.luau
++++ b/src/ServerStorage/Tests/RobberyRules.spec.luau
+@@ -121,6 +121,7 @@ return {
+ 		Assert.equal(RobberyRules.payoutOutcome(true, nil), "Paid")
+ 		Assert.equal(RobberyRules.payoutOutcome(false, "DuplicateTransaction"), "AlreadyPaid")
+ 		Assert.equal(RobberyRules.payoutOutcome(false, "DataNotLoaded"), "Retry")
++		Assert.equal(RobberyRules.payoutOutcome(false, "SaveFailed"), "Retry")
+ 		Assert.equal(RobberyRules.payoutOutcome(false, "NotInGame"), "Rejected")
+ 		Assert.equal(RobberyRules.payoutOutcome(false, "InvalidAmount"), "Rejected")
+ 	end,
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+index e7d00fa..bc99ddf 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+@@ -29,6 +29,7 @@ local RESULT_TEXT: { [string]: string } = {
+ 	NotForSale = "That car isn't for sale.",
+ 	DuplicateTransaction = "That purchase was already processed.",
+ 	TooManyVehicles = "Your garage is full.",
++	SaveFailed = "Couldn't save your purchase right now. Nothing was charged; try again.",
+ 	NetworkError = "Couldn't reach the server. Nothing was charged.",
+ }
+ 
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
+index f0b497d..c9f79eb 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
+@@ -137,7 +137,11 @@ function RobberyHudController.init()
+ 		elseif kind == "Paid" and type(payload.Amount) == "number" then
+ 			showToast(`Escaped! +{money(payload.Amount)} from the robbery.`, GREEN, 4)
+ 		elseif kind == "PayoutPending" then
+-			showToast("Escaped! Your cash data is reconnecting; the reward will be added. Stay in the game.", AMBER, 5)
++			if payload.Recorded then
++				showToast("Escaped! Your reward is safely recorded and will be added as soon as it can be saved (even if you rejoin).", AMBER, 5)
++			else
++				showToast("Escaped! Your cash data is reconnecting; the reward will be added. Stay in the game.", AMBER, 5)
++			end
+ 		elseif kind == "PayoutFailed" then
+ 			showToast("Escaped, but the reward couldn't be paid.", RED, 4)
+ 		end

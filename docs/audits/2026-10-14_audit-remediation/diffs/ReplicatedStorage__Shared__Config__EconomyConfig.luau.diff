@@ -1,0 +1,15 @@
+diff --git a/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau b/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+index b84949e..3d72d1d 100644
+--- a/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
++++ b/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+@@ -20,6 +20,10 @@ local EconomyConfig = {
+ 	SessionLockTimeout = 180, -- seconds after which another server's lock counts as stale
+ 	AutosaveInterval = 60,
+ 	SaveAttempts = 3,
++	-- Earned-but-unpaid rewards are recorded here first (separate store), so they survive a
++	-- failed profile save, a disconnect or a server crash. Claimed on the next load.
++	RewardStoreName = "OutlawCity_PendingRewards_v1",
++	CommitAttempts = 2, -- write-through tries per cash change before it is refused as SaveFailed
+ 	-- If the save on leave fails, the unsaved profile is kept on this server and retried.
+ 	OrphanRetryInterval = 10,
+ 	OrphanRetryLimit = 900, -- seconds; stops early if another server takes the lock

@@ -1,0 +1,31 @@
+diff --git a/src/ServerScriptService/Server/Police/PoliceConfig.luau b/src/ServerScriptService/Server/Police/PoliceConfig.luau
+index 5b4987c..7a4287c 100644
+--- a/src/ServerScriptService/Server/Police/PoliceConfig.luau
++++ b/src/ServerScriptService/Server/Police/PoliceConfig.luau
+@@ -10,12 +10,15 @@ local PoliceConfig = {
+ 	LostTargetSeconds = 10,
+ 
+ 	-- Perception
+-	SightRange = 160, -- studs; plus a clear line of sight
++	-- Audit remediation, EXPERIMENTAL pursuit tuning (owner/auditor review pending):
++	-- SightRange 160 -> 130, ChaseSpeed 110 -> 100, ChaseGain 1.0 -> 0.25. Baseline values in
++	-- the comments; WantedConfig.DecayDelay stays 8 s.
++	SightRange = 130, -- studs; plus a clear line of sight (baseline 160)
+ 	DirectChaseRange = 90, -- within this and in sight, drive straight at the target
+ 
+ 	-- Driving (studs/s, studs, radians)
+ 	CruiseSpeed = 95,
+-	ChaseSpeed = 110,
++	ChaseSpeed = 100, -- baseline 110
+ 	CornerSpeedMin = 30,
+ 	CornerDecel = 1.1, -- allowed speed grows by this per stud of distance before a corner
+ 	WaypointRadius = 16,
+@@ -27,7 +30,7 @@ local PoliceConfig = {
+ 	ReplanInterval = 1,
+ 	ChaseLookAhead = 0.5, -- seconds of target velocity to lead by in direct chase
+ 	ChaseFollowDistance = 10, -- gap the chase-speed rule closes down to
+-	ChaseGain = 1.0, -- extra studs/s per stud of gap beyond the follow distance
++	ChaseGain = 0.25, -- extra studs/s per stud of gap beyond the follow distance (baseline 1.0)
+ 
+ 	-- Stuck handling
+ 	StuckSpeed = 3,

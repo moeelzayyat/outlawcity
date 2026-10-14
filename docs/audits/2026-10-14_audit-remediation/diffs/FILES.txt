@@ -1,0 +1,22 @@
+git diff --name-status 5bdb1c9..882e857 -- src docs
+
+M	docs/ARCHITECTURE.md
+M	docs/MULTIPLAYER_TESTS.md
+M	docs/PROGRESS.md
+M	docs/ROADMAP.md
+M	docs/TEST_CHECKLIST.md
+M	src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+M	src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+M	src/ReplicatedStorage/Shared/Types.luau
+M	src/ServerScriptService/Server/Data/DataStoreAdapter.luau
+M	src/ServerScriptService/Server/Data/ProfileStore.luau
+A	src/ServerScriptService/Server/Data/RewardLedger.luau
+M	src/ServerScriptService/Server/Police/PoliceConfig.luau
+M	src/ServerScriptService/Server/Services/EconomyService.luau
+M	src/ServerScriptService/Server/Services/RobberyService.luau
+M	src/ServerStorage/Tests/PoliceNavigation.spec.luau
+M	src/ServerStorage/Tests/ProfileStore.spec.luau
+A	src/ServerStorage/Tests/RewardLedger.spec.luau
+M	src/ServerStorage/Tests/RobberyRules.spec.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
