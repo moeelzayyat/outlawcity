@@ -2,19 +2,20 @@
 
 Usage (from the repo root):
   python docs/audits/tools/make_audit_package.py <task-id> <base-commit> <head-commit> [screenshot ...]
-  python docs/audits/tools/make_audit_package.py <task-id> --zip
+  python docs/audits/tools/make_audit_package.py <task-id> --check <base-commit> <head-commit>
 
 The first form creates docs/audits/<task-id>/, copies the five templates (never overwriting a
 file that already exists), writes diffs/ from `git diff base..head` for src/ and docs/, and
-copies the given screenshots into screenshots/. The --zip form refuses to package while
-any "{{...}}" placeholder is left in the five files, then writes docs/audits/<task-id>.zip.
+copies the given screenshots into screenshots/. The --check form refuses while any "{{...}}"
+placeholder is left in the five files, then prints the Markdown files the owner uploads to the
+auditor: the four audit reports plus every docs/*.md changed in base..head (owner rule
+2026-10-14: the auditor takes the edited .md files and a pasted prompt, no ZIP).
 """
 import os
 import re
 import shutil
 import subprocess
 import sys
-import zipfile
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 AUDITS = os.path.join(ROOT, "docs", "audits")
@@ -54,7 +55,7 @@ def build(task_id, base, head, screenshots):
     print(f"{len(changed)} changed paths; diffs written to {os.path.relpath(os.path.join(folder, 'diffs'), ROOT)}")
 
 
-def package(task_id):
+def check(task_id, base, head):
     folder = os.path.join(AUDITS, task_id)
     problems = []
     for name in REPORTS:
@@ -63,24 +64,25 @@ def package(task_id):
                 if PLACEHOLDER.search(line):
                     problems.append(f"{name}:{number}: {line.strip()}")
     if problems:
-        print("Unfilled placeholders, not packaging:")
+        print("Unfilled placeholders:")
         print("\n".join(problems))
         sys.exit(1)
-    target = os.path.join(AUDITS, task_id + ".zip")
-    with zipfile.ZipFile(target, "w", zipfile.ZIP_DEFLATED) as z:
-        for directory, _, files in os.walk(folder):
-            for file in sorted(files):
-                full = os.path.join(directory, file)
-                z.write(full, os.path.join(task_id, os.path.relpath(full, folder)))
-    print("wrote", os.path.relpath(target, ROOT), os.path.getsize(target), "bytes")
+    uploads = [os.path.join(folder, name) for name in REPORTS if name != "00_AUDITOR_PROMPT.md"]
+    for line in git("diff", "--name-only", f"{base}..{head}", "--", "docs").splitlines():
+        if line.endswith(".md") and not line.startswith("docs/audits/"):
+            uploads.append(os.path.join(ROOT, line))
+    print("Prompt to paste: " + os.path.join(folder, "00_AUDITOR_PROMPT.md"))
+    print("Files to upload:")
+    for path in uploads:
+        print("  " + os.path.normpath(path))
 
 
 def main(argv):
     if len(argv) < 2 or not TASK_ID.match(argv[1]):
         print(__doc__)
         sys.exit(2)
-    if len(argv) == 3 and argv[2] == "--zip":
-        package(argv[1])
+    if len(argv) == 5 and argv[2] == "--check":
+        check(argv[1], argv[3], argv[4])
     elif len(argv) >= 4:
         build(argv[1], argv[2], argv[3], argv[4:])
     else:
