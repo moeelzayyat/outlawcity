@@ -231,6 +231,6 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
 - ~~Five-minute player-experience plan~~ — reviewed (audit 4: APPROVE on Part A)
 - ~~Onboarding batch~~ — APPROVED WITH CONDITIONS by the auditor; the four conditions are done (solo)
 - Playability gate — re-spawn-while-driving fix + regression done (solo); auditor: APPROVE WITH CONDITIONS (follow-ups 8t tracked). **Next: the owner's 10-minute playtest (`PLAYTEST_CHECKLIST.md`)**; no new implementation until that feedback
-- City atmosphere and audio audit — **PLAN ONLY** (`ATMOSPHERE_AUDIO_PLAN.md`, A1–A6), awaiting owner review and audit; nothing changed in Studio; the next decisions follow that feedback. No broad Phase 5 content or monetization
+- City atmosphere and audio audit — **PLAN ONLY, awaiting The Architect's review and owner approval**: `CITY_ATMOSPHERE_AUDIO_AUDIT.md` (supersedes `ATMOSPHERE_AUDIO_PLAN.md`). Top 5 ranked; proposed Batch 1 = lighting preset + police lights/siren. Nothing implemented or changed in Studio; the next decisions follow that feedback. No broad Phase 5 content or monetization
 - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
 - 3F Studio-only test tools — maintained throughout

@@ -1,5 +1,7 @@
 # OUTLAW CITY: city atmosphere and audio audit (PLAN ONLY)
 
+> **Superseded by `CITY_ATMOSPHERE_AUDIO_AUDIT.md`** (2026-10-14, The Architect's version of this audit). Kept for the record.
+
 Status: **plan for owner review and independent audit. Nothing has been changed in Studio.** Prepared 2026-10-14 while the owner's playtest is pending.
 
 These proposals don't change the gameplay loop, economy, robbery rewards, cooldowns, police pursuit balance, vehicle prices, driving physics or police AI. They add no vehicles, stores, police units, weapons, gangs, properties, monetization or map area, and vehicle validation stays monitor-only. A backup comes before any approved step.
