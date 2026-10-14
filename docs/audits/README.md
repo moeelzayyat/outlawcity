@@ -16,6 +16,7 @@ docs/audits/<task-id>/
   CHANGE_MANIFEST.md     commit range, every file added/changed/removed and why
   TEST_EVIDENCE.md       every test with its exact result (pass, fail or not run)
   AUDITOR_QUESTIONS.md   specific questions the auditor should answer
+  AUDITOR_PROMPT.md      ready-to-paste prompt for the auditor (an AI agent); sent with every handoff
   diffs/                 one .diff per changed source file + ALL.diff (git, base..head)
   screenshots/           evidence images, each listed in TEST_EVIDENCE.md
 docs/audits/<task-id>.zip   the same folder zipped, for upload (not committed to git)
@@ -23,7 +24,7 @@ docs/audits/<task-id>.zip   the same folder zipped, for upload (not committed to
 
 `<task-id>` is `YYYY-MM-DD_<short-name>`, for example `2026-10-14_phase-4C`.
 
-The templates are in `docs/audits/templates/`. Fill every section. Write "None" or "Not tested" rather than deleting a section, so the auditor can see that nothing was skipped silently.
+The templates are in `docs/audits/templates/`. `AUDITOR_PROMPT.md` is the message the owner pastes to the auditor along with the package. Fill in the task summary and task-specific constraints. Fill every section. Write "None" or "Not tested" rather than deleting a section, so the auditor can see that nothing was skipped silently.
 
 ## Evidence rules
 
@@ -42,7 +43,7 @@ The templates are in `docs/audits/templates/`. Fill every section. Write "None" 
    python docs/audits/tools/make_audit_package.py <task-id> <base-commit> <head-commit> [screenshot ...]
    ```
    This copies the templates (it never overwrites filled-in files), writes `diffs/`, and copies the screenshots.
-2. Fill in the four Markdown files.
+2. Fill in the five Markdown files (four reports + the auditor prompt).
 3. Run it again with `--zip` to check for unfilled placeholders and write `docs/audits/<task-id>.zip`.
 4. Commit the folder (not the ZIP).
 
@@ -53,6 +54,7 @@ The message must contain:
 - a short summary of the changes;
 - the test outcomes;
 - the unresolved risks;
-- the questions for the auditor.
+- the questions for the auditor;
+- **the full auditor prompt** (the contents of `AUDITOR_PROMPT.md`) ready to paste, because the auditor is an AI agent (owner rule, 2026-10-14).
 
 Then Claude waits for the owner's approval before the next significant implementation batch.

@@ -4,10 +4,10 @@ Usage (from the repo root):
   python docs/audits/tools/make_audit_package.py <task-id> <base-commit> <head-commit> [screenshot ...]
   python docs/audits/tools/make_audit_package.py <task-id> --zip
 
-The first form creates docs/audits/<task-id>/, copies the four templates (never overwriting a
+The first form creates docs/audits/<task-id>/, copies the five templates (never overwriting a
 file that already exists), writes diffs/ from `git diff base..head` for src/ and docs/, and
 copies the given screenshots into screenshots/. The --zip form refuses to package while
-any "{{...}}" placeholder is left in the four reports, then writes docs/audits/<task-id>.zip.
+any "{{...}}" placeholder is left in the five files, then writes docs/audits/<task-id>.zip.
 """
 import os
 import re
@@ -19,7 +19,7 @@ import zipfile
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 AUDITS = os.path.join(ROOT, "docs", "audits")
 TEMPLATES = os.path.join(AUDITS, "templates")
-REPORTS = ["AUDITOR_REPORT.md", "CHANGE_MANIFEST.md", "TEST_EVIDENCE.md", "AUDITOR_QUESTIONS.md"]
+REPORTS = ["AUDITOR_REPORT.md", "CHANGE_MANIFEST.md", "TEST_EVIDENCE.md", "AUDITOR_QUESTIONS.md", "AUDITOR_PROMPT.md"]
 TASK_ID = re.compile(r"^\d{4}-\d{2}-\d{2}_[A-Za-z0-9._-]+$")
 PLACEHOLDER = re.compile(r"\{\{[^}]*\}\}")
 
