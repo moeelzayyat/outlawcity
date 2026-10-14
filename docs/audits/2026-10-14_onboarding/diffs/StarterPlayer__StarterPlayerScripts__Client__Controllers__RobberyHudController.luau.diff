@@ -1,0 +1,80 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
+index c9f79eb..10b9d04 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
+@@ -2,6 +2,8 @@
+ -- Store robbery HUD (display only). The objective panel follows the server-written
+ -- RobberyPhase / RobberyHoldEndsAt / RobberyReward attributes; short messages come from the
+ -- server's OnRobberyNotice. Nothing here can start, finish or pay a robbery.
++-- On short (phone) screens the panel is compact and sits just under the top HUD row (P7); while
++-- escaping it explains how escaping works, matching WantedRules (P4).
+ local Players = game:GetService("Players")
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ local RunService = game:GetService("RunService")
+@@ -10,6 +12,8 @@ local Workspace = game:GetService("Workspace")
+ local Shared = ReplicatedStorage.Shared
+ local Remotes = require(Shared.Net.Remotes)
+ local PlayerAttributes = require(Shared.Player.PlayerAttributes)
++local OnboardingConfig = require(Shared.Config.OnboardingConfig)
++local OnboardingRules = require(Shared.Onboarding.OnboardingRules)
+ 
+ local RobberyHudController = {}
+ 
+@@ -45,6 +49,7 @@ function RobberyHudController.init()
+ 	gui.Name = "RobberyHud"
+ 	gui.ResetOnSpawn = false
+ 	gui.DisplayOrder = 5
++	gui.ScreenInsets = Enum.ScreenInsets.CoreUISafeInsets -- clear of notches and Roblox's top bar
+ 	gui.Parent = player:WaitForChild("PlayerGui")
+ 
+ 	-- Objective panel: same slot as the jail panel (y 136); the two can't be shown together.
+@@ -83,6 +88,27 @@ function RobberyHudController.init()
+ 	detail.TextWrapped = true
+ 	detail.Parent = panel
+ 
++	-- Full panel on PC/tablet; compact one under the top HUD row on short phone screens.
++	local layoutHeight = -1
++	local function applyLayout()
++		local camera = Workspace.CurrentCamera
++		local height = if camera then camera.ViewportSize.Y else 0
++		if height == layoutHeight then
++			return
++		end
++		layoutHeight = height
++		local layout = OnboardingRules.robberyPanelLayout(height, OnboardingConfig)
++		panel.Position = UDim2.new(0.5, 0, 0, layout.Y)
++		panel.Size = UDim2.fromOffset(layout.Width, layout.Height)
++		local titleHeight = layout.TitleSize + 6
++		title.TextSize = layout.TitleSize
++		title.Size = UDim2.new(1, -12, 0, titleHeight)
++		title.Position = UDim2.fromOffset(6, 4)
++		detail.TextSize = layout.DetailSize
++		detail.Size = UDim2.new(1, -12, 0, layout.Height - titleHeight - 8)
++		detail.Position = UDim2.fromOffset(6, 4 + titleHeight)
++	end
++
+ 	-- Toast for one-off messages (alarm, rejection reason, success, failure).
+ 	local toast = Instance.new("TextLabel")
+ 	toast.Name = "Toast"
+@@ -151,6 +177,9 @@ function RobberyHudController.init()
+ 		local phase = player:GetAttribute(PlayerAttributes.RobberyPhase)
+ 		local jailed = player:GetAttribute(PlayerAttributes.Jailed) == true
+ 		panel.Visible = (phase == "Holding" or phase == "Escaping" or phase == "PayoutPending") and not jailed
++		if panel.Visible then
++			applyLayout()
++		end
+ 		if phase == "Holding" then
+ 			local endsAt = player:GetAttribute(PlayerAttributes.RobberyHoldEndsAt)
+ 			local left = if type(endsAt) == "number" then math.max(0, math.ceil(endsAt - Workspace:GetServerTimeNow())) else 0
+@@ -158,8 +187,9 @@ function RobberyHudController.init()
+ 			detail.Text = "Stay inside until the timer ends"
+ 		elseif phase == "Escaping" then
+ 			local reward = player:GetAttribute(PlayerAttributes.RobberyReward)
+-			title.Text = "ESCAPE THE POLICE"
+-			detail.Text = `Lose your wanted stars to keep {if type(reward) == "number" then money(reward) else "the cash"}`
++			title.Text = `ESCAPE TO KEEP {if type(reward) == "number" then money(reward) else "THE CASH"}`
++			local stars = player:GetAttribute(PlayerAttributes.WantedLevel)
++			detail.Text = OnboardingRules.escapeHint(player:GetAttribute(PlayerAttributes.WantedEvading) == true, if type(stars) == "number" then stars else 0)
+ 		elseif phase == "PayoutPending" then
+ 			local reward = player:GetAttribute(PlayerAttributes.RobberyReward)
+ 			title.Text = "REWARD PENDING"

@@ -1,0 +1,37 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
+index 533b2bf..48d6304 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
+@@ -2,11 +2,13 @@
+ -- Garage window: lists the vehicles the server says this player owns (OwnedVehicles
+ -- attribute) and spawns the chosen one. The server re-checks ownership on every spawn
+ -- request, so this list is display only. V (or DPad up) spawns the last chosen car.
++-- Spawn Car spawns directly while the player owns one car; the window opens only with a choice.
+ local Players = game:GetService("Players")
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ 
+ local VehicleConfig = require(ReplicatedStorage.Shared.Config.VehicleConfig)
+ local PlayerAttributes = require(ReplicatedStorage.Shared.Player.PlayerAttributes)
++local OnboardingRules = require(ReplicatedStorage.Shared.Onboarding.OnboardingRules)
+ local VehicleController = require(script.Parent.VehicleController)
+ local UiKit = require(script.Parent.UiKit)
+ 
+@@ -25,6 +27,18 @@ function GarageController.spawnSelected()
+ 	VehicleController.requestSpawn(selected)
+ end
+ 
++-- The Spawn Car button (P1): one owned car spawns straight away, 2+ open the garage.
++function GarageController.spawnOrChoose()
++	if OnboardingRules.spawnButtonAction(#UiKit.ownedVehicles(player)) == "Spawn" then
++		if panel then
++			panel.Visible = false
++		end
++		VehicleController.requestSpawn(selected)
++	else
++		GarageController.toggle()
++	end
++end
++
+ function GarageController.toggle()
+ 	if panel then
+ 		panel.Visible = not panel.Visible

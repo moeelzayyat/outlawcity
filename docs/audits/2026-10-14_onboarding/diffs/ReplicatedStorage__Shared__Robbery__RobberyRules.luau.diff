@@ -1,0 +1,94 @@
+diff --git a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+index 0ea7195..08e1336 100644
+--- a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
++++ b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+@@ -10,7 +10,7 @@ local Types = require(script.Parent.Parent.Types)
+ 
+ local RobberyRules = {}
+ 
+-export type StoreState = { CooldownUntil: number, ActiveSession: string? }
++export type StoreState = { CooldownUntil: number, ActiveSession: string?, LastSession: string? }
+ export type Session = {
+ 	Id: string,
+ 	UserId: number,
+@@ -36,13 +36,14 @@ type Config = {
+ 	HoldSeconds: number,
+ 	Reward: number,
+ 	CooldownSeconds: number,
++	FailedCooldownSeconds: number?, -- shorter cooldown after a failed robbery (nil = same as CooldownSeconds)
+ 	PromptDistance: number,
+ 	DistanceSlack: number,
+ 	MaxEscapeSeconds: number,
+ }
+ 
+ function RobberyRules.newStore(): StoreState
+-	return { CooldownUntil = -math.huge, ActiveSession = nil }
++	return { CooldownUntil = -math.huge, ActiveSession = nil, LastSession = nil }
+ end
+ 
+ function RobberyRules.canStart(store: StoreState, facts: StartFacts, now: number, config: Config): (boolean, Types.RobberyStartError?)
+@@ -79,6 +80,7 @@ end
+ -- Opens a session (call only after canStart). The store cools down from now.
+ function RobberyRules.start(store: StoreState, sessionId: string, userId: number, storeId: string, now: number, config: Config): Session
+ 	store.ActiveSession = sessionId
++	store.LastSession = sessionId
+ 	store.CooldownUntil = now + config.CooldownSeconds
+ 	return {
+ 		Id = sessionId,
+@@ -93,12 +95,19 @@ function RobberyRules.start(store: StoreState, sessionId: string, userId: number
+ 	}
+ end
+ 
+-local function fail(session: Session, store: StoreState?, reason: Types.RobberyFailReason): (string, Types.RobberyFailReason)
++-- A failed robbery may shorten the store's cooldown (FailedCooldownSeconds, counted from the
++-- start), but only while this session is still the store's latest: a late failure of an old
++-- getaway never cuts the cooldown of a newer robbery.
++local function fail(session: Session, store: StoreState?, reason: Types.RobberyFailReason, config: Config): (string, Types.RobberyFailReason)
+ 	session.Phase = "Failed"
+ 	session.FailReason = reason
+ 	if store and store.ActiveSession == session.Id then
+ 		store.ActiveSession = nil
+ 	end
++	local failed = config.FailedCooldownSeconds
++	if store and failed ~= nil and store.LastSession == session.Id then
++		store.CooldownUntil = math.min(store.CooldownUntil, session.StartedAt + failed)
++	end
+ 	return "Failed", reason
+ end
+ 
+@@ -106,13 +115,13 @@ end
+ function RobberyRules.tick(session: Session, store: StoreState?, facts: TickFacts, now: number, config: Config): (string?, Types.RobberyFailReason?)
+ 	if session.Phase == "Holding" then
+ 		if not facts.Connected then
+-			return fail(session, store, "Disconnected")
++			return fail(session, store, "Disconnected", config)
+ 		elseif not facts.Alive then
+-			return fail(session, store, "Died")
++			return fail(session, store, "Died", config)
+ 		elseif facts.Jailed then
+-			return fail(session, store, "Busted")
++			return fail(session, store, "Busted", config)
+ 		elseif not facts.InArea then
+-			return fail(session, store, "LeftArea")
++			return fail(session, store, "LeftArea", config)
+ 		elseif now >= session.HoldEndsAt then
+ 			session.Phase = "Escaping"
+ 			session.EscapeDeadline = now + config.MaxEscapeSeconds
+@@ -123,13 +132,13 @@ function RobberyRules.tick(session: Session, store: StoreState?, facts: TickFact
+ 		end
+ 	elseif session.Phase == "Escaping" then
+ 		if not facts.Connected then
+-			return fail(session, store, "Disconnected")
++			return fail(session, store, "Disconnected", config)
+ 		elseif facts.Jailed then
+-			return fail(session, store, "Busted")
++			return fail(session, store, "Busted", config)
+ 		elseif not facts.Alive then
+-			return fail(session, store, "Died")
++			return fail(session, store, "Died", config)
+ 		elseif now > session.EscapeDeadline then
+-			return fail(session, store, "EscapeTimedOut")
++			return fail(session, store, "EscapeTimedOut", config)
+ 		end
+ 	end
+ 	return nil, nil

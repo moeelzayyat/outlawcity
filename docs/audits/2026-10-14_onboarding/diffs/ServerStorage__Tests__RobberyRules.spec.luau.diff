@@ -1,0 +1,66 @@
+diff --git a/src/ServerStorage/Tests/RobberyRules.spec.luau b/src/ServerStorage/Tests/RobberyRules.spec.luau
+index 0062704..c04a0db 100644
+--- a/src/ServerStorage/Tests/RobberyRules.spec.luau
++++ b/src/ServerStorage/Tests/RobberyRules.spec.luau
+@@ -37,6 +37,7 @@ return {
+ 		Assert.equal(C.HoldSeconds, 15)
+ 		Assert.equal(C.Reward, 2000)
+ 		Assert.equal(C.CooldownSeconds, 180)
++		Assert.equal(C.FailedCooldownSeconds, 90, "audit 4 trial: 90 s after a failed robbery")
+ 		local crime = WantedConfig.Crimes[C.WantedCrime]
+ 		Assert.equal(WantedRules.starsForHeat(crime.Heat, WantedConfig), 2, "the robbery alarm gives 2 stars")
+ 		Assert.equal(WantedConfig.Crimes[C.InProgressCrime].Heat, 0)
+@@ -69,8 +70,9 @@ return {
+ 		RobberyRules.tick(session, store, tickFacts({ InArea = false }), 102, C)
+ 		ok, err = RobberyRules.canStart(store, facts(), 102, C)
+ 		Assert.equal(err, "StoreCooldown", "a failed robbery still cools the store down")
+-		Assert.equal((RobberyRules.canStart(store, facts(), 100 + C.CooldownSeconds - 0.01, C)), false)
+-		Assert.equal((RobberyRules.canStart(store, facts(), 100 + C.CooldownSeconds, C)), true)
++		local cooldown = C.FailedCooldownSeconds or C.CooldownSeconds
++		Assert.equal((RobberyRules.canStart(store, facts(), 100 + cooldown - 0.01, C)), false)
++		Assert.equal((RobberyRules.canStart(store, facts(), 100 + cooldown, C)), true)
+ 	end,
+ 	["holdout completes only after the full server time"] = function()
+ 		local store, session = started(100)
+@@ -148,4 +150,41 @@ return {
+ 		local register = spec.Register.Position
+ 		Assert.equal(math.abs(register.X - c.X) < size.X / 2 and math.abs(register.Z - c.Z) < size.Z / 2, true, "register inside the holdout area")
+ 	end,
++	["a failed robbery reopens the store after 90 s; a successful one keeps 180 s"] = function()
++		-- Trial setting (FailedCooldownSeconds = 90).
++		local store, session = started(100)
++		RobberyRules.tick(session, store, tickFacts({ Alive = false }), 105, C)
++		Assert.equal(session.Phase, "Failed")
++		Assert.equal(store.CooldownUntil, 100 + C.FailedCooldownSeconds)
++		Assert.equal((RobberyRules.canStart(store, facts(), 189.9, C)), false)
++		Assert.equal((RobberyRules.canStart(store, facts(), 190, C)), true)
++		-- Busted during the getaway: also 90 s from the start.
++		local store2, session2 = started(100)
++		RobberyRules.tick(session2, store2, OK_TICK, 100 + C.HoldSeconds, C)
++		RobberyRules.tick(session2, store2, tickFacts({ Jailed = true }), 140, C)
++		Assert.equal(store2.CooldownUntil, 190)
++		-- A successful robbery keeps the full cooldown.
++		local store3, session3 = started(100)
++		RobberyRules.tick(session3, store3, OK_TICK, 100 + C.HoldSeconds, C)
++		Assert.equal(RobberyRules.onEscaped(session3), true)
++		Assert.equal(store3.CooldownUntil, 100 + C.CooldownSeconds)
++	end,
++	["existing behaviour: without FailedCooldownSeconds a failure keeps 180 s"] = function()
++		local old = table.clone(C) :: any
++		old.FailedCooldownSeconds = nil
++		local store = RobberyRules.newStore()
++		local session = RobberyRules.start(store, "id-1", 1, "Store1", 100, old)
++		RobberyRules.tick(session, store, tickFacts({ InArea = false }), 103, old)
++		Assert.equal(session.Phase, "Failed")
++		Assert.equal(store.CooldownUntil, 100 + C.CooldownSeconds)
++	end,
++	["a late failure of an old getaway never shortens a newer robbery's cooldown"] = function()
++		local store, a = started(0)
++		RobberyRules.tick(a, store, OK_TICK, C.HoldSeconds, C) -- A escaping until 15 + 300
++		local b = RobberyRules.start(store, "id-2", 2, "Store1", 200, C) -- after A's 180 s cooldown
++		RobberyRules.tick(a, store, OK_TICK, C.HoldSeconds + C.MaxEscapeSeconds + 1, C)
++		Assert.equal(a.FailReason, "EscapeTimedOut")
++		Assert.equal(store.CooldownUntil, 200 + C.CooldownSeconds, "B's cooldown untouched")
++		Assert.equal(store.ActiveSession, b.Id)
++	end,
+ }

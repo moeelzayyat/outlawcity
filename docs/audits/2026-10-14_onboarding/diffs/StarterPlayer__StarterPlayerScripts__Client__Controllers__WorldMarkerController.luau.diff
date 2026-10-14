@@ -1,0 +1,113 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/WorldMarkerController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/WorldMarkerController.luau
+new file mode 100644
+index 0000000..84a701f
+--- /dev/null
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/WorldMarkerController.luau
+@@ -0,0 +1,107 @@
++--!strict
++-- Discreet floating markers over the 24/7 MART and OUTLAW MOTORS (audit 4, P2), with the
++-- distance, plus the store's status (open / being robbed / reopens in m:ss, P5). Shown between
++-- OnboardingConfig.MarkerHideDistance and MarkerMaxDistance from each sign. Display only: the
++-- store's cooldown comes from server-written attributes on City.Store, and the server still
++-- checks every robbery start.
++local Players = game:GetService("Players")
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local Workspace = game:GetService("Workspace")
++
++local Shared = ReplicatedStorage.Shared
++local OnboardingConfig = require(Shared.Config.OnboardingConfig)
++local OnboardingRules = require(Shared.Onboarding.OnboardingRules)
++
++local WorldMarkerController = {}
++
++local player = Players.LocalPlayer
++local UPDATE_SECONDS = 0.25
++
++type Marker = { Gui: BillboardGui, Anchor: BasePart, Name: string, Top: TextLabel, Bottom: TextLabel, Status: () -> string }
++
++local function makeMarker(anchor: BasePart, name: string, color: Color3, status: () -> string): Marker
++	local gui = Instance.new("BillboardGui")
++	gui.Name = `Marker_{anchor.Name}`
++	gui.Adornee = anchor
++	gui.AlwaysOnTop = true -- readable through buildings, so it points the way
++	gui.LightInfluence = 0
++	gui.Size = UDim2.fromOffset(190, 46)
++	gui.StudsOffsetWorldSpace = Vector3.new(0, OnboardingConfig.MarkerHeight, 0)
++	gui.ResetOnSpawn = false
++	gui.Enabled = false
++	local frame = Instance.new("Frame")
++	frame.Size = UDim2.fromScale(1, 1)
++	frame.BackgroundColor3 = Color3.fromRGB(20, 22, 28)
++	frame.BackgroundTransparency = 0.35
++	frame.Parent = gui
++	local corner = Instance.new("UICorner")
++	corner.CornerRadius = UDim.new(0, 8)
++	corner.Parent = frame
++	local function line(y: number, textColor: Color3, font: Enum.Font): TextLabel
++		local l = Instance.new("TextLabel")
++		l.BackgroundTransparency = 1
++		l.Size = UDim2.new(1, -8, 0, 20)
++		l.Position = UDim2.fromOffset(4, y)
++		l.Font = font
++		l.TextSize = OnboardingConfig.MinTextSize
++		l.TextColor3 = textColor
++		l.Parent = frame
++		return l
++	end
++	local top = line(3, color, Enum.Font.GothamBlack)
++	local bottom = line(23, Color3.new(1, 1, 1), Enum.Font.GothamBold)
++	gui.Parent = player:WaitForChild("PlayerGui")
++	return { Gui = gui, Anchor = anchor, Name = name, Top = top, Bottom = bottom, Status = status }
++end
++
++function WorldMarkerController.init()
++	local city = Workspace:WaitForChild("City", 30)
++	local store = city and city:WaitForChild("Store", 30)
++	local storeSign = store and store:WaitForChild("StoreSign", 30)
++	local dealership = city and city:WaitForChild("Dealership", 30)
++	local dealerSign = dealership and dealership:WaitForChild("DealerSign", 30)
++	local markers: { Marker } = {}
++
++	if store and storeSign and storeSign:IsA("BasePart") then
++		local storeFolder = store :: Instance
++		local function status(): string
++			local cooldownUntil = storeFolder:GetAttribute("RobberyCooldownUntil")
++			return OnboardingRules.storeStatus(if type(cooldownUntil) == "number" then cooldownUntil else nil, storeFolder:GetAttribute("RobberyBusy") == true, Workspace:GetServerTimeNow())
++		end
++		table.insert(markers, makeMarker(storeSign, "24/7 MART", Color3.fromRGB(255, 220, 110), status))
++		-- The register's prompt also says when the store reopens (local display only).
++		local prompt = store:FindFirstChild("RobPrompt", true)
++		if prompt and prompt:IsA("ProximityPrompt") then
++			local actionText = prompt.ActionText
++			task.spawn(function()
++				while prompt.Parent do
++					local text = status()
++					prompt.ActionText = if text:find("Reopens", 1, true) then text else actionText
++					task.wait(0.5)
++				end
++			end)
++		end
++	end
++	if dealerSign and dealerSign:IsA("BasePart") then
++		table.insert(markers, makeMarker(dealerSign, "OUTLAW MOTORS", Color3.fromRGB(130, 190, 255), function()
++			return "Buy cars here"
++		end))
++	end
++
++	while true do
++		local character = player.Character
++		local root = character and character:FindFirstChild("HumanoidRootPart")
++		for _, marker in markers do
++			local distance = if root and root:IsA("BasePart") then (root.Position - marker.Anchor.Position).Magnitude else math.huge
++			local visible = OnboardingRules.markerVisible(distance, OnboardingConfig)
++			marker.Gui.Enabled = visible
++			if visible then
++				marker.Top.Text = `{marker.Name} · {OnboardingRules.formatDistance(distance)}`
++				marker.Bottom.Text = marker.Status()
++			end
++		end
++		task.wait(UPDATE_SECONDS)
++	end
++end
++
++return WorldMarkerController

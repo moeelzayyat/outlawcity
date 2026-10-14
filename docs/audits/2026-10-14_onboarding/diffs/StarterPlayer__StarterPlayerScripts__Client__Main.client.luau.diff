@@ -1,0 +1,22 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau
+index c07c347..471def1 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau
+@@ -17,6 +17,8 @@ local CashHudController = require(Controllers.CashHudController)
+ local GarageController = require(Controllers.GarageController)
+ local DealershipController = require(Controllers.DealershipController)
+ local RobberyHudController = require(Controllers.RobberyHudController)
++local WorldMarkerController = require(Controllers.WorldMarkerController)
++local OnboardingTipController = require(Controllers.OnboardingTipController)
+ 
+ VehicleInputController.init()
+ VehicleController.init()
+@@ -31,6 +33,8 @@ task.spawn(JailHudController.init)
+ task.spawn(CashHudController.init)
+ task.spawn(DealershipController.init)
+ task.spawn(RobberyHudController.init)
++task.spawn(WorldMarkerController.init)
++task.spawn(OnboardingTipController.init)
+ 
+ VehicleInputController.ExitRequested:Connect(VehicleController.requestExit)
+ VehicleInputController.SpawnRequested:Connect(function()

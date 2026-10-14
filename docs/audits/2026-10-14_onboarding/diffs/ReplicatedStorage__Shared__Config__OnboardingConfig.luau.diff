@@ -1,0 +1,36 @@
+diff --git a/src/ReplicatedStorage/Shared/Config/OnboardingConfig.luau b/src/ReplicatedStorage/Shared/Config/OnboardingConfig.luau
+new file mode 100644
+index 0000000..1ad8531
+--- /dev/null
++++ b/src/ReplicatedStorage/Shared/Config/OnboardingConfig.luau
+@@ -0,0 +1,30 @@
++--!strict
++-- New-player guidance tuning (audit 4 onboarding batch). Read-only at runtime; display only.
++-- Nothing here changes rewards, prices, police or cooldown rules.
++local OnboardingConfig = {
++	-- World markers over the 24/7 MART and OUTLAW MOTORS (P2).
++	MarkerMaxDistance = 450, -- studs: beyond this the marker is hidden
++	MarkerHideDistance = 35, -- studs from the building centre: hidden when you're there already
++	MarkerHeight = 8, -- studs above the sign
++	-- First-spawn tip (P3): shown once per session, closes itself or with its X button.
++	TipSeconds = 15,
++	-- Mobile robbery panel (P7): used when the screen is shorter than this many pixels.
++	CompactScreenHeight = 400,
++	CompactPanel = { Y = 92, Width = 260, Height = 64, TitleSize = 17, DetailSize = 14 },
++	FullPanel = { Y = 136, Width = 300, Height = 76, TitleSize = 20, DetailSize = 16 },
++	MinTextSize = 14, -- readability floor for any onboarding text on a phone
++	-- Studio-only milestone log (P8).
++	Milestones = { "FirstCar", "FirstRobbery", "FirstEscape" },
++}
++
++local function deepFreeze(value: any)
++	if type(value) == "table" and not table.isfrozen(value) then
++		for _, child in value do
++			deepFreeze(child)
++		end
++		table.freeze(value)
++	end
++end
++deepFreeze(OnboardingConfig)
++
++return OnboardingConfig

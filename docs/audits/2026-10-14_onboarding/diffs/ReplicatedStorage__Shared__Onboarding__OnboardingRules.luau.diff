@@ -1,0 +1,93 @@
+diff --git a/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau b/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau
+new file mode 100644
+index 0000000..d0f3f47
+--- /dev/null
++++ b/src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau
+@@ -0,0 +1,87 @@
++--!strict
++-- Pure helpers for the new-player guidance (audit 4 onboarding batch): spawn shortcut, markers,
++-- escape hint, store cooldown text, Muscle progress and milestone timing. Display only; the
++-- server stays the authority for everything these describe. Unit-tested in
++-- ServerStorage.Tests.OnboardingRules.spec.
++local OnboardingRules = {}
++
++export type PanelLayout = { Y: number, Width: number, Height: number, TitleSize: number, DetailSize: number }
++export type Milestones = { JoinedAt: number, Done: { [string]: number } }
++
++-- P1: one owned car spawns straight away; the garage window only opens with a choice to make.
++function OnboardingRules.spawnButtonAction(ownedCount: number): "Spawn" | "Choose"
++	return if ownedCount >= 2 then "Choose" else "Spawn"
++end
++
++-- P2: a marker shows between the hide distance (you're already there) and the max distance.
++function OnboardingRules.markerVisible(distance: number, config: { MarkerMaxDistance: number, MarkerHideDistance: number }): boolean
++	return distance == distance and distance >= config.MarkerHideDistance and distance <= config.MarkerMaxDistance
++end
++
++function OnboardingRules.formatDistance(distance: number): string
++	return `{math.floor(distance / 10 + 0.5) * 10} studs`
++end
++
++-- "m:ss" for a positive number of seconds (rounded up, so 0:00 only when it's open).
++function OnboardingRules.formatClock(seconds: number): string
++	local s = math.max(0, math.ceil(seconds))
++	return string.format("%d:%02d", s // 60, s % 60)
++end
++
++-- P5: the store marker's status line. cooldownUntil is server time (nil/-inf = never robbed).
++function OnboardingRules.storeStatus(cooldownUntil: number?, busy: boolean, now: number): string
++	if busy then
++		return "Being robbed"
++	end
++	if type(cooldownUntil) == "number" and cooldownUntil > now then
++		return `Reopens in {OnboardingRules.formatClock(cooldownUntil - now)}`
++	end
++	return "Open: rob the register"
++end
++
++-- P4: the escape panel's second line. Matches WantedRules: heat only decays after DecayDelay
++-- seconds with no police sighting and no new crime, and the escape counts when the stars are gone.
++function OnboardingRules.escapeHint(evading: boolean, stars: number): string
++	if evading and stars > 0 then
++		return "Stars fading: stay out of police sight until they're gone"
++	end
++	return "Break line of sight, then stay hidden until your stars are gone"
++end
++
++-- P6: successful robberies still needed to afford `price` from `cash`.
++function OnboardingRules.robberiesNeeded(cash: number, price: number, reward: number): number
++	if not (reward > 0) or cash >= price then
++		return 0
++	end
++	return math.ceil((price - cash) / reward)
++end
++
++function OnboardingRules.progressText(name: string, cash: number, price: number, reward: number, money: (number) -> string): string
++	local needed = OnboardingRules.robberiesNeeded(cash, price, reward)
++	if needed == 0 then
++		return `You can afford the {name}!`
++	end
++	return `{name}: {money(math.max(0, cash))} of {money(price)}. About {needed} more successful {if needed == 1 then "robbery" else "robberies"}.`
++end
++
++-- P7: compact panel on short (phone landscape) screens.
++function OnboardingRules.robberyPanelLayout(screenHeight: number, config: { CompactScreenHeight: number, CompactPanel: PanelLayout, FullPanel: PanelLayout }): PanelLayout
++	return if screenHeight < config.CompactScreenHeight then config.CompactPanel else config.FullPanel
++end
++
++-- P8: milestone timing, each milestone recorded once per session.
++function OnboardingRules.newMilestones(joinedAt: number): Milestones
++	return { JoinedAt = joinedAt, Done = {} }
++end
++
++-- Returns seconds since join the first time `name` is marked, else nil.
++function OnboardingRules.markMilestone(state: Milestones, name: string, now: number): number?
++	if state.Done[name] ~= nil then
++		return nil
++	end
++	local elapsed = math.max(0, now - state.JoinedAt)
++	state.Done[name] = elapsed
++	return elapsed
++end
++
++return OnboardingRules

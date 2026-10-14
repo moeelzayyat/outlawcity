@@ -1,0 +1,20 @@
+diff --git a/src/ServerScriptService/Server/Services/VehicleService.luau b/src/ServerScriptService/Server/Services/VehicleService.luau
+index 973d11b..fafc94b 100644
+--- a/src/ServerScriptService/Server/Services/VehicleService.luau
++++ b/src/ServerScriptService/Server/Services/VehicleService.luau
+@@ -16,6 +16,7 @@ local RateLimiter = require(Server.Util.RateLimiter)
+ local WorldService = require(script.Parent.WorldService)
+ local JailService = require(script.Parent.JailService)
+ local EconomyService = require(script.Parent.EconomyService)
++local MilestoneLog = require(Server.Dev.MilestoneLog)
+ 
+ local VehicleService = {}
+ 
+@@ -161,6 +162,7 @@ local function spawnVehicle(player: Player, vehicleId: string): (boolean, Types.
+ 	end
+ 	updateSimulation(vehicle)
+ 	seat:Sit(humanoid)
++	MilestoneLog.mark(player, "FirstCar")
+ 	return true, nil
+ end
+ 

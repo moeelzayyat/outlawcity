@@ -1,0 +1,61 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+index 9ec3e43..b07a18f 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+@@ -12,6 +12,8 @@ local Remotes = require(Shared.Net.Remotes)
+ local VehicleConfig = require(Shared.Config.VehicleConfig)
+ local DealershipConfig = require(Shared.Config.DealershipConfig)
+ local PlayerAttributes = require(Shared.Player.PlayerAttributes)
++local RobberyConfig = require(Shared.Config.RobberyConfig)
++local OnboardingRules = require(Shared.Onboarding.OnboardingRules)
+ local UiKit = require(script.Parent.UiKit)
+ 
+ local DealershipController = {}
+@@ -52,10 +54,31 @@ function DealershipController.init()
+ 
+ 	type Row = { VehicleId: string, Price: number, Button: TextButton, Pending: boolean }
+ 	local rows: { Row } = {}
++	-- Savings progress (P6) fills the message line until a purchase result replaces it.
++	local showProgress = false
++
++	local function progressText(): string
++		local cash = player:GetAttribute(PlayerAttributes.Cash)
++		if type(cash) ~= "number" then
++			return ""
++		end
++		local owned = UiKit.ownedVehicles(player)
++		for _, row in rows do
++			if not table.find(owned, row.VehicleId) then
++				local stats = VehicleConfig.get(row.VehicleId)
++				return OnboardingRules.progressText(if stats then stats.DisplayName else row.VehicleId, cash, row.Price, RobberyConfig.Reward, UiKit.money)
++			end
++		end
++		return ""
++	end
+ 
+ 	local function refresh()
+ 		local owned = UiKit.ownedVehicles(player)
+ 		local cash = player:GetAttribute(PlayerAttributes.Cash)
++		if showProgress then
++			message.TextColor3 = Color3.fromRGB(255, 220, 110)
++			message.Text = progressText()
++		end
+ 		for _, row in rows do
+ 			if row.Pending then
+ 				continue
+@@ -104,6 +127,7 @@ function DealershipController.init()
+ 			end
+ 			row.Pending = true
+ 			buy.Text = "Buying..."
++			showProgress = false
+ 			message.Text = ""
+ 			task.spawn(function()
+ 				local ok, result, err = pcall(function()
+@@ -144,6 +168,7 @@ function DealershipController.init()
+ 		end
+ 		prompt.Triggered:Connect(function()
+ 			message.Text = ""
++			showProgress = true
+ 			refresh()
+ 			window.Visible = true
+ 		end)

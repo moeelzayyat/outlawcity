@@ -1,0 +1,25 @@
+git diff --name-status 7618566..7371eef -- src docs
+
+M	docs/ARCHITECTURE.md
+M	docs/PLAYER_EXPERIENCE_AUDIT.md
+M	docs/PROGRESS.md
+M	docs/ROADMAP.md
+M	docs/TEST_CHECKLIST.md
+A	src/ReplicatedStorage/Shared/Config/OnboardingConfig.luau
+M	src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
+A	src/ReplicatedStorage/Shared/Onboarding/OnboardingRules.luau
+M	src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+M	src/ServerScriptService/Server/Data/RewardLedger.luau
+A	src/ServerScriptService/Server/Dev/MilestoneLog.luau
+M	src/ServerScriptService/Server/Services/RobberyService.luau
+M	src/ServerScriptService/Server/Services/VehicleService.luau
+A	src/ServerStorage/Tests/OnboardingRules.spec.luau
+M	src/ServerStorage/Tests/RewardLedger.spec.luau
+M	src/ServerStorage/Tests/RobberyRules.spec.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
+A	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/OnboardingTipController.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleHudController.luau
+A	src/StarterPlayer/StarterPlayerScripts/Client/Controllers/WorldMarkerController.luau
+M	src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau

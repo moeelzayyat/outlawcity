@@ -1,0 +1,82 @@
+diff --git a/src/ServerScriptService/Server/Services/RobberyService.luau b/src/ServerScriptService/Server/Services/RobberyService.luau
+index 48e92ba..76ac919 100644
+--- a/src/ServerScriptService/Server/Services/RobberyService.luau
++++ b/src/ServerScriptService/Server/Services/RobberyService.luau
+@@ -29,6 +29,7 @@ local WantedService = require(Services.WantedService)
+ local JailService = require(Services.JailService)
+ local EconomyService = require(Services.EconomyService)
+ local PoliceService = require(Services.PoliceService)
++local MilestoneLog = require(script.Parent.Parent.Dev.MilestoneLog)
+ 
+ local RobberyService = {}
+ 
+@@ -37,6 +38,7 @@ type Store = {
+ 	State: RobberyRules.StoreState,
+ 	Register: BasePart,
+ 	Area: BasePart,
++	Folder: Instance,
+ }
+ type Live = { Session: RobberyRules.Session, Character: Model, LastInProgressReport: number }
+ type Pending = { TxId: string, Amount: number, SessionId: string, StoreId: string, NextTry: number, InFlight: boolean, Recorded: boolean }
+@@ -58,6 +60,14 @@ local function notify(player: Player, kind: string, payload: { [string]: any })
+ 	end
+ end
+ 
++-- Display only: the store's cooldown and busy state for the client's marker (P5). The server
++-- still decides every start in RobberyRules.canStart.
++local function publishStore(store: Store)
++	local cooldownUntil = store.State.CooldownUntil
++	store.Folder:SetAttribute("RobberyCooldownUntil", if cooldownUntil == -math.huge then 0 else cooldownUntil)
++	store.Folder:SetAttribute("RobberyBusy", store.State.ActiveSession ~= nil)
++end
++
+ local function publish(player: Player, session: RobberyRules.Session?)
+ 	local isLive = session ~= nil and RobberyRules.isLive(session)
+ 	player:SetAttribute(PlayerAttributes.RobberyPhase, if isLive then (session :: any).Phase else nil)
+@@ -130,8 +140,10 @@ function RobberyService.tryStart(player: Player, storeId: string): (boolean, Typ
+ 	end
+ 	WantedService.reportCrime(player, RobberyConfig.WantedCrime)
+ 	publish(player, session)
++	publishStore(store)
+ 	notify(player, "Started", { Id = session.Id, HoldEndsAt = session.HoldEndsAt, Reward = session.Reward })
+ 	print(`[Robbery] {player.Name} started {session.Id} at {storeId}`)
++	MilestoneLog.mark(player, "FirstRobbery")
+ 	return true, nil
+ end
+ 
+@@ -163,6 +175,9 @@ local function tick()
+ 			WantedService.reportCrime(player, RobberyConfig.InProgressCrime)
+ 		end
+ 	end
++	for _, store in stores do
++		publishStore(store)
++	end
+ end
+ 
+ local function onEscaped(player: Player)
+@@ -175,6 +190,7 @@ local function onEscaped(player: Player)
+ 		return -- still holding (or already settled): never pays
+ 	end
+ 	endSession(player, entry)
++	MilestoneLog.mark(player, "FirstEscape")
+ 	if paidIds[session.Id] then
+ 		return
+ 	end
+@@ -231,6 +247,7 @@ end
+ function RobberyService.clearCooldownsForTesting()
+ 	for _, store in stores do
+ 		store.State.CooldownUntil = -math.huge
++		publishStore(store)
+ 	end
+ end
+ 
+@@ -253,7 +270,8 @@ function RobberyService.init()
+ 		warn("[Robbery] City.Store is incomplete; robberies disabled")
+ 		return
+ 	end
+-	stores[id] = { Id = id, State = RobberyRules.newStore(), Register = register, Area = area }
++	stores[id] = { Id = id, State = RobberyRules.newStore(), Register = register, Area = area, Folder = folder }
++	publishStore(stores[id])
+ 	local prompt = register:FindFirstChild("RobPrompt", true)
+ 	if prompt and prompt:IsA("ProximityPrompt") then
+ 		prompt.Triggered:Connect(function(player)

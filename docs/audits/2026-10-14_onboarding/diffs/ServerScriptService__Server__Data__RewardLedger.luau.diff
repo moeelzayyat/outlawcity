@@ -1,0 +1,13 @@
+diff --git a/src/ServerScriptService/Server/Data/RewardLedger.luau b/src/ServerScriptService/Server/Data/RewardLedger.luau
+index 309a59d..00d0267 100644
+--- a/src/ServerScriptService/Server/Data/RewardLedger.luau
++++ b/src/ServerScriptService/Server/Data/RewardLedger.luau
+@@ -90,7 +90,7 @@ function RewardLedger.validate(reward: any): (boolean, string?)
+ 	if type(reward.Reason) ~= "string" or #reward.Reason > MAX_REASON then
+ 		return false, "InvalidReason"
+ 	end
+-	if type(reward.At) ~= "number" or reward.At ~= reward.At then
++	if type(reward.At) ~= "number" or reward.At ~= reward.At or reward.At == math.huge or reward.At == -math.huge then
+ 		return false, "InvalidTime"
+ 	end
+ 	return true, nil

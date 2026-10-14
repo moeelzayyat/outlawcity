@@ -1,0 +1,17 @@
+diff --git a/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau b/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
+index 756c7df..af12c52 100644
+--- a/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
++++ b/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
+@@ -5,7 +5,11 @@ local RobberyConfig = {
+ 	Reward = 2000, -- paid only after a completed holdout AND a successful escape
+ 	WantedCrime = "StoreRobbery", -- WantedConfig crime reported at the start (70 heat = 2 stars)
+ 	InProgressCrime = "RobberyInProgress", -- re-reported while holding so heat can't decay early
+-	CooldownSeconds = 180, -- per store, from the moment a robbery starts (success or failure)
++	CooldownSeconds = 180, -- per store, from the moment a robbery starts
++	-- Audit 4 trial (P5): after a FAILED robbery the store reopens 90 s after that robbery
++	-- started instead of 180 s. Successful robberies keep 180 s. Set to nil to restore the old
++	-- behaviour (180 s after any robbery).
++	FailedCooldownSeconds = 90,
+ 	PromptDistance = 10, -- studs from the register to start
+ 	DistanceSlack = 4, -- extra studs the server allows for latency
+ 	MaxEscapeSeconds = 300, -- after the holdout, escape within this or the payout is lost
