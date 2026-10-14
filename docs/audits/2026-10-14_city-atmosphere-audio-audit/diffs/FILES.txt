@@ -1,0 +1,6 @@
+git diff --name-status e19b092..HEAD -- src docs
+
+M	docs/ATMOSPHERE_AUDIO_PLAN.md
+A	docs/CITY_ATMOSPHERE_AUDIO_AUDIT.md
+M	docs/PROGRESS.md
+M	docs/ROADMAP.md
