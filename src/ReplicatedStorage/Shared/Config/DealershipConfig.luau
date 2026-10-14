@@ -1,0 +1,23 @@
+--!strict
+-- Dealership tuning (Phase 4C). Prices live ONLY here, on the server's copy; the client is
+-- shown them but never sends one. Read-only at runtime.
+local DealershipConfig = {
+	-- What the dealership sells, in display order.
+	Catalog = table.freeze({
+		table.freeze({ VehicleId = "Muscle", Price = 15000 }),
+	}),
+	InteractDistance = 14, -- studs from the sales desk (prompt range)
+	DistanceSlack = 6, -- extra studs the server allows for latency
+	RequestInterval = 1, -- seconds between purchase requests per player
+}
+
+function DealershipConfig.priceOf(vehicleId: string): number?
+	for _, item in DealershipConfig.Catalog do
+		if item.VehicleId == vehicleId then
+			return item.Price
+		end
+	end
+	return nil
+end
+
+return table.freeze(DealershipConfig)

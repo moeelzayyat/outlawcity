@@ -24,6 +24,15 @@ function WorldService.init()
 	if city and not city:FindFirstChild("Store") then
 		CityBuilder.buildStore(city)
 	end
+	if city and not city:FindFirstChild("Dealership") then
+		CityBuilder.buildDealership(city)
+	end
+end
+
+-- The dealership folder (City.Dealership), if built.
+function WorldService.getDealership(): Folder?
+	local folder = city and city:FindFirstChild("Dealership")
+	return if folder and folder:IsA("Folder") then folder else nil
 end
 
 -- The robbable store folder (City.Store), if built.

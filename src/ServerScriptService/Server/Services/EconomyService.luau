@@ -52,6 +52,9 @@ end
 local function publish(player: Player, session: Session)
 	player:SetAttribute(PlayerAttributes.CashStatus, session.Status)
 	player:SetAttribute(PlayerAttributes.Cash, if session.Profile then session.Profile.Cash else nil)
+	local owned = if session.Profile then table.clone(session.Profile.OwnedVehicles) else table.clone(EconomyConfig.StarterVehicles)
+	table.sort(owned)
+	player:SetAttribute(PlayerAttributes.OwnedVehicles, table.concat(owned, ","))
 end
 
 local function keyFor(player: Player): string
@@ -196,6 +199,43 @@ function EconomyService.getStatus(player: Player): string
 	return if session then session.Status else "Unavailable"
 end
 
+-- Starter vehicles are always allowed (even while data is loading or unavailable); anything
+-- else needs a loaded profile that owns it.
+function EconomyService.ownsVehicle(player: Player, vehicleId: string): boolean
+	if table.find(EconomyConfig.StarterVehicles, vehicleId) then
+		return true
+	end
+	local session = sessions[player]
+	return session ~= nil and session.Status == "Loaded" and session.Profile ~= nil and EconomyRules.ownsVehicle(session.Profile, vehicleId)
+end
+
+-- Server-only purchase: price and ownership change together on the profile, then it is saved
+-- right away (and again by autosave/leave if that save fails; both always travel together).
+function EconomyService.purchaseVehicle(player: Player, vehicleId: string, price: number, txId: string): (boolean, Types.EconomyError?)
+	local session = sessions[player]
+	if not session or player.Parent ~= Players then
+		return false, "NotInGame"
+	end
+	if session.Status ~= "Loaded" or not session.Profile then
+		return false, "DataNotLoaded"
+	end
+	local profile = session.Profile :: Types.Profile
+	local ok, err = EconomyRules.purchaseVehicle(profile, vehicleId, price, txId, EconomyConfig)
+	if not ok then
+		log(`{player.Name}: purchase {tostring(vehicleId)} for {tostring(price)} refused: {err} (tx {tostring(txId)})`)
+		return false, err
+	end
+	session.Dirty = true
+	publish(player, session)
+	log(`{player.Name}: bought {vehicleId} for {price} (tx {txId}) -> cash {profile.Cash}`)
+	task.spawn(function()
+		if save(player, session, false) then
+			log(`{player.Name}: purchase saved`)
+		end
+	end)
+	return true, nil
+end
+
 -- Unique transaction id helper for server systems.
 function EconomyService.newTransactionId(prefix: string): string
 	return `{prefix}:{HttpService:GenerateGUID(false)}`
@@ -220,6 +260,28 @@ function EconomyService.setUnavailableForTesting(player: Player, unavailable: bo
 	publish(player, session)
 	log(`{player.Name}: Studio test: data {if unavailable then "unavailable" else "available again"}`)
 	return true
+end
+
+-- Studio test hook: rewrites this player's stored record as a version-1 (cash-only) profile
+-- and stops saving this session, so the next join exercises the migration for real.
+function EconomyService.writeLegacyRecordForTesting(player: Player): boolean
+	assert(RunService:IsStudio(), "Studio-only")
+	local session = sessions[player]
+	if not session or session.Status ~= "Loaded" or not session.Profile then
+		return false
+	end
+	local profile = session.Profile :: Types.Profile
+	local ok = pcall(function()
+		store:UpdateAsync(session.Key, function()
+			return { Profile = { Version = 1, Cash = profile.Cash, RecentTransactions = table.clone(profile.RecentTransactions) } }
+		end)
+	end)
+	if ok then
+		session.Status = "Unavailable" -- nothing more is saved this session
+		publish(player, session)
+		log(`{player.Name}: Studio test: stored record rewritten as version 1 (cash={profile.Cash}); rejoin to migrate`)
+	end
+	return ok
 end
 
 local function onPlayerAdded(player: Player)

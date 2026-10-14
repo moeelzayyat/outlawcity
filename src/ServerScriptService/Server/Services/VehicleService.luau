@@ -15,6 +15,7 @@ local VehicleFactory = require(Server.Vehicle.VehicleFactory)
 local RateLimiter = require(Server.Util.RateLimiter)
 local WorldService = require(script.Parent.WorldService)
 local JailService = require(script.Parent.JailService)
+local EconomyService = require(script.Parent.EconomyService)
 
 local VehicleService = {}
 
@@ -117,6 +118,9 @@ local function spawnVehicle(player: Player, vehicleId: string): (boolean, Types.
 	local stats = VehicleConfig.get(vehicleId)
 	if not stats or stats.PlayerSpawnable == false then
 		return false, "UnknownVehicle"
+	end
+	if not EconomyService.ownsVehicle(player, vehicleId) then
+		return false, "NotOwned" -- the server's profile decides, never the client
 	end
 	if not JailService.allows(player, "SpawnVehicle") then
 		return false, "Jailed"

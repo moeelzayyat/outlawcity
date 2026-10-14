@@ -20,6 +20,7 @@ local services: { Service } = {
 	require(Services.JailService) :: any,
 	require(Services.WantedService) :: any,
 	require(Services.RobberyService) :: any,
+	require(Services.DealershipService) :: any,
 	require(Services.CombatService) :: any,
 	require(Services.PoliceService) :: any,
 	require(script.Parent.Dev.DevToolsService) :: any,

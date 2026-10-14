@@ -6,7 +6,12 @@ local EconomyConfig = {
 	MaxTransaction = 1_000_000, -- largest single grant or deduction
 	RecentTransactionLimit = 200, -- transaction ids remembered per player (duplicate guard)
 	TransactionIdMaxLength = 64,
-	ProfileVersion = 1,
+	-- 1: cash only (4A). 2: + OwnedVehicles (4C). Older records are migrated on load; a record
+	-- from a NEWER version is refused untouched, so an old server can never downgrade it.
+	ProfileVersion = 2,
+	StarterVehicles = table.freeze({ "Coupe" }), -- every profile owns these (new and migrated)
+	MaxOwnedVehicles = 50,
+	VehicleIdMaxLength = 32,
 
 	DataStoreName = "OutlawCity_PlayerData_v1", -- Studio uses DataStoreName .. "_Studio"
 	LoadAttempts = 3, -- tries per load round, with exponential backoff

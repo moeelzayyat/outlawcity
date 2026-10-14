@@ -1,6 +1,6 @@
 # OUTLAW CITY — Architecture
 
-Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) provisionally approved; 4B follow-up fixes (recoverable payouts) done; driving getaway not yet validated (see PROGRESS), so Phase 4C has not started. Last updated 2026-10-14.
+Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) provisionally approved; 4B follow-up fixes (recoverable payouts) done; police sent at holdout end; driving getaway still open. Phase 4C (dealership + second vehicle) built and solo-tested, awaiting owner review. Last updated 2026-10-14.
 
 ## Source of truth and workflow
 
@@ -30,6 +30,7 @@ ReplicatedStorage
     Zones/SafeZoneRules        pure safe-zone geometry with exit hysteresis (unit-tested)
     Config/RobberyConfig       store robbery tuning (hold 15 s, reward 2000, cooldown 180 s, ranges)
     Robbery/RobberyRules       pure robbery state machine: start checks, holdout, escape, single payout (unit-tested)
+    Config/DealershipConfig    dealership catalogue and prices (Muscle $15,000), desk range, request interval
     Config/JailConfig          sentence 12 s (clamped 10-15), release-check cadence
     Jail/JailRules             pure sentencing, duplicate guard, release timing, restricted actions, slots (unit-tested)
     Config/EconomyConfig       starting cash 500, caps, DataStore name, retry/lock/autosave timings
@@ -49,6 +50,7 @@ ServerScriptService
     Services/JailService       busts -> jail cell; server-timed release; gates spawn/drive/combat
     Services/EconomyService    THE only place cash changes; DataStore load/save, autosave, failed-load lockout
     Services/RobberyService    owns store robbery sessions: register prompt, server checks, holdout, escape payout
+    Services/DealershipService RequestPurchaseVehicle: server-checked purchases through EconomyService.purchaseVehicle
     Data/ProfileStore          load (atomic lock claim) / save (owner-only) over any UpdateAsync store (unit-tested with a fake)
     Data/DataStoreAdapter      real DataStore ("_Studio" suffix in Studio) + Studio-only failure simulation
     Services/VehicleValidationService  5 Hz monitor-only checks of player vehicles; diagnostics in ServerStorage.Diagnostics
@@ -85,6 +87,9 @@ StarterPlayer.StarterPlayerScripts
     Controllers/SafeZoneHudController    SAFE ZONE badge under the Combat button (amber while wanted)
     Controllers/JailHudController        IN JAIL panel with countdown from the server's release time
     Controllers/RobberyHudController     robbery objective panel (countdown / escape) and result toasts
+    Controllers/GarageController         garage window (owned vehicles); Spawn Car opens it, V spawns the last chosen car
+    Controllers/DealershipController     dealership window opened by the showroom prompt; sends RequestPurchaseVehicle
+    Controllers/UiKit                    shared touch-sized window/button builders for the 4C windows
     Controllers/CashHudController        $ balance (server attribute) right of the stars; "$ offline" if data didn't load
     Controllers/DevPanelController       STUDIO ONLY dev panel (F8 toggles); absent without DevRemotes
 
@@ -108,7 +113,7 @@ Workspace
 
 ## Boot order
 
-- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Economy, SafeZone, Jail, Wanted, Robbery, Combat, Police, DevTools, Vehicle, VehicleValidation, the order in `Main`) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
+- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Economy, SafeZone, Jail, Wanted, Robbery, Dealership, Combat, Police, DevTools, Vehicle, VehicleValidation, the order in `Main`) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
 - Client `Main`: `VehicleInputController.init()` → `VehicleController.init()` → `VehicleCameraController.init()` → `VehicleHudController.init()` → `WantedHudController.init()`, `DevPanelController.init()` and `CombatStatusController.init()` (all spawned), then wires input action signals.
 - HUD placement: the top-right corner belongs to Roblox's player list; game buttons live in the top-centre row.
 - Dev tools (Phase 3+): Studio-only, created only when `RunService:IsStudio()` is true on the server, so they can never activate in published servers.
@@ -124,13 +129,14 @@ All remotes live in `ReplicatedStorage.Shared.Net.Remotes.Definitions`. Nothing 
 | `RequestExitVehicle` | RemoteEvent | client → server | `()` | 0.5 s cooldown, caller must be in a `DriverSeat` under `Workspace.Vehicles` |
 | `RequestSetCombatStatus` | RemoteFunction | client → server | `(target: "Peaceful" \| "Combat") -> (ok, err: CombatSwitchError?, secondsUntilPeacefulAllowed)` | 1 s per-player rate limit, string ≤ 16 chars, exact status names; Peaceful refused while wanted or during the 30 s combat cooldown |
 | `OnWantedNotice` | RemoteEvent | server → client | `(kind: "Evading" \| "Escaped" \| "Busted", payload: { Stars?, FromStars?, Reputation? })` | server-only sender; the server never listens to it |
+| `RequestPurchaseVehicle` | RemoteFunction | client → server | `(vehicleId: string) -> (ok, err: PurchaseError?)` | string 1-32 chars; in `DealershipConfig.Catalog` (price from server config only; extra client arguments ignored); one in flight + 1 s per player; alive; not jailed; within 14 + 6 studs of the sales desk; then `EconomyService.purchaseVehicle` (cash data loaded, not owned, enough cash, fresh server tx id) |
 | `OnRobberyNotice` | RemoteEvent | server → client | `(kind: "Rejected" \| "Started" \| "Escape" \| "Failed" \| "Paid" \| "PayoutFailed", payload: { Reason?, CooldownLeft?, Id?, HoldEndsAt?, Reward?, Amount? })` | server-only sender; the server never listens to it. There is **no client robbery request remote**: robberies start from the register's ProximityPrompt (`Triggered` on the server) |
 
-`SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn"`.
+`SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn" | "Jailed" | "NotOwned"`. Spawning checks `EconomyService.ownsVehicle` on the server: the starter Coupe always, anything else only from a loaded profile that owns it.
 
 Studio-only (not in the contract; created by `DevToolsService` only when `RunService:IsStudio()`): `ReplicatedStorage.DevRemotes.RequestDevCommand` (RemoteFunction) `(name, value) -> (ok, err)` with commands `SetHeat`, `SetStars`, `ReportCrime`, `ResetWanted`, `SetPoliceSight`, validated by `DevCommandRules` and re-checked against `IsStudio` on every call. Later stages added `SimulateBust`, cash commands (4A), `ClearRobberyCooldown` and `TryRobStore` (4B: runs the same server checks as the register prompt without the prompt's own range limit, so rejections can be tested).
 
-Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService), `Cash`, `CashStatus` (EconomyService), `RobberyPhase` (`Holding`/`Escaping`, else nil), `RobberyHoldEndsAt` (server time), `RobberyReward` (display only) (RobberyService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
+Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService), `Cash`, `CashStatus` (EconomyService), `RobberyPhase` (`Holding`/`Escaping`, else nil), `RobberyHoldEndsAt` (server time), `RobberyReward` (display only) (RobberyService), `OwnedVehicles` (comma-separated ids from the profile; display only) (EconomyService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
 
 ## Wanted system
 
@@ -273,3 +279,15 @@ Rules:
 
 - **Issue:** the single NPC unit is dispatched the moment the robbery starts and reaches the store in about 3-10 s, well inside the 15 s holdout. It drives at the player, so at the storefront it stalls against the building (`hard recovery: stalled repeatedly at (-113, -57..-64)`), pushes or blocks parked cars, and waits within bust range of the door. In 10 solo getaway attempts none succeeded: 5 busts at or near the door, 4 busts after crashing while the unit followed, and 1 death off the map edge.
 - **Proposal: roadside stop (simple, no new pathfinding):** when the target is on foot and off the road network, the unit drives to the road node nearest the target, then to the closest point on that road's curb line, stops there with the handbrake on and stays put while the target remains within ~60 studs. It resumes normal pursuit as soon as the target enters a vehicle or moves more than ~60 studs away. It never drives off the road towards a building. Busting stays as now (within 18 studs, target slower than 5 studs/s for 2.5 s). Building it needs owner approval.
+
+## Dealership and vehicle ownership (Phase 4C)
+
+- **Profile v2:** `{ Version = 2, Cash, RecentTransactions, OwnedVehicles = { "Coupe", ... } }`. Every profile owns the starters (`EconomyConfig.StarterVehicles = { "Coupe" }`).
+- **Migration** (`EconomyRules.validateSaved`, inside the load's `UpdateAsync`): a v1 (cash-only) record keeps its cash and transaction history exactly, gains `OwnedVehicles = { "Coupe" }`, and is written back as v2 in the same atomic update that claims the session lock (`loaded (Migrated)`). A record from a newer version, or a v2 record without its ownership list, is refused untouched (`Corrupt`), so an older server can never downgrade or wipe it.
+- **Purchase (atomic):** `EconomyRules.purchaseVehicle(profile, vehicleId, price, txId)` checks the id, amount, duplicate transaction, not already owned, garage limit and funds, then takes the price, adds the car and remembers the transaction in one step on the same profile. Nothing yields in between. That profile is saved as one record, so cash and ownership are always stored together: never cash without the car, never the car without the cash. `EconomyService.purchaseVehicle` saves right away; if that save fails, autosave, leave and orphan retries keep trying with both changes.
+- **Server API:** `DealershipService` handles `RequestPurchaseVehicle` (see the network table). Prices live only in `DealershipConfig` (Muscle: 15000). A second request for an owned car returns `AlreadyOwned` without charging.
+- **Place:** `Workspace.City.Dealership` ("OUTLAW MOTORS") on the north edge of block (200, 200), facing the z = 100 road. It has a sales desk with `ShopPrompt` (opens the client window) and an anchored, non-drivable display Muscle.
+- **Second vehicle:** `Muscle` (VehicleConfig): top speed 138 (Coupe 120), acceleration 68 (55), and heavier handling. It has less grip (9 vs 12), slower turning (yaw 1.85 vs 2.2), steering response 8 (10) and longer braking (100 vs 120).
+- **Client:** the Spawn Car button opens the garage window (owned cars from `OwnedVehicles`); V spawns the last car chosen there (Coupe at first). The dealership window shows each car's price, its stats and Owned/Buy, plus a clear success or failure message. Both windows sit top-centre below the HUD row and use 44-48 px touch targets.
+- **Studio-only test hooks:** dev `WriteLegacyProfile` rewrites the stored record as v1 and stops saving that session (rejoin to migrate); Workspace `SimulateDataStoreFailure` makes every store call fail.
+- **Not built (by owner decision):** more vehicles, banks, garages as buildings, property, gangs, weapons, monetization.

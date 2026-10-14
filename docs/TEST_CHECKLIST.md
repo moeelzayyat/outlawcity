@@ -154,6 +154,18 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] Workspace `SimulateDataStoreFailure` = true, rob + escape (paid), leave -> "save on leave failed; keeping the profile"; set it false -> "saved after leaving"; rejoin -> same balance. **Clear the attribute afterwards.**
 - [ ] Driving getaway: park a car at the storefront, rob, drive away and lose the police -> one +$2,000
 
+## Dealership and second vehicle (4C, solo; dealership at (200, 136), desk at (188, 145))
+- [ ] `EconomyRules.spec`, `ProfileStore.spec`, `Dealership.spec` pass
+- [ ] Cash-only profile: join -> Output `loaded (Migrated) cash=<same>`; `OwnedVehicles` = Coupe (repeat with dev `WriteLegacyProfile`, then rejoin)
+- [ ] `RequestSpawnVehicle("Muscle")` before buying -> `NotOwned`
+- [ ] Buy from far away -> "Walk up to the sales desk"; with less than $15,000 -> "Not enough cash: you need $X more"; nothing charged
+- [ ] With $15,000+: Buy -> "Bought the Muscle!", cash -15,000 exactly once, window shows Owned; spam Buy -> still one charge
+- [ ] Garage (Spawn Car) lists Coupe and Muscle; picking Muscle spawns and seats you; V spawns the last pick
+- [ ] Muscle is faster off the line and slides more than the Coupe
+- [ ] Rejoin -> Muscle still owned, same cash
+- [ ] Workspace `SimulateDataStoreFailure` = true, buy, leave with it still on -> next join (after the old lock clears) has neither the charge nor the car; buy during an outage that ends before leaving -> both saved. **Clear the attribute afterwards.**
+- [ ] Phone (iPhone 7): garage and dealership windows below the top row, buttons tappable, cash badge visible
+
 ## Mobile (Device Simulator, phone landscape)
 - [ ] SAFE ZONE badge visible on iPhone 7 with the stars and the Combat button, no overlap
 - [ ] Combat button, Spawn Car, wanted stars and banners visible, no overlap or clipping on iPhone 7 (666×374) while driving

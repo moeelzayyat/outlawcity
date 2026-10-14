@@ -41,7 +41,10 @@ export type VehicleInput = {
 }
 
 -- Error codes returned by RequestSpawnVehicle.
-export type SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn" | "Jailed"
+export type SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn" | "Jailed" | "NotOwned"
+
+-- Why a dealership purchase was refused (EconomyError values pass through).
+export type PurchaseError = "BadRequest" | "NotForSale" | "TooFar" | "NotAlive" | "Jailed" | "Busy" | "Cooldown" | EconomyError
 
 -- Every player is a civilian in the open world; more statuses may follow (e.g. "Jailed").
 export type PlayerStatus = "Civilian"
@@ -104,6 +107,7 @@ export type Profile = {
 	Version: number,
 	Cash: number,
 	RecentTransactions: { string }, -- most recent last; bounded; blocks duplicate grants/deductions
+	OwnedVehicles: { string }, -- vehicle ids this player may spawn (v2+); always includes the starters
 }
 
 export type EconomyError =
@@ -113,6 +117,9 @@ export type EconomyError =
 	| "InsufficientFunds"
 	| "BalanceCap"
 	| "DataNotLoaded"
+	| "InvalidVehicle"
+	| "AlreadyOwned"
+	| "TooManyVehicles"
 	| "NotInGame"
 
 -- Store robbery (Phase 4B).

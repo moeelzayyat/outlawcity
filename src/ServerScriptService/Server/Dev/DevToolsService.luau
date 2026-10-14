@@ -60,6 +60,8 @@ local function run(player: Player, name: unknown, value: unknown): (boolean, str
 		return true, nil
 	elseif command.Name == "SetCashUnavailable" then
 		return EconomyService.setUnavailableForTesting(player, (command :: any).Value), nil
+	elseif command.Name == "WriteLegacyProfile" then
+		return EconomyService.writeLegacyRecordForTesting(player), nil
 	elseif command.Name == "TryRobStore" then
 		return RobberyService.tryStart(player, "Store1")
 	end

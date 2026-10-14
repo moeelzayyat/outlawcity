@@ -73,3 +73,9 @@ Mark each item with the date and result when finally run.
 - [ ] A robber who leaves the game mid-robbery gets nothing and the store frees up for others
 - [ ] Holdout area check under real latency (no false "left the store" for a player standing inside)
 - [ ] Exploit attempts (fake position, spamming the prompt, firing remotes) don't start, finish or pay a robbery
+
+## Phase 4C — Dealership and second vehicle
+- [ ] Two players buy at the same time: each is charged once and owns the car; neither affects the other's balance or garage
+- [ ] Another player can't spawn, buy for, or see into someone else's garage; spawning someone else's car id is refused (`NotOwned`)
+- [ ] A player who rejoins onto another server right after buying keeps the car (session lock hand-over between two real servers)
+- [ ] Other players see the display car and a player's Muscle correctly (models, wheels, colour)

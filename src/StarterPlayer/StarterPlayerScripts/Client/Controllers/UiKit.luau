@@ -1,0 +1,80 @@
+--!strict
+-- Small shared builders for the 4C windows (garage, dealership): a centred panel, rows and
+-- buttons sized for touch (44+ px tall).
+local UiKit = {}
+
+function UiKit.corner(parent: Instance, radius: number)
+	local c = Instance.new("UICorner")
+	c.CornerRadius = UDim.new(0, radius)
+	c.Parent = parent
+end
+
+function UiKit.panel(parent: Instance, name: string, width: number): Frame
+	local panel = Instance.new("Frame")
+	panel.Name = name
+	-- Top-centre, just below the HUD row (buttons y 8-52, stars/cash y 58-84), so the cash
+	-- badge stays visible on short phone screens (iPhone 7 landscape is 374 px tall).
+	panel.AnchorPoint = Vector2.new(0.5, 0)
+	panel.Position = UDim2.new(0.5, 0, 0, 92)
+	panel.Size = UDim2.fromOffset(width, 120)
+	panel.BackgroundColor3 = Color3.fromRGB(22, 24, 30)
+	panel.BackgroundTransparency = 0.08
+	panel.Visible = false
+	panel.Parent = parent
+	UiKit.corner(panel, 14)
+	local limit = Instance.new("UISizeConstraint")
+	limit.MaxSize = Vector2.new(width, 360)
+	limit.Parent = panel
+	return panel
+end
+
+function UiKit.text(parent: Instance, name: string, text: string, size: UDim2, position: UDim2, textSize: number, color: Color3?): TextLabel
+	local l = Instance.new("TextLabel")
+	l.Name = name
+	l.Text = text
+	l.Size = size
+	l.Position = position
+	l.BackgroundTransparency = 1
+	l.TextColor3 = color or Color3.new(1, 1, 1)
+	l.Font = Enum.Font.GothamBold
+	l.TextSize = textSize
+	l.TextWrapped = true
+	l.Parent = parent
+	return l
+end
+
+function UiKit.button(parent: Instance, name: string, text: string, size: UDim2, position: UDim2, color: Color3): TextButton
+	local b = Instance.new("TextButton")
+	b.Name = name
+	b.Text = text
+	b.Size = size
+	b.Position = position
+	b.BackgroundColor3 = color
+	b.TextColor3 = Color3.new(1, 1, 1)
+	b.Font = Enum.Font.GothamBold
+	b.TextSize = 16
+	b.AutoButtonColor = true
+	b.Parent = parent
+	UiKit.corner(b, 10)
+	return b
+end
+
+function UiKit.money(amount: number): string
+	local text = tostring(math.floor(amount))
+	local formatted = text:reverse():gsub("(%d%d%d)", "%1,"):reverse()
+	return "$" .. formatted:gsub("^,", "")
+end
+
+-- Owned vehicle ids from the server-written OwnedVehicles attribute.
+function UiKit.ownedVehicles(player: Player): { string }
+	local raw = player:GetAttribute("OwnedVehicles")
+	local ids = {}
+	if type(raw) == "string" then
+		for id in raw:gmatch("[^,]+") do
+			table.insert(ids, id)
+		end
+	end
+	return ids
+end
+
+return UiKit
