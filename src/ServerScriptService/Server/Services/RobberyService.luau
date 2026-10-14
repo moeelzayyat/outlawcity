@@ -100,6 +100,9 @@ local function endSession(player: Player, entry: Live)
 end
 
 local function failSession(player: Player, entry: Live, reason: Types.RobberyFailReason)
+	if live[player] ~= entry then
+		return -- already ended: a duplicate failure never notifies or changes anything twice
+	end
 	endSession(player, entry)
 	notify(player, "Failed", { Reason = reason, Id = entry.Session.Id })
 	print(`[Robbery] {player.Name} {entry.Session.Id} failed: {reason}`)

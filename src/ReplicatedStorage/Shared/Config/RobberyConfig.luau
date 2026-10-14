@@ -6,9 +6,9 @@ local RobberyConfig = {
 	WantedCrime = "StoreRobbery", -- WantedConfig crime reported at the start (70 heat = 2 stars)
 	InProgressCrime = "RobberyInProgress", -- re-reported while holding so heat can't decay early
 	CooldownSeconds = 180, -- per store, from the moment a robbery starts
-	-- Audit 4 trial (P5): after a FAILED robbery the store reopens 90 s after that robbery
-	-- started instead of 180 s. Successful robberies keep 180 s. Set to nil to restore the old
-	-- behaviour (180 s after any robbery).
+	-- EXPERIMENTAL (audit 4 trial, P5; decide after human playtests): after a FAILED robbery
+	-- the store reopens 90 s after that robbery started instead of 180 s. Successful robberies
+	-- keep 180 s. Set to nil to restore the old behaviour (180 s after any robbery).
 	FailedCooldownSeconds = 90,
 	PromptDistance = 10, -- studs from the register to start
 	DistanceSlack = 4, -- extra studs the server allows for latency
