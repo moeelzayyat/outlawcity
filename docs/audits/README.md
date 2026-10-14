@@ -16,7 +16,7 @@ docs/audits/<task-id>/
   CHANGE_MANIFEST.md     commit range, every file added/changed/removed and why
   TEST_EVIDENCE.md       every test with its exact result (pass, fail or not run)
   AUDITOR_QUESTIONS.md   specific questions the auditor should answer
-  AUDITOR_PROMPT.md      ready-to-paste prompt for the auditor (an AI agent); sent with every handoff
+  00_AUDITOR_PROMPT.md   the auditor's instructions (the auditor is an AI agent); first file in the ZIP
   diffs/                 one .diff per changed source file + ALL.diff (git, base..head)
   screenshots/           evidence images, each listed in TEST_EVIDENCE.md
 docs/audits/<task-id>.zip   the same folder zipped, for upload (not committed to git)
@@ -24,7 +24,7 @@ docs/audits/<task-id>.zip   the same folder zipped, for upload (not committed to
 
 `<task-id>` is `YYYY-MM-DD_<short-name>`, for example `2026-10-14_phase-4C`.
 
-The templates are in `docs/audits/templates/`. `AUDITOR_PROMPT.md` is the message the owner pastes to the auditor along with the package. Fill in the task summary and task-specific constraints. Fill every section. Write "None" or "Not tested" rather than deleting a section, so the auditor can see that nothing was skipped silently.
+The templates are in `docs/audits/templates/`. `00_AUDITOR_PROMPT.md` holds the auditor's full instructions and travels inside the ZIP, so each handoff is one file (owner rule, 2026-10-14). The owner uploads the ZIP and tells the auditor to follow `00_AUDITOR_PROMPT.md`. Fill in the task summary and task-specific constraints. Fill every section. Write "None" or "Not tested" rather than deleting a section, so the auditor can see that nothing was skipped silently.
 
 ## Evidence rules
 
@@ -50,11 +50,11 @@ The templates are in `docs/audits/templates/`. `AUDITOR_PROMPT.md` is the messag
 ## Handoff message to the owner
 
 The message must contain:
-- the exact paths to upload: the ZIP, and the folder as a fallback;
+- the exact path of the single ZIP to upload (the folder is the fallback);
 - a short summary of the changes;
 - the test outcomes;
 - the unresolved risks;
 - the questions for the auditor;
-- **the full auditor prompt** (the contents of `AUDITOR_PROMPT.md`) ready to paste, because the auditor is an AI agent (owner rule, 2026-10-14).
+- the one line to send with the ZIP: "Follow the instructions in 00_AUDITOR_PROMPT.md inside this ZIP."
 
 Then Claude waits for the owner's approval before the next significant implementation batch.

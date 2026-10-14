@@ -19,7 +19,7 @@ import zipfile
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", ".."))
 AUDITS = os.path.join(ROOT, "docs", "audits")
 TEMPLATES = os.path.join(AUDITS, "templates")
-REPORTS = ["AUDITOR_REPORT.md", "CHANGE_MANIFEST.md", "TEST_EVIDENCE.md", "AUDITOR_QUESTIONS.md", "AUDITOR_PROMPT.md"]
+REPORTS = ["AUDITOR_REPORT.md", "CHANGE_MANIFEST.md", "TEST_EVIDENCE.md", "AUDITOR_QUESTIONS.md", "00_AUDITOR_PROMPT.md"]
 TASK_ID = re.compile(r"^\d{4}-\d{2}-\d{2}_[A-Za-z0-9._-]+$")
 PLACEHOLDER = re.compile(r"\{\{[^}]*\}\}")
 
