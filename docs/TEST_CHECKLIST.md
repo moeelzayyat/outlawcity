@@ -165,6 +165,19 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] Rejoin -> Muscle still owned, same cash
 - [ ] Workspace `SimulateDataStoreFailure` = true, buy, leave with it still on -> next join (after the old lock clears) has neither the charge nor the car; buy during an outage that ends before leaving -> both saved. **Clear the attribute afterwards.**
 - [ ] Phone (iPhone 7): garage and dealership windows below the top row, buttons tappable, cash badge visible
+- [ ] Phone: Muscle with GAS / BRAKE / DRIFT / EXIT and thumbstick steering (real device: owner)
+
+## Economy durability (audit remediation, solo; Workspace attributes are Studio-only)
+- [ ] `ProfileStore.spec` and `RewardLedger.spec` pass
+- [ ] `SimulateStoreFailure_OutlawCity_PlayerData_v1` = true, buy a car -> "Couldn't save your purchase… Nothing was charged"; Output `NOT applied`; cash and garage unchanged. Set it false, buy again -> bought once
+- [ ] Same attribute on, rob + escape -> "Your reward is safely recorded"; stop the server with it still on; next session (after the old lock clears, up to 3 min) -> +2000 once, ledger empty
+- [ ] `SimulateDataStoreFailure` = true during an escape -> pending (not recorded); set it false -> paid once
+- [ ] Idle 3+ minutes in game: Output shows no lock problems; rejoin works (heartbeat keeps the lock fresh)
+
+## Police pursuit tuning (audit remediation, EXPERIMENTAL)
+- [ ] With SightRange 130 / ChaseSpeed 100 / ChaseGain 0.25: rob, drive away normally, lose the police -> paid once
+- [ ] Police still catch a robber who stops or crashes nearby (bust within 18 studs, slow for 2.5 s)
+- [ ] **Human playtest (owner):** does escaping feel fair, too easy or too hard?
 
 ## Mobile (Device Simulator, phone landscape)
 - [ ] SAFE ZONE badge visible on iPhone 7 with the stars and the Combat button, no overlap

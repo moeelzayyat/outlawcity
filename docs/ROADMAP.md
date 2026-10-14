@@ -49,7 +49,8 @@ Out of scope for Phase 3: robberies, weapons, gangs, helicopters, new districts,
 ## Phase 4 — Economy
 - **4A ✅ approved (solo; real Studio DataStore):** server-authoritative cash, starting cash, DataStore persistence with retries and session safety, one EconomyService, pure economy rules, duplicate-transaction protection, cash HUD, Studio-only cash dev tools. No robberies, purchases or monetization yet.
 - **4B ✅ provisionally approved (solo):** one convenience-store robbery (24/7 MART): server-owned sessions, 15 s holdout, 2★, $2,000 paid once only after escaping, 180 s store cooldown, fails on death/bust/leaving/disconnect, robbery HUD. No banks, more stores, gangs or weapons.
-- **4B follow-up (in progress):** recoverable robbery payouts ✅; police sent at holdout end ✅; driving getaway ❌ not yet passed (pursuit keeps pace; tuning needs owner decision); police roadside stop proposed.
+- **4B follow-up ✅:** recoverable robbery payouts; police sent at holdout end; police roadside stop proposed.
+- **Audit remediation ✅ (solo; awaiting audit):** write-through economy (acknowledged = stored), durable reward ledger, lock heartbeat, experimental police tuning (paid getaways 5/5 vs 3/5), Muscle touch check, HTTP off.
 - **4C ✅ (solo; awaiting owner review):** OUTLAW MOTORS dealership, the $15,000 Muscle (faster, heavier handling), server purchase API (atomic cash + ownership, duplicate-safe), persistent ownership in profile v2 with safe migration from cash-only profiles, garage window, ownership-checked spawning, PC + mobile UI.
 - Original line: cash, server-authoritative rewards for arrests and robberies, DataStore persistence.
 - A first purchasable vehicle.

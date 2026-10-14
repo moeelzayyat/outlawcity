@@ -28,9 +28,11 @@ end
 
 function DataStoreAdapter.get(baseName: string): any
 	local store = DataStoreService:GetDataStore(DataStoreAdapter.storeName(baseName))
+	-- Studio-only: Workspace attribute SimulateStoreFailure_<baseName> fails just this store.
+	local perStore = "SimulateStoreFailure_" .. baseName
 	return {
 		UpdateAsync = function(_, key: string, transform: (any) -> any): any
-			if DataStoreAdapter.isSimulatingFailure() then
+			if DataStoreAdapter.isSimulatingFailure() or (RunService:IsStudio() and Workspace:GetAttribute(perStore) == true) then
 				error("Simulated DataStore failure (Studio test)")
 			end
 			return store:UpdateAsync(key, transform)

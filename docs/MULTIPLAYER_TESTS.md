@@ -79,3 +79,9 @@ Mark each item with the date and result when finally run.
 - [ ] Another player can't spawn, buy for, or see into someone else's garage; spawning someone else's car id is refused (`NotOwned`)
 - [ ] A player who rejoins onto another server right after buying keeps the car (session lock hand-over between two real servers)
 - [ ] Other players see the display car and a player's Muscle correctly (models, wheels, colour)
+
+## Audit remediation (economy durability, police tuning)
+- [ ] Two real servers: buy on server A, rejoin onto server B right away -> the car and the charge are there (write-through; the lock hand-over waits for A's release or expiry)
+- [ ] A robbery reward recorded in the ledger on server A is paid on server B after A shuts down mid-outage
+- [ ] DataStore request budgets with many players (one write per cash change + 60 s heartbeat each)
+- [ ] Police tuning with real human drivers and latency: escapes are possible but not trivial

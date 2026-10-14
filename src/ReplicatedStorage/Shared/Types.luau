@@ -120,6 +120,7 @@ export type EconomyError =
 	| "InvalidVehicle"
 	| "AlreadyOwned"
 	| "TooManyVehicles"
+	| "SaveFailed" -- the change could not be stored, so it was NOT applied
 	| "NotInGame"
 
 -- Store robbery (Phase 4B).

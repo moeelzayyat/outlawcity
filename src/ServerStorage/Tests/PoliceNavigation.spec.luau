@@ -113,7 +113,11 @@ return {
 	["chase speed matches the target and closes the gap"] = function()
 		local C = PoliceConfig
 		Assert.equal(PoliceDriveRules.chaseSpeed(35, C.ChaseFollowDistance, C.ChaseFollowDistance, C.ChaseGain, C.ChaseSpeed), 35)
-		Assert.truthy(PoliceDriveRules.chaseSpeed(35, 65, C.ChaseFollowDistance, C.ChaseGain, C.ChaseSpeed) > 35 + 40, "closes a 65-stud gap")
+		-- Closes a gap in proportion to ChaseGain (tuning lives in PoliceConfig; the audit
+		-- remediation lowered it from 1.0 to 0.25), never faster than ChaseSpeed.
+		local closing = PoliceDriveRules.chaseSpeed(35, 65, C.ChaseFollowDistance, C.ChaseGain, C.ChaseSpeed)
+		Assert.truthy(closing > 35, "closes a 65-stud gap")
+		Assert.equal(closing, math.min(35 + (65 - C.ChaseFollowDistance) * C.ChaseGain, C.ChaseSpeed))
 		Assert.equal(PoliceDriveRules.chaseSpeed(0, 0, C.ChaseFollowDistance, C.ChaseGain, C.ChaseSpeed), 0)
 		Assert.equal(PoliceDriveRules.chaseSpeed(200, 500, C.ChaseFollowDistance, C.ChaseGain, C.ChaseSpeed), C.ChaseSpeed)
 	end,

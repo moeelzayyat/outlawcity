@@ -29,6 +29,7 @@ local RESULT_TEXT: { [string]: string } = {
 	NotForSale = "That car isn't for sale.",
 	DuplicateTransaction = "That purchase was already processed.",
 	TooManyVehicles = "Your garage is full.",
+	SaveFailed = "Couldn't save your purchase right now. Nothing was charged; try again.",
 	NetworkError = "Couldn't reach the server. Nothing was charged.",
 }
 

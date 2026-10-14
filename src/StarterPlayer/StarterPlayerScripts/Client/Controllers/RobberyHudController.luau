@@ -137,7 +137,11 @@ function RobberyHudController.init()
 		elseif kind == "Paid" and type(payload.Amount) == "number" then
 			showToast(`Escaped! +{money(payload.Amount)} from the robbery.`, GREEN, 4)
 		elseif kind == "PayoutPending" then
-			showToast("Escaped! Your cash data is reconnecting; the reward will be added. Stay in the game.", AMBER, 5)
+			if payload.Recorded then
+				showToast("Escaped! Your reward is safely recorded and will be added as soon as it can be saved (even if you rejoin).", AMBER, 5)
+			else
+				showToast("Escaped! Your cash data is reconnecting; the reward will be added. Stay in the game.", AMBER, 5)
+			end
 		elseif kind == "PayoutFailed" then
 			showToast("Escaped, but the reward couldn't be paid.", RED, 4)
 		end
