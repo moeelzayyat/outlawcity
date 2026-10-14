@@ -1,6 +1,6 @@
 # OUTLAW CITY — Progress
 
-Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing real players is marked **MULTIPLAYER UNVERIFIED** and listed in `MULTIPLAYER_TESTS.md`.
+Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing real players is marked **MULTIPLAYER UNVERIFIED** and listed in `MULTIPLAYER_TESTS.md`.
 
 ## Phase 2 — provisional sign-off (solo)
 
@@ -20,7 +20,7 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 |---|---|
 | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
 | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 118 passed, 0 failed` (after the jail) |
+| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 135 passed, 0 failed` (after 4A) |
 | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
 | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
 | Chase camera | Playtest measurements above |
@@ -78,6 +78,15 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 | **Jail: release** | Released 0.14 s after the release time (client-observed). Respawned on a civilian plaza pad inside the safe zone with ForceField and 4.6 s spawn protection, 0 stars. Could spawn a car, drive (69 studs/s after 1.5 s W) and use combat again |
 | **Jail: reputation preserved** | Reputation 25 before a 3★ bust -> still 25 in jail; stars cleared with no escape reward |
 | **Jail: HUD** | PC: IN JAIL / "Release in 11s" panel. Fixed: the panel first overlapped the BUSTED! banner, so it was moved below it, and a light was added to the dark cell. iPhone 7 simulator: banner + panel + top buttons with no overlap, clipping or truncation |
+| **4A pre-work** | Fresh backup `OutlawCity_3FINAL.rbxl` (cloud save 01:15:17Z, after the jail). ARCHITECTURE/PROGRESS/ROADMAP headers and outdated lines updated. Jail-reset spawn flash recorded as **must fix before public release**. Studio DataStore API access confirmed (Set/Get probe succeeded) |
+| **4A unit tests** | `EconomyRules.spec` (10): starting cash; -5/0/NaN/±inf/1.5/"100"/true/{}/over-max rejected for grant and deduct; missing or too-long tx id; grant/deduct; insufficient funds (exact balance OK); duplicate tx (shared across grant/deduct); bounded tx memory; balance cap; valid saved data kept exactly; 6 malformed shapes refused as Corrupt; lock claim rules; no cash remote. `ProfileStore.spec` (7, fake store that serializes like a DataStore): new player locked; save/load round-trip; **outage during load never creates or overwrites data and later recovers the real balance**; corrupt data untouched (0 writes); live foreign lock blocks, stale lock doesn't; a server that lost its lock can't overwrite; failed save reports an error. **135/135** |
+| **4A starting cash + HUD** | First load for this account: `loaded (New) cash=500`; HUD `$500` |
+| **4A server-validated changes** | Dev grant +100 -> 600, deduct 100 -> 500. Bad amounts -5, 0, NaN, inf, 1.5, "100", 2,000,000 all `InvalidAmount`, balance unchanged. Deduct 1,000,000 -> `InsufficientFunds`. Tx `dup-test` twice -> second `DuplicateTransaction` |
+| **4A tampering** | Client set its `Cash` attribute to 999999: only its local view changed; server still 600 |
+| **4A persistence / rejoin (real Studio DataStore)** | Stop play -> `saved on leave (cash=600)`; new playtest -> `loaded (Existing) cash=600`; replaying tx `dup-test` from the previous session -> `DuplicateTransaction` (duplicate guard persists) |
+| **4A simulated failures** | Mid-session outage: grant applied in memory (700), 3 save attempts failed and were logged, the save after the outage succeeded. Outage from server start: 3 load attempts failed -> `Unavailable`, HUD "$ offline", grant refused `DataNotLoaded`; left while Unavailable -> nothing saved; next session with the outage ending mid-session -> background retry loaded the real **700** (not the default 500) after 30.7 s: `recovered after a failed load` |
+| **4A HUD (mobile)** | iPhone 7 simulator while driving at 2★ in the safe zone: `$700` badge, stars, SAFE ZONE, Combat and Spawn Car with no overlap, clipping or truncation |
+| 4A regression | Police dispatch -> bust -> jail -> release with cash unchanged (700); vehicle validation 0 observations; safe-zone enter/leave; driving; no console errors |
 | Jail regression | Police dispatch/chase/bust, wanted levels, safe-zone enter/leave, vehicle validation (0 observations in normal play), driving and spawning all working; no console errors |
 | 3G regression | Driving, car spawn/exit, civilian respawn, wanted, police chase/bust and the safe-zone enter/exit log all working; 108/108 tests; no console errors |
 | 3E regression | Driving, car spawning, civilian spawning, wanted HUD, police dispatch/chase/bust all working; no console errors (one error came from my own test snippet when the player had just been busted, not from game code) |
@@ -89,9 +98,12 @@ Last updated 2026-10-13. Testing policy: solo Studio playtests; anything needing
 3. **Crime detection:** exactly one gameplay crime detector exists — *ramming a police car* (`PoliceCollisionDetector`; first observed firing in 3D, triggered by a scripted test car). *Speeding near police* and *evading* are defined in `WantedConfig` but have **no detectors**; no other crimes exist. All other wanted levels in testing came from Studio dev tools.
 4. Vehicle validation is **monitor-only**: anomalies are logged, nothing is corrected or punished. Its false-positive data covers ~1 minute of solo driving plus transitions and a police chase (about 450 samples); more normal-driving data is needed before enabling corrections. Medium jumps (60-150 studs) can occasionally go unnoticed: one of four was missed, probably because a longer sample gap raised the allowance. Large jumps were always caught. Real network latency is MULTIPLAYER UNVERIFIED.
 5. NPC navigation only verified on the grid + highway; the plaza diagonal and highway end plazas weren't driven in tests. No lane discipline (centre line); no knowledge of blocked roads beyond hard recovery. A head-on meet with the target can cause a U-turn before the chase.
-6. Jail is session-only: leaving the game mid-sentence ends it (no persistence yet). After a reset mid-sentence the new character can appear at its respawn pad for a split second before being moved into the cell (it's re-placed immediately and again 0.3 s later).
+6. **MUST FIX BEFORE PUBLIC RELEASE (owner, jail review):** after a reset mid-sentence the new character briefly appears at its civilian respawn pad for a split second before being moved into the jail cell (re-placed immediately and again 0.3 s later). Likely fix: make the jailed player's next spawn the cell itself (a jail SpawnLocation via SpawnService) instead of moving them after spawning.
+6a. Jail is session-only: leaving the game mid-sentence ends it.
 7. Wanted level survives death/respawn by design (prevents "reset to escape"); owner may want to confirm.
-8. `CriminalReputation` and combat status are session-only (reset on rejoin) until persistence exists.
+8. `CriminalReputation`, combat status and jail sentences are still session-only. 4A persists **cash only**; adding reputation/jail to the profile needs approval.
+8a. Cash persistence was tested in Studio against a real DataStore (`_Studio` suffix). Not tested: two real servers contending for one player's lock (needs two live servers; MULTIPLAYER UNVERIFIED), DataStore throttling under load, and the published game's live store.
+8b. The Studio-only dev panel is now taller than a small phone screen (it is clipped; F8 hides it; never in published servers).
 9. Player-vs-player harm (combat rules, safe zones, spawn protection) is verified only with mock players: no PvP damage exists yet.
 10. Parked cars have a tiny vertical velocity jitter at rest (positions stable to ±0.01 stud).
 11. Other players see wheels at rest pose (wheel animation is local to the simulating client). Cosmetic. MULTIPLAYER UNVERIFIED.
@@ -117,5 +129,7 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
 
 - 3A civilian spawning ✅ · 3B wanted ✅ · 3C combat status ✅ · 3D one NPC police unit ✅ (stays at one unit) · 3E safe zones ✅ — all solo-tested and provisionally approved
 - ~~3G server vehicle movement validation~~ — done (solo, **monitor-only**); awaiting owner review before any automatic correction or the jail
-- ~~Short jail (12 s, 10-15 configurable)~~ — done (solo); **awaiting owner approval**
+- ~~Short jail (12 s, 10-15 configurable)~~ — provisionally approved (solo); Phase 3 signed off
+- ~~4A cash and persistence~~ — done (solo, real Studio DataStore); **awaiting owner approval** before the robbery system
+- Robbery system — after 4A review
 - 3F Studio-only test tools — maintained throughout

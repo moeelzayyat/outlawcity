@@ -12,6 +12,11 @@ export type Command =
 	| { Name: "ResetWanted" }
 	| { Name: "SetPoliceSight", Value: boolean }
 	| { Name: "SimulateBust" }
+	| { Name: "GrantCash", Value: any } -- raw value on purpose: EconomyRules must reject bad amounts
+	| { Name: "DeductCash", Value: any }
+	| { Name: "GrantCashTx", Value: string } -- fixed 100 with a caller-chosen transaction id
+	| { Name: "SetDataStoreFailure", Value: boolean }
+	| { Name: "SaveNow" }
 
 local function finite(value: any): boolean
 	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
@@ -43,6 +48,20 @@ function DevCommandRules.parse(name: any, value: any): (Command?, string?)
 		return { Name = "SetPoliceSight", Value = value }, nil
 	elseif name == "SimulateBust" then
 		return { Name = "SimulateBust" }, nil
+	elseif name == "GrantCash" or name == "DeductCash" then
+		return { Name = name, Value = value } :: any, nil
+	elseif name == "GrantCashTx" then
+		if type(value) ~= "string" then
+			return nil, "GrantCashTx needs a transaction id string"
+		end
+		return { Name = "GrantCashTx", Value = value }, nil
+	elseif name == "SetDataStoreFailure" then
+		if type(value) ~= "boolean" then
+			return nil, "SetDataStoreFailure needs true or false"
+		end
+		return { Name = "SetDataStoreFailure", Value = value }, nil
+	elseif name == "SaveNow" then
+		return { Name = "SaveNow" }, nil
 	end
 	return nil, "Unknown command"
 end

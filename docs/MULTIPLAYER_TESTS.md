@@ -60,3 +60,9 @@ Mark each item with the date and result when finally run.
 - [ ] Other players see the jailed player in the cell; nobody can harm or seat them
 - [ ] A jailed player's parked car can be used by another player (ownership rules) without freeing the prisoner
 - [ ] Leaving and rejoining mid-sentence (currently ends the sentence: session-only) — decide the desired behaviour with persistence
+
+## Phase 4A — Cash and persistence
+- [ ] Two servers: a player who rejoins quickly onto another server while the first is still saving waits for or takes over the lock correctly (no lost or doubled cash)
+- [ ] Other players can't see or change anyone else's balance through any remote
+- [ ] Autosave under many players stays within DataStore request budgets (no throttling errors)
+- [ ] Published game uses the live store (no `_Studio` suffix) and Studio tests never touch it

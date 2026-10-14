@@ -13,6 +13,8 @@ local PlayerAttributes = table.freeze({
 	InSafeZone = "InSafeZone", -- set by SafeZoneService (4 Hz); absent means false
 	Jailed = "Jailed", -- true while serving a jail sentence (JailService)
 	JailReleaseAt = "JailReleaseAt", -- server time the sentence ends (0 when not jailed)
+	Cash = "Cash", -- server-authoritative balance (EconomyService); absent until data has loaded
+	CashStatus = "CashStatus", -- "Loading" | "Loaded" | "Unavailable"
 })
 
 return PlayerAttributes

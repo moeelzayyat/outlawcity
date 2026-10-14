@@ -19,6 +19,7 @@ Run after every change, in Roblox Studio. Unit tests run automatically at the st
 - [ ] `SafeZoneRules.spec` — plaza zone geometry, hysteresis, PvP blocked in zones, police allowed, wanted unaffected
 - [ ] `VehicleValidation.spec` — limits, normal-driving trace, spikes, overspeed, teleports, grace, non-finite, ownership
 - [ ] `JailRules.spec` — sentence length, duplicates, zero-wanted, release timing, restrictions, slots, combat gate, cell placement
+- [ ] `EconomyRules.spec` / `ProfileStore.spec` — cash validation, duplicates, caps, saved-data checks, locks, outages with a fake store
 
 ## Solo playtest (Play, PC)
 - [ ] Press **V** or click **Spawn Car**: a car appears on the nearest free pad and you are seated
@@ -121,6 +122,18 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] On release: respawn on a plaza pad with ForceField / spawn protection; car spawning, driving and combat work again
 - [ ] Reputation and the parked car are unchanged after jail
 - [ ] Phone (iPhone 7): BUSTED! banner and IN JAIL panel both visible, no overlap
+
+## Cash and persistence (4A, solo; Studio DataStore uses a `_Studio` store)
+- [ ] `EconomyRules.spec` (10) and `ProfileStore.spec` (7) pass
+- [ ] Join: Output `[Economy] … loaded (New|Existing) cash=…`; HUD shows `$` balance (new accounts: $500)
+- [ ] Dev "Cash +100" / "Cash -100" change the balance and HUD
+- [ ] Dev GrantCash with -5, 0, NaN, inf, 1.5, "100", 2000000 -> `InvalidAmount`, balance unchanged
+- [ ] Dev DeductCash more than the balance -> `InsufficientFunds`
+- [ ] Dev "Cash +100 (tx dup-test)" twice -> second refused `DuplicateTransaction`; still refused after a rejoin
+- [ ] Client sets its own `Cash` attribute -> server value unchanged
+- [ ] Stop and start the playtest: same balance (`saved on leave`, then `loaded (Existing)`)
+- [ ] Dev `SetDataStoreFailure` true -> grant, "Save data now" fails (logged); false -> save succeeds
+- [ ] Set Workspace attribute `SimulateDataStoreFailureOnStart = true`, play: `Unavailable`, "$ offline", grants refused; stop -> "nothing saved"; play again, dev `SetDataStoreFailure` false -> within ~30 s `recovered`, real balance (not 500). **Remove the attribute afterwards.**
 
 ## Mobile (Device Simulator, phone landscape)
 - [ ] SAFE ZONE badge visible on iPhone 7 with the stars and the Combat button, no overlap

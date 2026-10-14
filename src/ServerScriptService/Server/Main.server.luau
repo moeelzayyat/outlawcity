@@ -15,6 +15,7 @@ local services: { Service } = {
 	require(Services.WorldService) :: any,
 	require(Services.PlayerStateService) :: any,
 	require(Services.SpawnService) :: any,
+	require(Services.EconomyService) :: any,
 	require(Services.SafeZoneService) :: any,
 	require(Services.JailService) :: any,
 	require(Services.WantedService) :: any,

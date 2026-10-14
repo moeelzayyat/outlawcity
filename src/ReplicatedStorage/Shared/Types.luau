@@ -99,6 +99,22 @@ export type SafeZone = { Name: string, Min: Vector3, Max: Vector3 }
 -- Why CombatRules.canHarm refused.
 export type HarmDenial = "Invalid" | "Self" | "NotWanted" | "AttackerPeaceful" | "VictimPeaceful" | "SafeZone" | "SpawnProtected" | "Jailed"
 
+-- Persistent player data (DataStore). Version allows future migrations (vehicles owned, etc.).
+export type Profile = {
+	Version: number,
+	Cash: number,
+	RecentTransactions: { string }, -- most recent last; bounded; blocks duplicate grants/deductions
+}
+
+export type EconomyError =
+	"InvalidAmount"
+	| "InvalidTransactionId"
+	| "DuplicateTransaction"
+	| "InsufficientFunds"
+	| "BalanceCap"
+	| "DataNotLoaded"
+	| "NotInGame"
+
 -- Errors from JailService.jailForBust.
 export type JailError = "NotInGame" | "NotWanted" | "AlreadyJailed"
 

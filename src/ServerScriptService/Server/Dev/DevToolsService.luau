@@ -8,6 +8,8 @@ local RunService = game:GetService("RunService")
 local DevCommandRules = require(script.Parent.DevCommandRules)
 local WantedService = require(script.Parent.Parent.Services.WantedService)
 local JailService = require(script.Parent.Parent.Services.JailService)
+local EconomyService = require(script.Parent.Parent.Services.EconomyService)
+local DataStoreAdapter = require(script.Parent.Parent.Data.DataStoreAdapter)
 
 local DevToolsService = {}
 
@@ -41,6 +43,17 @@ local function run(player: Player, name: unknown, value: unknown): (boolean, str
 	elseif command.Name == "SimulateBust" then
 		local ok, jailErr = JailService.jailForBust(player)
 		return ok, jailErr
+	elseif command.Name == "GrantCash" then
+		return EconomyService.grant(player, (command :: any).Value, EconomyService.newTransactionId("dev"), "dev grant")
+	elseif command.Name == "DeductCash" then
+		return EconomyService.deduct(player, (command :: any).Value, EconomyService.newTransactionId("dev"), "dev deduct")
+	elseif command.Name == "GrantCashTx" then
+		return EconomyService.grant(player, 100, command.Value, "dev grant with fixed tx")
+	elseif command.Name == "SetDataStoreFailure" then
+		DataStoreAdapter.setSimulatedFailure(command.Value)
+		return true, nil
+	elseif command.Name == "SaveNow" then
+		return EconomyService.saveNowForTesting(player), nil
 	end
 	return false, "Unhandled command"
 end

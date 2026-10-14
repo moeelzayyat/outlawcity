@@ -1,6 +1,6 @@
 # OUTLAW CITY — Architecture
 
-Status: Phase 1 + Phase 2 (driving prototype). Last updated 2026-10-13.
+Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) in progress. Last updated 2026-10-14.
 
 ## Source of truth and workflow
 
@@ -30,6 +30,8 @@ ReplicatedStorage
     Zones/SafeZoneRules        pure safe-zone geometry with exit hysteresis (unit-tested)
     Config/JailConfig          sentence 12 s (clamped 10-15), release-check cadence
     Jail/JailRules             pure sentencing, duplicate guard, release timing, restricted actions, slots (unit-tested)
+    Config/EconomyConfig       starting cash 500, caps, DataStore name, retry/lock/autosave timings
+    Economy/EconomyRules       pure amount/tx validation, grant/deduct, duplicate guard, saved-data checks, session locks (unit-tested)
     Vehicle/VehiclePhysics     raycast suspension + arcade handling (moved from Client in 3D; used by player cars on the client and NPC cars on the server)
   Remotes/                     (runtime) created by the server from Net/Remotes
 
@@ -43,6 +45,9 @@ ServerScriptService
     Services/CombatService     per-player combat status; RequestSetCombatStatus; canPlayerHarm / canPoliceBust
     Services/SafeZoneService   4 Hz position check; publishes InSafeZone
     Services/JailService       busts -> jail cell; server-timed release; gates spawn/drive/combat
+    Services/EconomyService    THE only place cash changes; DataStore load/save, autosave, failed-load lockout
+    Data/ProfileStore          load (atomic lock claim) / save (owner-only) over any UpdateAsync store (unit-tested with a fake)
+    Data/DataStoreAdapter      real DataStore ("_Studio" suffix in Studio) + Studio-only failure simulation
     Services/VehicleValidationService  5 Hz monitor-only checks of player vehicles; diagnostics in ServerStorage.Diagnostics
     Validation/VehicleValidationConfig  limits, tolerances, scoring (Mode = "Monitor")
     Validation/VehicleValidationRules   pure checks: speed, displacement, finite values, ownership, scoring (unit-tested)
@@ -76,6 +81,7 @@ StarterPlayer.StarterPlayerScripts
     Controllers/CombatStatusController   Peaceful/Combat toggle (top-centre row, left of Spawn Car)
     Controllers/SafeZoneHudController    SAFE ZONE badge under the Combat button (amber while wanted)
     Controllers/JailHudController        IN JAIL panel with countdown from the server's release time
+    Controllers/CashHudController        $ balance (server attribute) right of the stars; "$ offline" if data didn't load
     Controllers/DevPanelController       STUDIO ONLY dev panel (F8 toggles); absent without DevRemotes
 
 Workspace
@@ -98,7 +104,7 @@ Workspace
 
 ## Boot order
 
-- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, SafeZone, Jail, Vehicle, VehicleValidation, Wanted, Combat, Police, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
+- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Economy, SafeZone, Jail, Vehicle, VehicleValidation, Wanted, Combat, Police, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
 - Client `Main`: `VehicleInputController.init()` → `VehicleController.init()` → `VehicleCameraController.init()` → `VehicleHudController.init()` → `WantedHudController.init()`, `DevPanelController.init()` and `CombatStatusController.init()` (all spawned), then wires input action signals.
 - HUD placement: the top-right corner belongs to Roblox's player list; game buttons live in the top-centre row.
 - Dev tools (Phase 3+): Studio-only, created only when `RunService:IsStudio()` is true on the server, so they can never activate in published servers.
@@ -119,7 +125,7 @@ All remotes live in `ReplicatedStorage.Shared.Net.Remotes.Definitions`. Nothing 
 
 Studio-only (not in the contract; created by `DevToolsService` only when `RunService:IsStudio()`): `ReplicatedStorage.DevRemotes.RequestDevCommand` (RemoteFunction) `(name, value) -> (ok, err)` with commands `SetHeat`, `SetStars`, `ReportCrime`, `ResetWanted`, `SetPoliceSight`, validated by `DevCommandRules` and re-checked against `IsStudio` on every call.
 
-Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
+Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService), `Cash`, `CashStatus` (EconomyService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
 
 ## Wanted system
 
@@ -219,3 +225,22 @@ Rules:
   - The `Robbery` action is already gated in `JailRules` for later.
 - **Client:** `JailHudController` shows IN JAIL + "Release in Ns". It's computed from `JailReleaseAt` and the server clock, so it follows the real release.
 - **Not built (by owner decision):** prison escapes, jailbreak missions, bail. Leaving the game mid-sentence ends it, because jail state is session-only until persistence exists.
+
+## Cash and persistence (Phase 4A)
+
+- **One writer:** `EconomyService.grant/deduct(player, amount, txId, reason)` is the only way cash changes. There is no client remote for cash (spec-checked). The client sees the balance only through the `Cash` and `CashStatus` attributes. A client editing its own attribute changes only its local display; the server value stays, and the next server change overwrites the display.
+- **Rules** (`EconomyRules`, pure):
+  - Amounts must be whole, finite, positive and at most 1,000,000 (`InvalidAmount`). Balances are capped at 1e9 (`BalanceCap`).
+  - Transaction ids are strings of 1-64 characters. The last 200 ids per player are stored *with the profile*, so a repeated id is refused (`DuplicateTransaction`), even after a rejoin.
+  - A deduction larger than the balance is refused (`InsufficientFunds`).
+- **Profile record** (DataStore `OutlawCity_PlayerData_v1`, key `player_<UserId>`): `{ Profile = { Version, Cash, RecentTransactions }, Lock = { Id = serverSession, At = unixTime }? }`. In Studio the store name gets a `_Studio` suffix, so tests never touch live player data.
+- **Load** (`ProfileStore.load`, one `UpdateAsync`):
+  - No record -> new profile with starting cash 500.
+  - A valid record is used exactly as stored (never reset).
+  - A malformed record -> `Corrupt`: the load is refused and the record left untouched.
+  - Another server's lock less than 180 s old -> `SessionLocked`.
+  - Any store error -> `StoreError`.
+- **Retries:** 3 attempts per round with 1/2/4 s backoff. If they all fail, the player is `Unavailable`: grants and deductions return `DataNotLoaded`, nothing is ever saved for them, and loading is retried every 30 s until it succeeds.
+- **Save** (`ProfileStore.save`): writes only while this server still owns the lock (`LockLost` otherwise). Autosave runs every 60 s for changed profiles. Saves happen on leave (releasing the lock) and on shutdown (`BindToClose`, up to 25 s). Each save makes 3 attempts with backoff, and failures are logged and kept for the next save.
+- **Future use:** robbery rewards and vehicle purchases will call grant/deduct with their own unique ids (e.g. `robbery:<id>`, `buy:<vehicle>:<id>`). `Profile.Version` allows adding owned vehicles later via a migration.
+- **Studio-only tools:** dev commands `GrantCash`, `DeductCash` (raw values, so the server-side validation is what gets tested), `GrantCashTx` (fixed transaction id), `SetDataStoreFailure`, `SaveNow`. A Workspace attribute `SimulateDataStoreFailureOnStart` tests outages during load. All are gated by `RunService:IsStudio()`.

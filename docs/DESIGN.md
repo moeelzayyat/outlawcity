@@ -71,3 +71,10 @@ Decisions live in pure modules that take plain tables, not `Player` instances, s
 - While jailed you can't spawn or drive cars or use combat, and resetting your character doesn't get you out.
 - When your time is up you respawn in the plaza with normal spawn protection. Your car, reputation and (future) cash are untouched.
 - No escapes, jailbreak missions or bail in this version.
+
+## Cash (Phase 4A foundation)
+
+- Every player has a cash balance saved between sessions. New players start with $500.
+- Only the server changes cash. Each reward or purchase has a unique transaction id, so the same event can never pay twice.
+- If saved data can't be loaded, the game shows "$ offline", blocks cash changes and never overwrites the saved balance; it keeps retrying in the background.
+- Nothing earns or spends cash yet. Robbery rewards and vehicle purchases come in later phases.

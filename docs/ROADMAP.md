@@ -46,8 +46,10 @@ Out of scope for Phase 3: robberies, weapons, gangs, helicopters, new districts,
 ## Phase 3.5 — Multiplayer verification (when possible)
 - Run every test in `MULTIPLAYER_TESTS.md` with real players; required before monetization or public beta.
 
-## Phase 4 — Economy (needs approval)
-- Cash, server-authoritative rewards for arrests and robberies, DataStore persistence.
+## Phase 4 — Economy
+- **4A ✅ (solo; real Studio DataStore):** server-authoritative cash, starting cash, DataStore persistence with retries and session safety, one EconomyService, pure economy rules, duplicate-transaction protection, cash HUD, Studio-only cash dev tools. No robberies, purchases or monetization yet.
+- Later (needs approval): robbery system and rewards, vehicle ownership/purchases.
+- Original line: cash, server-authoritative rewards for arrests and robberies, DataStore persistence.
 - A first purchasable vehicle.
 
 ## Phase 5 — Content and polish (needs approval)

@@ -24,6 +24,10 @@ local ACTIONS: { Action } = {
 	{ Label = "Police sees me: ON", Name = "SetPoliceSight", Value = true },
 	{ Label = "Police sees me: OFF", Name = "SetPoliceSight", Value = false },
 	{ Label = "Simulate bust", Name = "SimulateBust", Value = nil },
+	{ Label = "Cash +100", Name = "GrantCash", Value = 100 },
+	{ Label = "Cash -100", Name = "DeductCash", Value = 100 },
+	{ Label = "Cash +100 (tx dup-test)", Name = "GrantCashTx", Value = "dup-test" },
+	{ Label = "Save data now", Name = "SaveNow", Value = nil },
 }
 
 function DevPanelController.init()
