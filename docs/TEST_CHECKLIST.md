@@ -181,6 +181,10 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] `SimulatePurchaseError` = true, buy -> "couldn't confirm" message; switch off, buy again within 2 s -> works (no "Busy")
 - [ ] Dev `AddLedgerReward` 500, restart with `SimulateStoreFailure_OutlawCity_PendingRewards_v1` set -> "ledger unreadable; retrying later" (backing off); clear it -> paid once. **Clear the attribute afterwards.**
 
+## Audit conditions
+- [ ] `ProfileSession.spec`: FIFO order; heartbeat refused after leave; ambiguous multi-reward claim paid once
+- [ ] `RewardLedger.spec`: invalid rewards refused before reaching the ledger
+
 ## Police pursuit tuning (audit remediation, EXPERIMENTAL)
 - [ ] With SightRange 130 / ChaseSpeed 100 / ChaseGain 0.25: rob, drive away normally, lose the police -> paid once
 - [ ] Police still catch a robber who stops or crashes nearby (bust within 18 studs, slow for 2.5 s)
