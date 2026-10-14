@@ -1,0 +1,57 @@
+diff --git a/src/ServerStorage/Tests/Dealership.spec.luau b/src/ServerStorage/Tests/Dealership.spec.luau
+new file mode 100644
+index 0000000..2916c12
+--- /dev/null
++++ b/src/ServerStorage/Tests/Dealership.spec.luau
+@@ -0,0 +1,51 @@
++-- Dealership catalogue, the second vehicle and the purchase remote contract.
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local ServerScriptService = game:GetService("ServerScriptService")
++local DealershipConfig = require(ReplicatedStorage.Shared.Config.DealershipConfig)
++local VehicleConfig = require(ReplicatedStorage.Shared.Config.VehicleConfig)
++local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
++local Remotes = require(ReplicatedStorage.Shared.Net.Remotes)
++local CityLayout = require(ServerScriptService.Server.World.CityLayout)
++local Assert = require(script.Parent.Assert)
++
++return {
++	["the Muscle sells for $15,000 and every catalogue car exists and is drivable"] = function()
++		Assert.equal(DealershipConfig.priceOf("Muscle"), 15000)
++		Assert.equal(DealershipConfig.priceOf("Coupe"), nil, "the starter is not sold")
++		Assert.equal(DealershipConfig.priceOf("Police"), nil)
++		for _, item in DealershipConfig.Catalog do
++			local stats = VehicleConfig.get(item.VehicleId)
++			Assert.truthy(stats, `{item.VehicleId} has stats`)
++			Assert.truthy(stats.PlayerSpawnable ~= false, `{item.VehicleId} is player-spawnable`)
++			Assert.truthy(item.Price > 0 and item.Price <= EconomyConfig.MaxTransaction, `{item.VehicleId} price is a valid amount`)
++			Assert.equal(table.find(EconomyConfig.StarterVehicles, item.VehicleId), nil)
++		end
++	end,
++	["the Muscle handles differently from the Coupe"] = function()
++		local coupe = assert(VehicleConfig.get("Coupe"))
++		local muscle = assert(VehicleConfig.get("Muscle"))
++		Assert.truthy(muscle.MaxForwardSpeed > coupe.MaxForwardSpeed, "faster")
++		Assert.truthy(muscle.Acceleration > coupe.Acceleration, "quicker off the line")
++		Assert.truthy(muscle.LateralGrip < coupe.LateralGrip, "less grip")
++		Assert.truthy(muscle.MaxYawRate < coupe.MaxYawRate, "slower to turn")
++		Assert.truthy(muscle.BrakeDeceleration < coupe.BrakeDeceleration, "longer braking")
++	end,
++	["purchases go through one request remote; the client never sends a price"] = function()
++		Assert.equal(Remotes.Definitions.RequestPurchaseVehicle, "RemoteFunction")
++		Assert.equal(DealershipConfig.priceOf("Muscle") ~= nil, true)
++		Assert.throws(function()
++			(DealershipConfig :: any).Catalog[1].Price = 1
++		end, "prices are read-only")
++	end,
++	["the dealership stands inside the city, clear of the roads"] = function()
++		local c = CityLayout.DEALERSHIP_CENTER
++		local hx, hz = CityLayout.DEALERSHIP_WIDTH / 2, CityLayout.DEALERSHIP_DEPTH / 2
++		local half = CityLayout.ROAD_WIDTH / 2
++		for _, line in CityLayout.GRID_LINES do
++			Assert.truthy(math.abs(c.X - line) >= hx + half, `overlaps road x={line}`)
++			Assert.truthy(math.abs(c.Z - line) >= hz + half, `overlaps road z={line}`)
++		end
++		local store = CityLayout.STORE_CENTER
++		Assert.truthy((store - c).Magnitude > 100, "away from the store")
++	end,
++}

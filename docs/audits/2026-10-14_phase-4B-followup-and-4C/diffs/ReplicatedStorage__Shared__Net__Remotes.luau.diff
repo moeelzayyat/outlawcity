@@ -1,0 +1,13 @@
+diff --git a/src/ReplicatedStorage/Shared/Net/Remotes.luau b/src/ReplicatedStorage/Shared/Net/Remotes.luau
+index b4f181e..c26a6fb 100644
+--- a/src/ReplicatedStorage/Shared/Net/Remotes.luau
++++ b/src/ReplicatedStorage/Shared/Net/Remotes.luau
+@@ -19,6 +19,8 @@ Remotes.Definitions = table.freeze({
+ 	OnWantedNotice = "RemoteEvent",
+ 	-- (target: "Peaceful" | "Combat") -> (ok: boolean, err: Types.CombatSwitchError?, secondsUntilPeacefulAllowed: number)
+ 	RequestSetCombatStatus = "RemoteFunction",
++	-- client -> server: (vehicleId) -> (ok, err: PurchaseError?). Price and ownership are server-side.
++	RequestPurchaseVehicle = "RemoteFunction",
+ 	-- server -> client: (kind: "Rejected" | "Started" | "Escape" | "Failed" | "Paid" | "PayoutFailed", payload)
+ 	OnRobberyNotice = "RemoteEvent",
+ } :: { [string]: string })

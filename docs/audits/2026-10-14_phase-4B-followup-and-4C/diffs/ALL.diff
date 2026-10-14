@@ -1,0 +1,2079 @@
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 67f12ee..895a31d 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -1,6 +1,6 @@
+ # OUTLAW CITY — Architecture
+ 
+-Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) built and solo-tested, awaiting owner approval. Last updated 2026-10-14.
++Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) provisionally approved; 4B follow-up fixes (recoverable payouts) done; police sent at holdout end; driving getaway still open. Phase 4C (dealership + second vehicle) built and solo-tested, awaiting owner review. Last updated 2026-10-14.
+ 
+ ## Source of truth and workflow
+ 
+@@ -30,6 +30,7 @@ ReplicatedStorage
+     Zones/SafeZoneRules        pure safe-zone geometry with exit hysteresis (unit-tested)
+     Config/RobberyConfig       store robbery tuning (hold 15 s, reward 2000, cooldown 180 s, ranges)
+     Robbery/RobberyRules       pure robbery state machine: start checks, holdout, escape, single payout (unit-tested)
++    Config/DealershipConfig    dealership catalogue and prices (Muscle $15,000), desk range, request interval
+     Config/JailConfig          sentence 12 s (clamped 10-15), release-check cadence
+     Jail/JailRules             pure sentencing, duplicate guard, release timing, restricted actions, slots (unit-tested)
+     Config/EconomyConfig       starting cash 500, caps, DataStore name, retry/lock/autosave timings
+@@ -49,6 +50,7 @@ ServerScriptService
+     Services/JailService       busts -> jail cell; server-timed release; gates spawn/drive/combat
+     Services/EconomyService    THE only place cash changes; DataStore load/save, autosave, failed-load lockout
+     Services/RobberyService    owns store robbery sessions: register prompt, server checks, holdout, escape payout
++    Services/DealershipService RequestPurchaseVehicle: server-checked purchases through EconomyService.purchaseVehicle
+     Data/ProfileStore          load (atomic lock claim) / save (owner-only) over any UpdateAsync store (unit-tested with a fake)
+     Data/DataStoreAdapter      real DataStore ("_Studio" suffix in Studio) + Studio-only failure simulation
+     Services/VehicleValidationService  5 Hz monitor-only checks of player vehicles; diagnostics in ServerStorage.Diagnostics
+@@ -85,6 +87,9 @@ StarterPlayer.StarterPlayerScripts
+     Controllers/SafeZoneHudController    SAFE ZONE badge under the Combat button (amber while wanted)
+     Controllers/JailHudController        IN JAIL panel with countdown from the server's release time
+     Controllers/RobberyHudController     robbery objective panel (countdown / escape) and result toasts
++    Controllers/GarageController         garage window (owned vehicles); Spawn Car opens it, V spawns the last chosen car
++    Controllers/DealershipController     dealership window opened by the showroom prompt; sends RequestPurchaseVehicle
++    Controllers/UiKit                    shared touch-sized window/button builders for the 4C windows
+     Controllers/CashHudController        $ balance (server attribute) right of the stars; "$ offline" if data didn't load
+     Controllers/DevPanelController       STUDIO ONLY dev panel (F8 toggles); absent without DevRemotes
+ 
+@@ -108,7 +113,7 @@ Workspace
+ 
+ ## Boot order
+ 
+-- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Economy, SafeZone, Jail, Wanted, Robbery, Combat, Police, DevTools, Vehicle, VehicleValidation, the order in `Main`) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
++- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Economy, SafeZone, Jail, Wanted, Robbery, Dealership, Combat, Police, DevTools, Vehicle, VehicleValidation, the order in `Main`) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
+ - Client `Main`: `VehicleInputController.init()` → `VehicleController.init()` → `VehicleCameraController.init()` → `VehicleHudController.init()` → `WantedHudController.init()`, `DevPanelController.init()` and `CombatStatusController.init()` (all spawned), then wires input action signals.
+ - HUD placement: the top-right corner belongs to Roblox's player list; game buttons live in the top-centre row.
+ - Dev tools (Phase 3+): Studio-only, created only when `RunService:IsStudio()` is true on the server, so they can never activate in published servers.
+@@ -124,13 +129,14 @@ All remotes live in `ReplicatedStorage.Shared.Net.Remotes.Definitions`. Nothing
+ | `RequestExitVehicle` | RemoteEvent | client → server | `()` | 0.5 s cooldown, caller must be in a `DriverSeat` under `Workspace.Vehicles` |
+ | `RequestSetCombatStatus` | RemoteFunction | client → server | `(target: "Peaceful" \| "Combat") -> (ok, err: CombatSwitchError?, secondsUntilPeacefulAllowed)` | 1 s per-player rate limit, string ≤ 16 chars, exact status names; Peaceful refused while wanted or during the 30 s combat cooldown |
+ | `OnWantedNotice` | RemoteEvent | server → client | `(kind: "Evading" \| "Escaped" \| "Busted", payload: { Stars?, FromStars?, Reputation? })` | server-only sender; the server never listens to it |
++| `RequestPurchaseVehicle` | RemoteFunction | client → server | `(vehicleId: string) -> (ok, err: PurchaseError?)` | string 1-32 chars; in `DealershipConfig.Catalog` (price from server config only; extra client arguments ignored); one in flight + 1 s per player; alive; not jailed; within 14 + 6 studs of the sales desk; then `EconomyService.purchaseVehicle` (cash data loaded, not owned, enough cash, fresh server tx id) |
+ | `OnRobberyNotice` | RemoteEvent | server → client | `(kind: "Rejected" \| "Started" \| "Escape" \| "Failed" \| "Paid" \| "PayoutFailed", payload: { Reason?, CooldownLeft?, Id?, HoldEndsAt?, Reward?, Amount? })` | server-only sender; the server never listens to it. There is **no client robbery request remote**: robberies start from the register's ProximityPrompt (`Triggered` on the server) |
+ 
+-`SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn"`.
++`SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn" | "Jailed" | "NotOwned"`. Spawning checks `EconomyService.ownsVehicle` on the server: the starter Coupe always, anything else only from a loaded profile that owns it.
+ 
+ Studio-only (not in the contract; created by `DevToolsService` only when `RunService:IsStudio()`): `ReplicatedStorage.DevRemotes.RequestDevCommand` (RemoteFunction) `(name, value) -> (ok, err)` with commands `SetHeat`, `SetStars`, `ReportCrime`, `ResetWanted`, `SetPoliceSight`, validated by `DevCommandRules` and re-checked against `IsStudio` on every call. Later stages added `SimulateBust`, cash commands (4A), `ClearRobberyCooldown` and `TryRobStore` (4B: runs the same server checks as the register prompt without the prompt's own range limit, so rejections can be tested).
+ 
+-Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService), `Cash`, `CashStatus` (EconomyService), `RobberyPhase` (`Holding`/`Escaping`, else nil), `RobberyHoldEndsAt` (server time), `RobberyReward` (display only) (RobberyService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
++Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService), `Cash`, `CashStatus` (EconomyService), `RobberyPhase` (`Holding`/`Escaping`, else nil), `RobberyHoldEndsAt` (server time), `RobberyReward` (display only) (RobberyService), `OwnedVehicles` (comma-separated ids from the profile; display only) (EconomyService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
+ 
+ ## Wanted system
+ 
+@@ -255,10 +261,33 @@ Rules:
+ - **Place:** one convenience store, `Workspace.City.Store` ("24/7 MART", `StoreId = "Store1"`), on the east edge of block (-200, 0) facing the x = -100 road (`CityLayout.store()`, built by `CityBuilder.buildStore` from `WorldService` if missing). It has an open doorway, a register with a `RobPrompt` ProximityPrompt (hold 1 s, 10 studs, key E / tap on mobile) and an invisible `Area` box covering the interior (the holdout zone).
+ - **Owner:** `RobberyService` owns every session. `RobberyRules` (pure, `RobberyRules.spec`) decides; the service supplies server facts (clock, positions, jail, safe zone, alive) and does the side effects.
+ - **Start** (prompt `Triggered`, on the server): alive, not jailed, not in a safe zone, on foot, within 10 + 4 studs of the register (server-measured), no live session for this player, the store isn't being robbed and isn't cooling down. Rejections go back as `OnRobberyNotice("Rejected", { Reason })` with a clear message on the HUD.
++- **Police response (owner decision, option 1):** the 2★ and the police alert come at the start, but `PoliceService.setDispatchHold(player, true)` keeps the NPC unit from being dispatched to the robber until the holdout ends (or the robbery fails). A unit already chasing the player keeps chasing. Switch: `RobberyConfig.PoliceDispatchAtHoldEnd`.
+ - **Session:** id = `HttpService:GenerateGUID()` made on the server. Start reports `StoreRobbery` (70 heat = 2★) through `WantedService.reportCrime`; while holding it re-reports `RobberyInProgress` (0 heat) once a second so heat can't decay before the holdout ends. The store's 180 s cooldown starts when the robbery starts (success or failure).
+ - **Holdout (15 s, server clock):** fails with no cash on `Died` (death, reset or any character change), `Busted` (jailed), `LeftArea` (outside the store box), `Disconnected`.
+ - **Escape:** after the holdout the session becomes `Escaping` and the store frees up. The player must lose their wanted level (`WantedService.Escaped`, fired only when heat decays to zero, never for a bust or a reset). Fails with no cash on `Busted`, `Died`, `Disconnected`, or no escape within 300 s (`EscapeTimedOut`). Leaving the store is fine once escaping.
+-- **Payout:** `RobberyRules.onEscaped` moves `Escaping -> Paid` exactly once; then `EconomyService.grant(player, 2000, "robbery:<sessionId>", ...)`. Three guards stop a second payout: the phase transition, a per-server paid-id set, and EconomyService's persisted duplicate-transaction check. An ordinary escape with no robbery session pays nothing. If the grant fails (e.g. cash data `Unavailable`) the player gets `PayoutFailed` and there is no retry (known issue).
++- **Payout:** `RobberyRules.onEscaped` moves `Escaping -> Paid` exactly once; then the reward becomes a *pending payout* with a stable transaction id `robbery:<sessionId>` and `EconomyService.grant` is tried. Three guards stop a second payout: the phase transition, a per-server paid-id set, and EconomyService's persisted duplicate-transaction check (a retry that hits `DuplicateTransaction` counts as already paid). An ordinary escape with no robbery session pays nothing.
++- **Recoverable payout (4B follow-up):**
++  - A robbery can't start unless the player's cash data is `Loaded` (`CashUnavailable`), so a reward is never earned when it couldn't be recorded.
++  - If the grant fails temporarily (`DataNotLoaded`), `RobberyRules.payoutOutcome` says `Retry`: the reward stays pending (same tx id), `RobberyPhase = "PayoutPending"`, the HUD shows "REWARD PENDING", and it is retried every 2 s until it is paid. Other errors are final (`PayoutFailed`).
++  - Pending rewards survive death, respawn and jail (they belong to the player, not the character). Leaving the game while still pending is the one case that drops it; it is logged with a warning and the player was told to stay.
++  - Once granted, the cash lives in the profile. If saves then fail, autosave keeps retrying; if the save on leave fails, EconomyService keeps the profile as an *orphan* on this server and retries every 10 s for up to 15 min (stopping if another server takes the lock), plus once more at shutdown. A player who rejoins the same server before it saves gets the newer in-memory profile back.
+ - **Client:** `RobberyHudController` shows "ROBBING THE STORE Ns / Stay inside" while holding, "ESCAPE THE POLICE / Lose your wanted stars to keep $2,000" while escaping (from server attributes), and toasts for the alarm, rejections, failure reasons and the cash reward. It can't start, finish or pay anything.
+ - **Tuning:** `RobberyConfig` (hold, reward, cooldown, ranges, escape limit) and `WantedConfig.Crimes.StoreRobbery` are the only places to change values.
+ - **Not built (by owner decision):** banks, more stores, gangs, weapons, new vehicles, monetization. Police stay at one NPC unit.
++
++### NPC police at the storefront (recorded issue + proposal, not built)
++
++- **Issue:** the single NPC unit is dispatched the moment the robbery starts and reaches the store in about 3-10 s, well inside the 15 s holdout. It drives at the player, so at the storefront it stalls against the building (`hard recovery: stalled repeatedly at (-113, -57..-64)`), pushes or blocks parked cars, and waits within bust range of the door. In 10 solo getaway attempts none succeeded: 5 busts at or near the door, 4 busts after crashing while the unit followed, and 1 death off the map edge.
++- **Proposal: roadside stop (simple, no new pathfinding):** when the target is on foot and off the road network, the unit drives to the road node nearest the target, then to the closest point on that road's curb line, stops there with the handbrake on and stays put while the target remains within ~60 studs. It resumes normal pursuit as soon as the target enters a vehicle or moves more than ~60 studs away. It never drives off the road towards a building. Busting stays as now (within 18 studs, target slower than 5 studs/s for 2.5 s). Building it needs owner approval.
++
++## Dealership and vehicle ownership (Phase 4C)
++
++- **Profile v2:** `{ Version = 2, Cash, RecentTransactions, OwnedVehicles = { "Coupe", ... } }`. Every profile owns the starters (`EconomyConfig.StarterVehicles = { "Coupe" }`).
++- **Migration** (`EconomyRules.validateSaved`, inside the load's `UpdateAsync`): a v1 (cash-only) record keeps its cash and transaction history exactly, gains `OwnedVehicles = { "Coupe" }`, and is written back as v2 in the same atomic update that claims the session lock (`loaded (Migrated)`). A record from a newer version, or a v2 record without its ownership list, is refused untouched (`Corrupt`), so an older server can never downgrade or wipe it.
++- **Purchase (atomic):** `EconomyRules.purchaseVehicle(profile, vehicleId, price, txId)` checks the id, amount, duplicate transaction, not already owned, garage limit and funds, then takes the price, adds the car and remembers the transaction in one step on the same profile. Nothing yields in between. That profile is saved as one record, so cash and ownership are always stored together: never cash without the car, never the car without the cash. `EconomyService.purchaseVehicle` saves right away; if that save fails, autosave, leave and orphan retries keep trying with both changes.
++- **Server API:** `DealershipService` handles `RequestPurchaseVehicle` (see the network table). Prices live only in `DealershipConfig` (Muscle: 15000). A second request for an owned car returns `AlreadyOwned` without charging.
++- **Place:** `Workspace.City.Dealership` ("OUTLAW MOTORS") on the north edge of block (200, 200), facing the z = 100 road. It has a sales desk with `ShopPrompt` (opens the client window) and an anchored, non-drivable display Muscle.
++- **Second vehicle:** `Muscle` (VehicleConfig): top speed 138 (Coupe 120), acceleration 68 (55), and heavier handling. It has less grip (9 vs 12), slower turning (yaw 1.85 vs 2.2), steering response 8 (10) and longer braking (100 vs 120).
++- **Client:** the Spawn Car button opens the garage window (owned cars from `OwnedVehicles`); V spawns the last car chosen there (Coupe at first). The dealership window shows each car's price, its stats and Owned/Buy, plus a clear success or failure message. Both windows sit top-centre below the HUD row and use 44-48 px touch targets.
++- **Studio-only test hooks:** dev `WriteLegacyProfile` rewrites the stored record as v1 and stops saving that session (rejoin to migrate); Workspace `SimulateDataStoreFailure` makes every store call fail.
++- **Not built (by owner decision):** more vehicles, banks, garages as buildings, property, gangs, weapons, monetization.
+diff --git a/docs/MULTIPLAYER_TESTS.md b/docs/MULTIPLAYER_TESTS.md
+index a7d58c1..cb3570c 100644
+--- a/docs/MULTIPLAYER_TESTS.md
++++ b/docs/MULTIPLAYER_TESTS.md
+@@ -73,3 +73,9 @@ Mark each item with the date and result when finally run.
+ - [ ] A robber who leaves the game mid-robbery gets nothing and the store frees up for others
+ - [ ] Holdout area check under real latency (no false "left the store" for a player standing inside)
+ - [ ] Exploit attempts (fake position, spamming the prompt, firing remotes) don't start, finish or pay a robbery
++
++## Phase 4C — Dealership and second vehicle
++- [ ] Two players buy at the same time: each is charged once and owns the car; neither affects the other's balance or garage
++- [ ] Another player can't spawn, buy for, or see into someone else's garage; spawning someone else's car id is refused (`NotOwned`)
++- [ ] A player who rejoins onto another server right after buying keeps the car (session lock hand-over between two real servers)
++- [ ] Other players see the display car and a player's Muscle correctly (models, wheels, colour)
+diff --git a/docs/PROGRESS.md b/docs/PROGRESS.md
+index 9c48beb..029b148 100644
+--- a/docs/PROGRESS.md
++++ b/docs/PROGRESS.md
+@@ -20,7 +20,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ |---|---|
+ | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
+ | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
+-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 144 passed, 0 failed` (after 4B) |
++| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 156 passed, 0 failed` (after 4C) |
+ | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
+ | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
+ | Chase camera | Playtest measurements above |
+@@ -98,6 +98,23 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ | **4B tampering** | Client set `Cash` = 999999 and `RobberyPhase` = Escaping on itself and fired `OnRobberyNotice` ("Paid", 1,000,000) at the server: server cash stayed 2700, server `RobberyPhase` nil |
+ | **4B persistence** | Stop -> new playtest: `loaded (Existing) cash=2700`; after the iPhone 7 robbery, rejoin -> `cash=4700` |
+ | **4B mobile** | iPhone 7 (666×374): prompt usable; "ROBBING THE STORE 11s" panel readable under the stars and cash badge, no overlap with the top row |
++| **4B follow-up: robbery refused while cash data is offline** | Dev `SetCashUnavailable` true -> prompt -> `Rejected:CashUnavailable` ("Your cash data isn't loaded right now"), no session, no stars |
++| **4B follow-up: grant fails before it is applied** | Rob, then cash data made unavailable during the escape -> on escape `PayoutPending:2000`, HUD "REWARD PENDING", Output `payout pending (DataNotLoaded); retrying`; 7 s later data restored -> one `grant 2000 ... tx robbery:<id>` (4700 -> 6700) and `Paid:2000`. No second grant |
++| **4B follow-up: reward accepted but saving fails** | Workspace `SimulateDataStoreFailure` on -> rob + escape -> paid in memory (6700 -> 8700); "Save data now" failed (logged). Player kicked while saves still failed -> `save on leave failed; keeping the profile and retrying (cash=8700)`; failure turned off -> `saved after leaving (cash=8700)`; next playtest `loaded (Existing) cash=8700` |
++| **4B follow-up: driving getaway (NOT PASSED)** | 10 attempts with the robber's car parked at the storefront: 7 with real keyboard input (W/A/S/D via the Studio input tool) and 3 with the real `VehiclePhysics` driven by a scripted waypoint driver. The route itself works: the scripted car drove store -> x=-100 connector -> highway -> x=748 in ~20 s at up to 119 studs/s, and in one keyboard run the police lost sight and heat fell 70 -> 45 while driving. **No attempt ended in a paid escape:** 5 busted at or near the storefront (the unit arrives during the holdout, then blocks or rams the getaway car, pushes it while parked, or busts within 2.5 s of the robber reaching it); 4 busted after the open-loop keyboard or first scripted route crashed into a highway barrier or wall while the unit followed; 1 died driving off the map edge (correctly no cash). Every failure paid nothing |
++| **4C pre-work** | Backup `OutlawCity_4B2.rbxl` confirmed in the Studio log (place file downloaded 13:47:45Z). Vehicle validation still monitor-only; police still one unit |
++| **4C unit tests** | `EconomyRules.spec` (+5): new profiles own exactly the Coupe; v1 and versionless records migrate keeping cash and tx history; v2 ownership kept, junk/duplicates dropped, v2-without-list / newer / bad versions refused; purchase takes the price once and records ownership, duplicate tx and already-owned never charge twice; a failed purchase changes nothing (not even the tx list). `ProfileStore.spec` (+2): v1 record migrates on load and is written back as v2; a purchase saves cash + ownership together and a failed save leaves the stored record unchanged. `Dealership.spec` (4): $15,000 Muscle, catalogue cars exist and are drivable, Muscle handles differently, prices read-only, showroom clear of the roads. **156/156** |
++| **4C migration (real Studio DataStore)** | The existing cash-only profile loaded as `loaded (Migrated) cash=9800`; `OwnedVehicles` = `Coupe`. Repeated with dev `WriteLegacyProfile` (cash 800, v1) -> rejoin `loaded (Migrated) cash=800`, Coupe only |
++| **4C unauthorized spawning** | `RequestSpawnVehicle("Muscle")` before buying -> `NotOwned` |
++| **4C purchase refusals** | From the plaza -> `TooFar`; at the desk with $9,800 -> `InsufficientFunds`; `Police`, `Coupe`, `Tank` -> `NotForSale`; `15000` and `""` as ids -> `BadRequest`; an extra "price = 1" argument was ignored (`InsufficientFunds`). Cash stayed 9,800 throughout |
++| **4C purchase once** | Dev grant to $15,800, then 5 simultaneous requests: 1 `true`, 4 `Cooldown`; cash 15,800 -> 800 exactly once, `OwnedVehicles = Coupe,Muscle`, Output `bought Muscle for 15000 (tx buy:Muscle:<guid>)` + `purchase saved`. A later request -> `AlreadyOwned`, no charge |
++| **4C second vehicle** | Spawned from the garage window (PC click) and by request; Muscle 0 -> 123 studs/s in 3.1 s and 134 in 4.6 s (Coupe: ~100 in 4 s). Coupe still spawns with V and drives (104 studs/s after 3 s) |
++| **4C persistence** | Stop -> new playtest: `loaded (Existing) cash=800`, `Coupe,Muscle`, Muscle spawns |
++| **4C DataStore failures** | Data unavailable (after `WriteLegacyProfile`) -> purchase `DataNotLoaded`, nothing changed. Outage during a purchase, leave with the outage still on: purchase applied in memory, all saves failed and were logged; next session was held off by the old session lock (`SessionLocked`, as designed) for ~2.5 min, then loaded the **pre-purchase** record: $15,800 and Coupe only (neither the charge nor the car). Outage during a purchase, outage ends before leaving -> `saved on leave (cash=800)`, rejoin: $800 + Muscle (both) |
++| **4C UI (PC + iPhone 7)** | Garage window lists Coupe ✓ and Muscle; clicking Muscle spawned and seated the player in it. Dealership window from the desk prompt shows the Muscle, "Top speed 138 · Accel 68", Owned/Buy. On iPhone 7 (666×374) both windows were first drawn over the cash badge, so they were moved below the HUD row; after that no overlap |
++| 4C regression | Robbery: 2★ with no police during the holdout, unit dispatched at the end; bust -> jail 12 s -> release; cash unchanged (800); Coupe spawn/drive after release; safe-zone enter/leave; 0 vehicle-validation observations; no console errors |
++| **4B follow-up: police sent at holdout end (option 1)** | 3 robberies: no police unit existed during the holdout (stars 2, unit `none` at 8 s); the unit was dispatched at the end of the holdout from 300-500 studs away. The robber then reached the parked car and drove off in all 3 (before the change: 0 of 10 got away from the door) |
++| **4B follow-up: driving getaway (still NOT PASSED)** | With the change, using the real `VehiclePhysics` and a scripted waypoint driver: run 1 drove north into the arriving unit (head-on, busted); run 2 turned into the store wall while U-turning (busted); run 3 drove 1,000+ studs east and south through the grid at up to 116 studs/s, but the unit stayed 90-100 studs behind and in sight the whole way (heat never started to decay), and busted the robber when the route ended. The NPC keeps up by design: `ChaseSpeed` 110 plus `ChaseGain` (+1 stud/s per stud of gap) vs the Coupe's ~119, `SightRange` 160, and heat only decays after 8 s unseen. Losing it needs line-of-sight breaks a scripted route doesn't find. Prompts also stopped responding in these runs (Studio viewport not rendering), so robberies were started with the Studio-only `TryRobStore` command (same server checks) and the car entered by walking into the seat |
+ | 4B regression | Police dispatch, chase, sighting, bust -> jail -> release, safe-zone enter/leave, cash load/save all normal; 0 vehicle-validation observations; no console errors |
+ | 4A regression | Police dispatch -> bust -> jail -> release with cash unchanged (700); vehicle validation 0 observations; safe-zone enter/leave; driving; no console errors |
+ | Jail regression | Police dispatch/chase/bust, wanted levels, safe-zone enter/leave, vehicle validation (0 observations in normal play), driving and spawning all working; no console errors |
+@@ -118,10 +135,14 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ 8a. Cash persistence was tested in Studio against a real DataStore (`_Studio` suffix). Not tested: two real servers contending for one player's lock (needs two live servers; MULTIPLAYER UNVERIFIED), DataStore throttling under load, and the published game's live store.
+ 8c. **4B escape definition:** "escaped" means the wanted level decayed to zero (the police lost sight long enough). In tests the successful escapes were done by moving the character ~800 studs away; escaping the NPC unit by driving was not tested.
+ 8d. **4B holdout position** uses the character's replicated position (client-simulated physics, as for every character). A cheater could fake standing inside, but only for a robbery they started at the register, and they still get 2★ and must escape. Exploit testing is MULTIPLAYER UNVERIFIED.
+-8e. **4B payout failure:** if cash data is `Unavailable` when the player escapes, the grant fails with `PayoutFailed` and is not retried.
++8e. ~~4B payout failure not retried~~ fixed in the 4B follow-up (pending payouts + orphan saves). Remaining gap: a pending reward is dropped if the player leaves while their cash data is still offline; a profile whose save keeps failing is lost if the server itself shuts down before the DataStore recovers.
++8i. **4B getaway balance (owner decision needed):** fixed part: the unit is now only sent when the holdout ends, so robbers reach their car. Still open: once chasing, the single unit keeps pace and sight (chase speed + gap catch-up vs the Coupe), so no solo getaway has ended in a payout yet. Tuning options for the owner: lower `ChaseGain`/`ChaseSpeed`, a shorter `SightRange`, or a shorter `WantedConfig.DecayDelay` for 2★. The roadside-stop proposal (ARCHITECTURE) is still unbuilt.
+ 8f. Robbery sessions and store cooldowns are per server and session-only: leaving mid-robbery forfeits it; a server restart clears cooldowns.
+ 8g. The NPC police car can't enter the store; at the storefront it hits hard recovery (`stalled repeatedly at (-113, -57)`) and re-routes. It still busted a player standing near the counter from 21 studs.
+ 8h. On small phones the robbery panel (y 136-212 on a 374-px-high screen) covers part of the middle of the view while active. The `InVehicle` rejection is unit-tested only.
++8j. **4C:** the dealership and garage are MULTIPLAYER UNVERIFIED (two buyers, other players seeing the display car or someone else's Muscle). Purchases while another server holds the profile lock are refused until the lock clears (`SessionLocked`, up to 180 s); that path was seen in Studio but not across two real servers.
++8k. **4C:** a player whose cash data is unavailable can still spawn the starter Coupe, but not a bought car, until the data loads.
++8l. **4C:** driving the Muscle on mobile touch controls was not separately tested. The touch driving buttons are shared with the Coupe and were tested in Phase 2.
+ 8b. The Studio-only dev panel is now taller than a small phone screen (it is clipped; F8 hides it; never in published servers).
+ 9. Player-vs-player harm (combat rules, safe zones, spawn protection) is verified only with mock players: no PvP damage exists yet.
+ 10. Parked cars have a tiny vertical velocity jitter at rest (positions stable to ±0.01 stud).
+@@ -150,6 +171,8 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
+ - ~~3G server vehicle movement validation~~ — done (solo, **monitor-only**); awaiting owner review before any automatic correction or the jail
+ - ~~Short jail (12 s, 10-15 configurable)~~ — provisionally approved (solo); Phase 3 signed off
+ - ~~4A cash and persistence~~ — approved by the owner (solo, real Studio DataStore)
+-- ~~4B one convenience-store robbery~~ — done (solo); **awaiting owner approval** before the dealership or a second vehicle
+-- Dealership / second vehicle — after 4B review (not started)
++- ~~4B one convenience-store robbery~~ — provisionally approved by the owner
++- 4B follow-up — payout recovery done and tested; police now sent at holdout end (owner option 1); **driving getaway still not passed** (pursuit keeps pace); pursuit tuning left for an owner decision
++- ~~4C dealership + second vehicle~~ — done (solo); **awaiting owner review**
++- Open owner decision: police pursuit tuning for robbery getaways (see known issue 8i)
+ - 3F Studio-only test tools — maintained throughout
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index 1c0d660..bbfc451 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -48,8 +48,9 @@ Out of scope for Phase 3: robberies, weapons, gangs, helicopters, new districts,
+ 
+ ## Phase 4 — Economy
+ - **4A ✅ approved (solo; real Studio DataStore):** server-authoritative cash, starting cash, DataStore persistence with retries and session safety, one EconomyService, pure economy rules, duplicate-transaction protection, cash HUD, Studio-only cash dev tools. No robberies, purchases or monetization yet.
+-- **4B ✅ (solo; awaiting owner approval):** one convenience-store robbery (24/7 MART): server-owned sessions, 15 s holdout, 2★, $2,000 paid once only after escaping, 180 s store cooldown, fails on death/bust/leaving/disconnect, robbery HUD. No banks, more stores, gangs or weapons.
+-- Later (needs approval): dealership and a second vehicle, vehicle ownership/purchases.
++- **4B ✅ provisionally approved (solo):** one convenience-store robbery (24/7 MART): server-owned sessions, 15 s holdout, 2★, $2,000 paid once only after escaping, 180 s store cooldown, fails on death/bust/leaving/disconnect, robbery HUD. No banks, more stores, gangs or weapons.
++- **4B follow-up (in progress):** recoverable robbery payouts ✅; police sent at holdout end ✅; driving getaway ❌ not yet passed (pursuit keeps pace; tuning needs owner decision); police roadside stop proposed.
++- **4C ✅ (solo; awaiting owner review):** OUTLAW MOTORS dealership, the $15,000 Muscle (faster, heavier handling), server purchase API (atomic cash + ownership, duplicate-safe), persistent ownership in profile v2 with safe migration from cash-only profiles, garage window, ownership-checked spawning, PC + mobile UI.
+ - Original line: cash, server-authoritative rewards for arrests and robberies, DataStore persistence.
+ - A first purchasable vehicle.
+ 
+diff --git a/docs/TEST_CHECKLIST.md b/docs/TEST_CHECKLIST.md
+index a7a02db..f094244 100644
+--- a/docs/TEST_CHECKLIST.md
++++ b/docs/TEST_CHECKLIST.md
+@@ -149,6 +149,22 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
+ - [ ] Client sets its own `Cash` / `RobberyPhase` and fires `OnRobberyNotice` -> server unchanged
+ - [ ] Stop/start after a paid robbery -> same balance (`loaded (Existing)`)
+ - [ ] Phone (iPhone 7): prompt usable by tap; panel and toasts readable, no overlap with the top row
++- [ ] Dev `SetCashUnavailable` true -> robbery refused "cash data isn't loaded"
++- [ ] Rob, set `SetCashUnavailable` true during the escape, escape -> "REWARD PENDING"; set it false -> one +$2,000, one `grant` line
++- [ ] Workspace `SimulateDataStoreFailure` = true, rob + escape (paid), leave -> "save on leave failed; keeping the profile"; set it false -> "saved after leaving"; rejoin -> same balance. **Clear the attribute afterwards.**
++- [ ] Driving getaway: park a car at the storefront, rob, drive away and lose the police -> one +$2,000
++
++## Dealership and second vehicle (4C, solo; dealership at (200, 136), desk at (188, 145))
++- [ ] `EconomyRules.spec`, `ProfileStore.spec`, `Dealership.spec` pass
++- [ ] Cash-only profile: join -> Output `loaded (Migrated) cash=<same>`; `OwnedVehicles` = Coupe (repeat with dev `WriteLegacyProfile`, then rejoin)
++- [ ] `RequestSpawnVehicle("Muscle")` before buying -> `NotOwned`
++- [ ] Buy from far away -> "Walk up to the sales desk"; with less than $15,000 -> "Not enough cash: you need $X more"; nothing charged
++- [ ] With $15,000+: Buy -> "Bought the Muscle!", cash -15,000 exactly once, window shows Owned; spam Buy -> still one charge
++- [ ] Garage (Spawn Car) lists Coupe and Muscle; picking Muscle spawns and seats you; V spawns the last pick
++- [ ] Muscle is faster off the line and slides more than the Coupe
++- [ ] Rejoin -> Muscle still owned, same cash
++- [ ] Workspace `SimulateDataStoreFailure` = true, buy, leave with it still on -> next join (after the old lock clears) has neither the charge nor the car; buy during an outage that ends before leaving -> both saved. **Clear the attribute afterwards.**
++- [ ] Phone (iPhone 7): garage and dealership windows below the top row, buttons tappable, cash badge visible
+ 
+ ## Mobile (Device Simulator, phone landscape)
+ - [ ] SAFE ZONE badge visible on iPhone 7 with the stars and the Combat button, no overlap
+diff --git a/src/ReplicatedStorage/Shared/Config/DealershipConfig.luau b/src/ReplicatedStorage/Shared/Config/DealershipConfig.luau
+new file mode 100644
+index 0000000..d76f7e9
+--- /dev/null
++++ b/src/ReplicatedStorage/Shared/Config/DealershipConfig.luau
+@@ -0,0 +1,23 @@
++--!strict
++-- Dealership tuning (Phase 4C). Prices live ONLY here, on the server's copy; the client is
++-- shown them but never sends one. Read-only at runtime.
++local DealershipConfig = {
++	-- What the dealership sells, in display order.
++	Catalog = table.freeze({
++		table.freeze({ VehicleId = "Muscle", Price = 15000 }),
++	}),
++	InteractDistance = 14, -- studs from the sales desk (prompt range)
++	DistanceSlack = 6, -- extra studs the server allows for latency
++	RequestInterval = 1, -- seconds between purchase requests per player
++}
++
++function DealershipConfig.priceOf(vehicleId: string): number?
++	for _, item in DealershipConfig.Catalog do
++		if item.VehicleId == vehicleId then
++			return item.Price
++		end
++	end
++	return nil
++end
++
++return table.freeze(DealershipConfig)
+diff --git a/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau b/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+index 38c7115..b84949e 100644
+--- a/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
++++ b/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+@@ -6,7 +6,12 @@ local EconomyConfig = {
+ 	MaxTransaction = 1_000_000, -- largest single grant or deduction
+ 	RecentTransactionLimit = 200, -- transaction ids remembered per player (duplicate guard)
+ 	TransactionIdMaxLength = 64,
+-	ProfileVersion = 1,
++	-- 1: cash only (4A). 2: + OwnedVehicles (4C). Older records are migrated on load; a record
++	-- from a NEWER version is refused untouched, so an old server can never downgrade it.
++	ProfileVersion = 2,
++	StarterVehicles = table.freeze({ "Coupe" }), -- every profile owns these (new and migrated)
++	MaxOwnedVehicles = 50,
++	VehicleIdMaxLength = 32,
+ 
+ 	DataStoreName = "OutlawCity_PlayerData_v1", -- Studio uses DataStoreName .. "_Studio"
+ 	LoadAttempts = 3, -- tries per load round, with exponential backoff
+@@ -15,6 +20,9 @@ local EconomyConfig = {
+ 	SessionLockTimeout = 180, -- seconds after which another server's lock counts as stale
+ 	AutosaveInterval = 60,
+ 	SaveAttempts = 3,
++	-- If the save on leave fails, the unsaved profile is kept on this server and retried.
++	OrphanRetryInterval = 10,
++	OrphanRetryLimit = 900, -- seconds; stops early if another server takes the lock
+ }
+ 
+ return table.freeze(EconomyConfig)
+diff --git a/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau b/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
+index 79f8801..756c7df 100644
+--- a/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
++++ b/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
+@@ -10,6 +10,9 @@ local RobberyConfig = {
+ 	DistanceSlack = 4, -- extra studs the server allows for latency
+ 	MaxEscapeSeconds = 300, -- after the holdout, escape within this or the payout is lost
+ 	TickInterval = 0.25,
++	-- Owner decision (4B follow-up): stars and the police alert come at the start, but the NPC
++	-- unit is only sent when the holdout ends, so a robber has a head start to the getaway car.
++	PoliceDispatchAtHoldEnd = true,
+ }
+ 
+ return table.freeze(RobberyConfig)
+diff --git a/src/ReplicatedStorage/Shared/Config/VehicleConfig.luau b/src/ReplicatedStorage/Shared/Config/VehicleConfig.luau
+index 4bf793f..b0b48a6 100644
+--- a/src/ReplicatedStorage/Shared/Config/VehicleConfig.luau
++++ b/src/ReplicatedStorage/Shared/Config/VehicleConfig.luau
+@@ -39,6 +39,40 @@ local vehicles: { [string]: Types.VehicleStats } = {
+ 		HandbrakeLateralGrip = 2.5,
+ 		MaxSteerAngle = math.rad(30),
+ 	},
++	-- Phase 4C purchasable car: faster and harder-accelerating than the Coupe, but heavier-feeling
++	-- (slower steering, less grip, longer braking), so it slides more in corners.
++	Muscle = {
++		DisplayName = "Muscle",
++		BodyColor = Color3.fromRGB(20, 105, 60),
++		ChassisSize = Vector3.new(7.6, 1.5, 14.6),
++		WheelOffsets = {
++			Vector3.new(-3.6, 0.7, -4.8),
++			Vector3.new(3.6, 0.7, -4.8),
++			Vector3.new(-3.6, 0.7, 4.9),
++			Vector3.new(3.6, 0.7, 4.9),
++		},
++		WheelRadius = 1.45,
++		WheelWidth = 1.4,
++		SuspensionRestLength = 1.8,
++		StaticCompressionRatio = 0.5,
++		DampingRatio = 0.55,
++		MaxForwardSpeed = 138,
++		MaxReverseSpeed = 32,
++		Acceleration = 68,
++		ReverseAcceleration = 28,
++		BrakeDeceleration = 100,
++		HandbrakeDeceleration = 55,
++		RollingDeceleration = 5,
++		DragCoefficient = 0.025,
++		MaxYawRate = 1.85,
++		FullSteerSpeed = 24,
++		HighSpeedSteerReduction = 0.6,
++		HandbrakeYawMultiplier = 1.6,
++		YawResponse = 8,
++		LateralGrip = 9,
++		HandbrakeLateralGrip = 2,
++		MaxSteerAngle = math.rad(28),
++	},
+ 	-- NPC police cruiser: Coupe handling with a little more pace so it can close gaps.
+ 	Police = {
+ 		DisplayName = "Police Cruiser",
+diff --git a/src/ReplicatedStorage/Shared/Economy/EconomyRules.luau b/src/ReplicatedStorage/Shared/Economy/EconomyRules.luau
+index 404d56b..3630038 100644
+--- a/src/ReplicatedStorage/Shared/Economy/EconomyRules.luau
++++ b/src/ReplicatedStorage/Shared/Economy/EconomyRules.luau
+@@ -13,6 +13,9 @@ type Config = {
+ 	RecentTransactionLimit: number,
+ 	TransactionIdMaxLength: number,
+ 	ProfileVersion: number,
++	StarterVehicles: { string },
++	MaxOwnedVehicles: number,
++	VehicleIdMaxLength: number,
+ }
+ 
+ local function isWholeFinite(n: any): boolean
+@@ -35,7 +38,12 @@ function EconomyRules.validateTransactionId(txId: any, config: Config): (boolean
+ end
+ 
+ function EconomyRules.newProfile(config: Config): Types.Profile
+-	return { Version = config.ProfileVersion, Cash = config.StartingCash, RecentTransactions = {} }
++	return {
++		Version = config.ProfileVersion,
++		Cash = config.StartingCash,
++		RecentTransactions = {},
++		OwnedVehicles = table.clone(config.StarterVehicles),
++	}
+ end
+ 
+ -- Checks saved data. nil (never saved) -> a new profile with starting cash. Valid data is
+@@ -48,6 +56,11 @@ function EconomyRules.validateSaved(saved: any, config: Config): (Types.Profile?
+ 	if type(saved) ~= "table" or not isWholeFinite(saved.Cash) or saved.Cash < 0 or saved.Cash > config.MaxBalance then
+ 		return nil, "Corrupt"
+ 	end
++	-- Version 1 records (cash only) predate the field being required.
++	local version = if saved.Version == nil then 1 else saved.Version
++	if not isWholeFinite(version) or version < 1 or version > config.ProfileVersion then
++		return nil, "Corrupt" -- unknown or newer schema: never guess, never downgrade
++	end
+ 	local recent = {}
+ 	if type(saved.RecentTransactions) == "table" then
+ 		for _, txId in saved.RecentTransactions do
+@@ -56,11 +69,30 @@ function EconomyRules.validateSaved(saved: any, config: Config): (Types.Profile?
+ 			end
+ 		end
+ 	end
++	-- Ownership: starters always; from v2 on, the saved list (it must be a list).
++	local owned = table.clone(config.StarterVehicles)
++	if version >= 2 then
++		if type(saved.OwnedVehicles) ~= "table" then
++			return nil, "Corrupt" -- a v2 record without its ownership list is damaged, not empty
++		end
++		for _, vehicleId in saved.OwnedVehicles do
++			if
++				type(vehicleId) == "string"
++				and #vehicleId > 0
++				and #vehicleId <= config.VehicleIdMaxLength
++				and not table.find(owned, vehicleId)
++				and #owned < config.MaxOwnedVehicles
++			then
++				table.insert(owned, vehicleId)
++			end
++		end
++	end
+ 	return {
+-		Version = if type(saved.Version) == "number" then saved.Version else config.ProfileVersion,
++		Version = config.ProfileVersion,
+ 		Cash = saved.Cash,
+ 		RecentTransactions = recent,
+-	}, "Existing"
++		OwnedVehicles = owned,
++	}, if version < config.ProfileVersion then "Migrated" else "Existing"
+ end
+ 
+ function EconomyRules.hasTransaction(profile: Types.Profile, txId: string): boolean
+@@ -121,6 +153,36 @@ function EconomyRules.deduct(profile: Types.Profile, amount: any, txId: any, con
+ 	return true, nil
+ end
+ 
++function EconomyRules.ownsVehicle(profile: Types.Profile, vehicleId: string): boolean
++	return table.find(profile.OwnedVehicles, vehicleId) ~= nil
++end
++
++-- Buys a vehicle: takes the price AND records ownership in one step on the same profile, so
++-- they are always saved together (never cash without the car, never the car without cash).
++-- The price comes from server config, never from the client.
++function EconomyRules.purchaseVehicle(profile: Types.Profile, vehicleId: any, price: any, txId: any, config: Config): (boolean, Types.EconomyError?)
++	if type(vehicleId) ~= "string" or #vehicleId == 0 or #vehicleId > config.VehicleIdMaxLength then
++		return false, "InvalidVehicle"
++	end
++	local ok, err = precheck(profile, price, txId, config)
++	if not ok then
++		return false, err
++	end
++	if EconomyRules.ownsVehicle(profile, vehicleId) then
++		return false, "AlreadyOwned"
++	end
++	if #profile.OwnedVehicles >= config.MaxOwnedVehicles then
++		return false, "TooManyVehicles"
++	end
++	if not EconomyRules.canAfford(profile, price) then
++		return false, "InsufficientFunds"
++	end
++	profile.Cash -= price
++	table.insert(profile.OwnedVehicles, vehicleId)
++	remember(profile, txId, config)
++	return true, nil
++end
++
+ -- Session lock: a server may claim a record when it is unlocked, already its own, or the
+ -- other server's lock is older than `timeout` seconds (that server crashed or hung).
+ function EconomyRules.canClaimLock(lock: any, sessionId: string, now: number, timeout: number): boolean
+diff --git a/src/ReplicatedStorage/Shared/Net/Remotes.luau b/src/ReplicatedStorage/Shared/Net/Remotes.luau
+index b4f181e..c26a6fb 100644
+--- a/src/ReplicatedStorage/Shared/Net/Remotes.luau
++++ b/src/ReplicatedStorage/Shared/Net/Remotes.luau
+@@ -19,6 +19,8 @@ Remotes.Definitions = table.freeze({
+ 	OnWantedNotice = "RemoteEvent",
+ 	-- (target: "Peaceful" | "Combat") -> (ok: boolean, err: Types.CombatSwitchError?, secondsUntilPeacefulAllowed: number)
+ 	RequestSetCombatStatus = "RemoteFunction",
++	-- client -> server: (vehicleId) -> (ok, err: PurchaseError?). Price and ownership are server-side.
++	RequestPurchaseVehicle = "RemoteFunction",
+ 	-- server -> client: (kind: "Rejected" | "Started" | "Escape" | "Failed" | "Paid" | "PayoutFailed", payload)
+ 	OnRobberyNotice = "RemoteEvent",
+ } :: { [string]: string })
+diff --git a/src/ReplicatedStorage/Shared/Player/PlayerAttributes.luau b/src/ReplicatedStorage/Shared/Player/PlayerAttributes.luau
+index be27922..eef3729 100644
+--- a/src/ReplicatedStorage/Shared/Player/PlayerAttributes.luau
++++ b/src/ReplicatedStorage/Shared/Player/PlayerAttributes.luau
+@@ -15,7 +15,8 @@ local PlayerAttributes = table.freeze({
+ 	JailReleaseAt = "JailReleaseAt", -- server time the sentence ends (0 when not jailed)
+ 	Cash = "Cash", -- server-authoritative balance (EconomyService); absent until data has loaded
+ 	CashStatus = "CashStatus", -- "Loading" | "Loaded" | "Unavailable"
+-	RobberyPhase = "RobberyPhase", -- "Holding" | "Escaping" while a robbery session is live (else nil)
++	OwnedVehicles = "OwnedVehicles", -- comma-separated vehicle ids from the profile (display only)
++	RobberyPhase = "RobberyPhase", -- "Holding" | "Escaping" | "PayoutPending" while a robbery is live or unpaid (else nil)
+ 	RobberyHoldEndsAt = "RobberyHoldEndsAt", -- server time the holdout completes
+ 	RobberyReward = "RobberyReward", -- cash promised for escaping (display only)
+ })
+diff --git a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+index 75713ca..13aff00 100644
+--- a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
++++ b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+@@ -29,6 +29,7 @@ export type StartFacts = {
+ 	InVehicle: boolean,
+ 	DistanceToRegister: number,
+ 	HasActiveSession: boolean,
++	CashReady: boolean, -- the player's cash profile is loaded, so a reward can be recorded
+ }
+ export type TickFacts = { Connected: boolean, Alive: boolean, Jailed: boolean, InArea: boolean }
+ type Config = {
+@@ -60,6 +61,9 @@ function RobberyRules.canStart(store: StoreState, facts: StartFacts, now: number
+ 	if facts.HasActiveSession then
+ 		return false, "AlreadyRobbing"
+ 	end
++	if not facts.CashReady then
++		return false, "CashUnavailable" -- don't start a mission whose reward couldn't be recorded
++	end
+ 	if not (facts.DistanceToRegister <= config.PromptDistance + config.DistanceSlack) then
+ 		return false, "TooFar" -- also catches NaN distances
+ 	end
+@@ -140,6 +144,20 @@ function RobberyRules.onEscaped(session: Session): boolean
+ 	return true
+ end
+ 
++-- Classifies the result of EconomyService.grant for a robbery reward. Only temporary failures
++-- (cash data not loaded right now) keep the reward pending for another try; a duplicate
++-- transaction means this exact reward was already paid.
++function RobberyRules.payoutOutcome(ok: boolean, err: string?): Types.PayoutOutcome
++	if ok then
++		return "Paid"
++	elseif err == "DuplicateTransaction" then
++		return "AlreadyPaid"
++	elseif err == "DataNotLoaded" then
++		return "Retry"
++	end
++	return "Rejected"
++end
++
+ function RobberyRules.isLive(session: Session): boolean
+ 	return session.Phase == "Holding" or session.Phase == "Escaping"
+ end
+diff --git a/src/ReplicatedStorage/Shared/Types.luau b/src/ReplicatedStorage/Shared/Types.luau
+index df26211..aa7f263 100644
+--- a/src/ReplicatedStorage/Shared/Types.luau
++++ b/src/ReplicatedStorage/Shared/Types.luau
+@@ -41,7 +41,10 @@ export type VehicleInput = {
+ }
+ 
+ -- Error codes returned by RequestSpawnVehicle.
+-export type SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn" | "Jailed"
++export type SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn" | "Jailed" | "NotOwned"
++
++-- Why a dealership purchase was refused (EconomyError values pass through).
++export type PurchaseError = "BadRequest" | "NotForSale" | "TooFar" | "NotAlive" | "Jailed" | "Busy" | "Cooldown" | EconomyError
+ 
+ -- Every player is a civilian in the open world; more statuses may follow (e.g. "Jailed").
+ export type PlayerStatus = "Civilian"
+@@ -104,6 +107,7 @@ export type Profile = {
+ 	Version: number,
+ 	Cash: number,
+ 	RecentTransactions: { string }, -- most recent last; bounded; blocks duplicate grants/deductions
++	OwnedVehicles: { string }, -- vehicle ids this player may spawn (v2+); always includes the starters
+ }
+ 
+ export type EconomyError =
+@@ -113,11 +117,16 @@ export type EconomyError =
+ 	| "InsufficientFunds"
+ 	| "BalanceCap"
+ 	| "DataNotLoaded"
++	| "InvalidVehicle"
++	| "AlreadyOwned"
++	| "TooManyVehicles"
+ 	| "NotInGame"
+ 
+ -- Store robbery (Phase 4B).
+ export type RobberyPhase = "Holding" | "Escaping" | "Paid" | "Failed"
+-export type RobberyStartError = "Dead" | "Jailed" | "InSafeZone" | "InVehicle" | "TooFar" | "StoreCooldown" | "StoreBusy" | "AlreadyRobbing"
++-- What to do with a payout attempt's result: settle it, or keep the reward pending and retry.
++export type PayoutOutcome = "Paid" | "AlreadyPaid" | "Retry" | "Rejected"
++export type RobberyStartError = "Dead" | "Jailed" | "InSafeZone" | "InVehicle" | "TooFar" | "StoreCooldown" | "StoreBusy" | "AlreadyRobbing" | "CashUnavailable"
+ export type RobberyFailReason = "Died" | "Busted" | "LeftArea" | "Disconnected" | "EscapeTimedOut"
+ 
+ -- Errors from JailService.jailForBust.
+diff --git a/src/ServerScriptService/Server/Data/DataStoreAdapter.luau b/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
+index 867ae5d..cec75ea 100644
+--- a/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
++++ b/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
+@@ -4,6 +4,7 @@
+ -- broken DataStore never wipes progress.
+ local DataStoreService = game:GetService("DataStoreService")
+ local RunService = game:GetService("RunService")
++local Workspace = game:GetService("Workspace")
+ 
+ local DataStoreAdapter = {}
+ 
+@@ -19,15 +20,17 @@ function DataStoreAdapter.setSimulatedFailure(enabled: boolean)
+ 	failureMode = enabled
+ end
+ 
++-- Also on while the Studio-only Workspace attribute SimulateDataStoreFailure is true, so a test
++-- can toggle failures with no player in the game (e.g. after a kick).
+ function DataStoreAdapter.isSimulatingFailure(): boolean
+-	return failureMode
++	return failureMode or (RunService:IsStudio() and Workspace:GetAttribute("SimulateDataStoreFailure") == true)
+ end
+ 
+ function DataStoreAdapter.get(baseName: string): any
+ 	local store = DataStoreService:GetDataStore(DataStoreAdapter.storeName(baseName))
+ 	return {
+ 		UpdateAsync = function(_, key: string, transform: (any) -> any): any
+-			if failureMode then
++			if DataStoreAdapter.isSimulatingFailure() then
+ 				error("Simulated DataStore failure (Studio test)")
+ 			end
+ 			return store:UpdateAsync(key, transform)
+diff --git a/src/ServerScriptService/Server/Data/ProfileStore.luau b/src/ServerScriptService/Server/Data/ProfileStore.luau
+index b12e757..9b1cba2 100644
+--- a/src/ServerScriptService/Server/Data/ProfileStore.luau
++++ b/src/ServerScriptService/Server/Data/ProfileStore.luau
+@@ -16,7 +16,7 @@ local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
+ local ProfileStore = {}
+ 
+ export type Store = { UpdateAsync: (self: any, key: string, transform: (any) -> any) -> any }
+-export type LoadResult = "New" | "Existing"
++export type LoadResult = "New" | "Existing" | "Migrated"
+ export type LoadError = "StoreError" | "SessionLocked" | "Corrupt"
+ export type SaveError = "StoreError" | "LockLost"
+ 
+@@ -43,7 +43,7 @@ function ProfileStore.load(store: Store, key: string, sessionId: string, now: nu
+ 	if not ok then
+ 		return nil, "StoreError", tostring(err)
+ 	end
+-	if outcome ~= "New" and outcome ~= "Existing" then
++	if outcome ~= "New" and outcome ~= "Existing" and outcome ~= "Migrated" then
+ 		return nil, outcome :: any, nil
+ 	end
+ 	return profile, outcome :: any, nil
+@@ -65,6 +65,7 @@ function ProfileStore.save(store: Store, key: string, sessionId: string, profile
+ 					Version = profile.Version,
+ 					Cash = profile.Cash,
+ 					RecentTransactions = table.clone(profile.RecentTransactions),
++					OwnedVehicles = table.clone(profile.OwnedVehicles),
+ 				},
+ 				Lock = if release then nil else { Id = sessionId, At = now },
+ 			}
+diff --git a/src/ServerScriptService/Server/Dev/DevCommandRules.luau b/src/ServerScriptService/Server/Dev/DevCommandRules.luau
+index c646561..7440e24 100644
+--- a/src/ServerScriptService/Server/Dev/DevCommandRules.luau
++++ b/src/ServerScriptService/Server/Dev/DevCommandRules.luau
+@@ -18,7 +18,9 @@ export type Command =
+ 	| { Name: "SetDataStoreFailure", Value: boolean }
+ 	| { Name: "SaveNow" }
+ 	| { Name: "ClearRobberyCooldown" }
+-	| { Name: "TryRobStore" } -- same server checks as the register prompt, minus the prompt's own range limit
++	| { Name: "SetCashUnavailable", Value: boolean } -- simulates losing cash data mid-session
++	| { Name: "TryRobStore" }
++	| { Name: "WriteLegacyProfile" } -- stores a v1 cash-only record; rejoin to test migration -- same server checks as the register prompt, minus the prompt's own range limit
+ 
+ local function finite(value: any): boolean
+ 	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+@@ -66,6 +68,13 @@ function DevCommandRules.parse(name: any, value: any): (Command?, string?)
+ 		return { Name = "SaveNow" }, nil
+ 	elseif name == "ClearRobberyCooldown" then
+ 		return { Name = "ClearRobberyCooldown" }, nil
++	elseif name == "SetCashUnavailable" then
++		if type(value) ~= "boolean" then
++			return nil, "SetCashUnavailable needs true or false"
++		end
++		return { Name = "SetCashUnavailable", Value = value }, nil
++	elseif name == "WriteLegacyProfile" then
++		return { Name = "WriteLegacyProfile" }, nil
+ 	elseif name == "TryRobStore" then
+ 		return { Name = "TryRobStore" }, nil
+ 	end
+diff --git a/src/ServerScriptService/Server/Dev/DevToolsService.luau b/src/ServerScriptService/Server/Dev/DevToolsService.luau
+index 412e8e1..d4de636 100644
+--- a/src/ServerScriptService/Server/Dev/DevToolsService.luau
++++ b/src/ServerScriptService/Server/Dev/DevToolsService.luau
+@@ -58,6 +58,10 @@ local function run(player: Player, name: unknown, value: unknown): (boolean, str
+ 	elseif command.Name == "ClearRobberyCooldown" then
+ 		RobberyService.clearCooldownsForTesting()
+ 		return true, nil
++	elseif command.Name == "SetCashUnavailable" then
++		return EconomyService.setUnavailableForTesting(player, (command :: any).Value), nil
++	elseif command.Name == "WriteLegacyProfile" then
++		return EconomyService.writeLegacyRecordForTesting(player), nil
+ 	elseif command.Name == "TryRobStore" then
+ 		return RobberyService.tryStart(player, "Store1")
+ 	end
+diff --git a/src/ServerScriptService/Server/Main.server.luau b/src/ServerScriptService/Server/Main.server.luau
+index 0465823..4625639 100644
+--- a/src/ServerScriptService/Server/Main.server.luau
++++ b/src/ServerScriptService/Server/Main.server.luau
+@@ -20,6 +20,7 @@ local services: { Service } = {
+ 	require(Services.JailService) :: any,
+ 	require(Services.WantedService) :: any,
+ 	require(Services.RobberyService) :: any,
++	require(Services.DealershipService) :: any,
+ 	require(Services.CombatService) :: any,
+ 	require(Services.PoliceService) :: any,
+ 	require(script.Parent.Dev.DevToolsService) :: any,
+diff --git a/src/ServerScriptService/Server/Services/DealershipService.luau b/src/ServerScriptService/Server/Services/DealershipService.luau
+new file mode 100644
+index 0000000..2976430
+--- /dev/null
++++ b/src/ServerScriptService/Server/Services/DealershipService.luau
+@@ -0,0 +1,77 @@
++--!strict
++-- Server authority for the dealership (Phase 4C). The client's shop window only asks
++-- RequestPurchaseVehicle(vehicleId); this service checks everything on the server:
++-- known catalogue car (price from DealershipConfig, never the client), one request at a time
++-- per player plus a rate limit, alive, not jailed, standing at the sales desk, and then
++-- EconomyService.purchaseVehicle takes the price and records ownership in one step with a
++-- fresh server transaction id. Owning the car already refuses a second charge.
++local Players = game:GetService("Players")
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++
++local Shared = ReplicatedStorage.Shared
++local Types = require(Shared.Types)
++local Remotes = require(Shared.Net.Remotes)
++local DealershipConfig = require(Shared.Config.DealershipConfig)
++local EconomyConfig = require(Shared.Config.EconomyConfig)
++local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
++local WorldService = require(script.Parent.WorldService)
++local JailService = require(script.Parent.JailService)
++local EconomyService = require(script.Parent.EconomyService)
++
++local DealershipService = {}
++
++local desk: BasePart? = nil
++local limiter = RateLimiter.new(DealershipConfig.RequestInterval)
++local inFlight: { [Player]: boolean } = {}
++
++local function purchase(player: Player, vehicleId: unknown): (boolean, Types.PurchaseError?)
++	if typeof(vehicleId) ~= "string" or #vehicleId == 0 or #vehicleId > EconomyConfig.VehicleIdMaxLength then
++		return false, "BadRequest"
++	end
++	local price = DealershipConfig.priceOf(vehicleId)
++	if not price then
++		return false, "NotForSale"
++	end
++	if inFlight[player] then
++		return false, "Busy"
++	end
++	if not limiter:tryConsume(player.UserId) then
++		return false, "Cooldown"
++	end
++	local character = player.Character
++	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
++	local root = character and character:FindFirstChild("HumanoidRootPart")
++	if not humanoid or humanoid.Health <= 0 or not root or not root:IsA("BasePart") then
++		return false, "NotAlive"
++	end
++	if JailService.isJailed(player) then
++		return false, "Jailed"
++	end
++	if not desk or (root.Position - desk.Position).Magnitude > DealershipConfig.InteractDistance + DealershipConfig.DistanceSlack then
++		return false, "TooFar"
++	end
++	inFlight[player] = true
++	local ok, err = EconomyService.purchaseVehicle(player, vehicleId, price, EconomyService.newTransactionId("buy:" .. vehicleId))
++	inFlight[player] = nil
++	return ok, err
++end
++
++function DealershipService.init()
++	local folder = WorldService.getDealership()
++	local part = folder and folder:FindFirstChild("DealerDesk")
++	if part and part:IsA("BasePart") then
++		desk = part
++	else
++		warn("[Dealership] no City.Dealership desk; purchases disabled")
++	end
++	Remotes.getFunction("RequestPurchaseVehicle").OnServerInvoke = purchase
++end
++
++function DealershipService.start()
++	Players.PlayerRemoving:Connect(function(player)
++		inFlight[player] = nil
++		limiter:reset(player.UserId)
++	end)
++end
++
++return DealershipService
+diff --git a/src/ServerScriptService/Server/Services/EconomyService.luau b/src/ServerScriptService/Server/Services/EconomyService.luau
+index fb2a44e..51bf17d 100644
+--- a/src/ServerScriptService/Server/Services/EconomyService.luau
++++ b/src/ServerScriptService/Server/Services/EconomyService.luau
+@@ -8,6 +8,9 @@
+ --    transaction ids, insufficient funds). There is no client remote that changes cash.
+ --  * Autosave every AutosaveInterval for changed profiles; save + release on leave and on
+ --    server shutdown.
++--  * If the save on leave fails, the profile is kept as an "orphan" and its save retried in
++--    the background (and at shutdown), so cash already earned isn't silently dropped. A
++--    player who rejoins this server before it saves gets that newer profile back.
+ -- Future systems (robbery rewards, vehicle purchases) call grant/deduct with their own
+ -- unique transaction ids, e.g. "robbery:<serverJob>:<n>", so retries can't pay twice.
+ local HttpService = game:GetService("HttpService")
+@@ -36,6 +39,8 @@ type Session = {
+ }
+ 
+ local sessions: { [Player]: Session } = {}
++type Orphan = { Name: string, Profile: Types.Profile, Since: number }
++local orphans: { [string]: Orphan } = {} -- key -> profile whose save on leave failed
+ local store: any
+ -- A Studio playtest has no JobId; give each server a unique lock id either way.
+ local sessionId = if game.JobId ~= "" then game.JobId else "studio-" .. HttpService:GenerateGUID(false)
+@@ -47,6 +52,9 @@ end
+ local function publish(player: Player, session: Session)
+ 	player:SetAttribute(PlayerAttributes.CashStatus, session.Status)
+ 	player:SetAttribute(PlayerAttributes.Cash, if session.Profile then session.Profile.Cash else nil)
++	local owned = if session.Profile then table.clone(session.Profile.OwnedVehicles) else table.clone(EconomyConfig.StarterVehicles)
++	table.sort(owned)
++	player:SetAttribute(PlayerAttributes.OwnedVehicles, table.concat(owned, ","))
+ end
+ 
+ local function keyFor(player: Player): string
+@@ -92,25 +100,54 @@ local function loadWithRecovery(player: Player, session: Session)
+ 	end
+ end
+ 
+-local function save(player: Player, session: Session, release: boolean): boolean
+-	if session.Status ~= "Loaded" or not session.Profile then
+-		return false -- never write for a profile we didn't load
+-	end
+-	for attempt = 1, EconomyConfig.SaveAttempts do
+-		local ok, err, detail = ProfileStore.save(store, session.Key, sessionId, session.Profile, os.time(), release)
++-- Returns (saved, lockLost).
++local function saveProfile(name: string, key: string, profile: Types.Profile, release: boolean, attempts: number): (boolean, boolean)
++	for attempt = 1, attempts do
++		local ok, err, detail = ProfileStore.save(store, key, sessionId, profile, os.time(), release)
+ 		if ok then
+-			session.Dirty = false
+-			return true
++			return true, false
+ 		end
+-		log(`{player.Name}: save attempt {attempt} failed ({err}{if detail then ": " .. detail else ""})`)
++		log(`{name}: save attempt {attempt} failed ({err}{if detail then ": " .. detail else ""})`)
+ 		if err == "LockLost" then
+-			return false
++			return false, true
+ 		end
+-		if attempt < EconomyConfig.SaveAttempts then
++		if attempt < attempts then
+ 			task.wait(EconomyConfig.RetryBaseDelay * 2 ^ (attempt - 1))
+ 		end
+ 	end
+-	return false
++	return false, false
++end
++
++local function save(player: Player, session: Session, release: boolean): boolean
++	if session.Status ~= "Loaded" or not session.Profile then
++		return false -- never write for a profile we didn't load
++	end
++	local ok = saveProfile(player.Name, session.Key, session.Profile :: Types.Profile, release, EconomyConfig.SaveAttempts)
++	if ok then
++		session.Dirty = false
++	end
++	return ok
++end
++
++-- Background retries for profiles whose save on leave failed.
++local function retryOrphan(key: string, orphan: Orphan)
++	while orphans[key] == orphan do
++		task.wait(EconomyConfig.OrphanRetryInterval)
++		if orphans[key] ~= orphan then
++			return -- the player came back and took the profile over
++		end
++		local ok, lockLost = saveProfile(orphan.Name, key, orphan.Profile, true, 1)
++		if ok then
++			orphans[key] = nil
++			log(`{orphan.Name}: saved after leaving (cash={orphan.Profile.Cash})`)
++		elseif lockLost then
++			orphans[key] = nil
++			warn(`[Economy] {orphan.Name}: another server owns this profile now; unsaved changes dropped (cash={orphan.Profile.Cash})`)
++		elseif os.clock() - orphan.Since > EconomyConfig.OrphanRetryLimit then
++			orphans[key] = nil
++			warn(`[Economy] {orphan.Name}: gave up saving after {EconomyConfig.OrphanRetryLimit}s; unsaved cash={orphan.Profile.Cash}`)
++		end
++	end
+ end
+ 
+ local function change(player: Player, kind: "grant" | "deduct", amount: any, txId: any, reason: string): (boolean, Types.EconomyError?)
+@@ -162,6 +199,43 @@ function EconomyService.getStatus(player: Player): string
+ 	return if session then session.Status else "Unavailable"
+ end
+ 
++-- Starter vehicles are always allowed (even while data is loading or unavailable); anything
++-- else needs a loaded profile that owns it.
++function EconomyService.ownsVehicle(player: Player, vehicleId: string): boolean
++	if table.find(EconomyConfig.StarterVehicles, vehicleId) then
++		return true
++	end
++	local session = sessions[player]
++	return session ~= nil and session.Status == "Loaded" and session.Profile ~= nil and EconomyRules.ownsVehicle(session.Profile, vehicleId)
++end
++
++-- Server-only purchase: price and ownership change together on the profile, then it is saved
++-- right away (and again by autosave/leave if that save fails; both always travel together).
++function EconomyService.purchaseVehicle(player: Player, vehicleId: string, price: number, txId: string): (boolean, Types.EconomyError?)
++	local session = sessions[player]
++	if not session or player.Parent ~= Players then
++		return false, "NotInGame"
++	end
++	if session.Status ~= "Loaded" or not session.Profile then
++		return false, "DataNotLoaded"
++	end
++	local profile = session.Profile :: Types.Profile
++	local ok, err = EconomyRules.purchaseVehicle(profile, vehicleId, price, txId, EconomyConfig)
++	if not ok then
++		log(`{player.Name}: purchase {tostring(vehicleId)} for {tostring(price)} refused: {err} (tx {tostring(txId)})`)
++		return false, err
++	end
++	session.Dirty = true
++	publish(player, session)
++	log(`{player.Name}: bought {vehicleId} for {price} (tx {txId}) -> cash {profile.Cash}`)
++	task.spawn(function()
++		if save(player, session, false) then
++			log(`{player.Name}: purchase saved`)
++		end
++	end)
++	return true, nil
++end
++
+ -- Unique transaction id helper for server systems.
+ function EconomyService.newTransactionId(prefix: string): string
+ 	return `{prefix}:{HttpService:GenerateGUID(false)}`
+@@ -174,9 +248,57 @@ function EconomyService.saveNowForTesting(player: Player): boolean
+ 	return session ~= nil and save(player, session, false)
+ end
+ 
++-- Studio test hook: pretend this player's cash data just became unavailable (true) or came
++-- back (false). The in-memory profile is kept, but no grants, deductions or saves happen.
++function EconomyService.setUnavailableForTesting(player: Player, unavailable: boolean): boolean
++	assert(RunService:IsStudio(), "Studio-only")
++	local session = sessions[player]
++	if not session or not session.Profile then
++		return false
++	end
++	session.Status = if unavailable then "Unavailable" else "Loaded"
++	publish(player, session)
++	log(`{player.Name}: Studio test: data {if unavailable then "unavailable" else "available again"}`)
++	return true
++end
++
++-- Studio test hook: rewrites this player's stored record as a version-1 (cash-only) profile
++-- and stops saving this session, so the next join exercises the migration for real.
++function EconomyService.writeLegacyRecordForTesting(player: Player): boolean
++	assert(RunService:IsStudio(), "Studio-only")
++	local session = sessions[player]
++	if not session or session.Status ~= "Loaded" or not session.Profile then
++		return false
++	end
++	local profile = session.Profile :: Types.Profile
++	local ok = pcall(function()
++		store:UpdateAsync(session.Key, function()
++			return { Profile = { Version = 1, Cash = profile.Cash, RecentTransactions = table.clone(profile.RecentTransactions) } }
++		end)
++	end)
++	if ok then
++		session.Status = "Unavailable" -- nothing more is saved this session
++		publish(player, session)
++		log(`{player.Name}: Studio test: stored record rewritten as version 1 (cash={profile.Cash}); rejoin to migrate`)
++	end
++	return ok
++end
++
+ local function onPlayerAdded(player: Player)
+ 	local session: Session = { Status = "Loading", Profile = nil, Dirty = false, Key = keyFor(player), Leaving = false }
+ 	sessions[player] = session
++	local orphan = orphans[session.Key]
++	if orphan then
++		-- Rejoined this server before its unsaved profile was written: that copy is the newest
++		-- data and this server still holds the lock, so use it instead of the stored record.
++		orphans[session.Key] = nil
++		session.Profile = orphan.Profile
++		session.Status = "Loaded"
++		session.Dirty = true
++		publish(player, session)
++		log(`{player.Name}: rejoined; using the unsaved profile kept on this server (cash={orphan.Profile.Cash})`)
++		return
++	end
+ 	publish(player, session)
+ 	task.spawn(loadWithRecovery, player, session)
+ end
+@@ -188,8 +310,14 @@ local function onPlayerRemoving(player: Player)
+ 	end
+ 	session.Leaving = true
+ 	if session.Status == "Loaded" then
++		local profile = session.Profile :: Types.Profile
+ 		if save(player, session, true) then
+-			log(`{player.Name}: saved on leave (cash={(session.Profile :: Types.Profile).Cash})`)
++			log(`{player.Name}: saved on leave (cash={profile.Cash})`)
++		elseif sessions[player] == session then
++			local orphan: Orphan = { Name = player.Name, Profile = profile, Since = os.clock() }
++			orphans[session.Key] = orphan
++			warn(`[Economy] {player.Name}: save on leave failed; keeping the profile and retrying (cash={profile.Cash})`)
++			task.spawn(retryOrphan, session.Key, orphan)
+ 		end
+ 	else
+ 		log(`{player.Name}: left with data {session.Status}; nothing saved (protects stored progress)`)
+@@ -222,6 +350,16 @@ function EconomyService.start()
+ 				pending -= 1
+ 			end)
+ 		end
++		for key, orphan in orphans do
++			pending += 1
++			task.spawn(function()
++				if saveProfile(orphan.Name, key, orphan.Profile, true, 1) then
++					orphans[key] = nil
++					log(`{orphan.Name}: saved at shutdown (cash={orphan.Profile.Cash})`)
++				end
++				pending -= 1
++			end)
++		end
+ 		local started = os.clock()
+ 		while pending > 0 and os.clock() - started < 25 do
+ 			task.wait(0.1)
+diff --git a/src/ServerScriptService/Server/Services/PoliceService.luau b/src/ServerScriptService/Server/Services/PoliceService.luau
+index e4e5712..9a02652 100644
+--- a/src/ServerScriptService/Server/Services/PoliceService.luau
++++ b/src/ServerScriptService/Server/Services/PoliceService.luau
+@@ -228,6 +228,14 @@ local function bust(target: Player)
+ 	endPursuit("busted")
+ end
+ 
++-- Players the unit must not be dispatched to yet (server systems only). A unit already
++-- chasing the player keeps chasing.
++local dispatchHolds: { [Player]: boolean } = {}
++
++function PoliceService.setDispatchHold(player: Player, held: boolean)
++	dispatchHolds[player] = if held then true else nil
++end
++
+ local function tick(dt: number)
+ 	local now = Workspace:GetServerTimeNow()
+ 	local current = unit
+@@ -237,6 +245,9 @@ local function tick(dt: number)
+ 		local best, bestStars = nil :: Player?, 0
+ 		for _, player in Players:GetPlayers() do
+ 			local stars = WantedService.getStars(player)
++			if dispatchHolds[player] then
++				continue -- e.g. a store robbery still in its holdout: police respond when it ends
++			end
+ 			if PoliceDispatchRules.unitsFor(stars, PoliceConfig.MaxUnits) > 0 and stars > bestStars then
+ 				best, bestStars = player, stars
+ 			end
+@@ -375,6 +386,10 @@ function PoliceService.init()
+ 	WantedService.setPoliceSightProvider(seesPlayer)
+ end
+ 
++Players.PlayerRemoving:Connect(function(player)
++	dispatchHolds[player] = nil
++end)
++
+ function PoliceService.start()
+ 	RunService.PreSimulation:Connect(physicsStep)
+ 	task.spawn(function()
+diff --git a/src/ServerScriptService/Server/Services/RobberyService.luau b/src/ServerScriptService/Server/Services/RobberyService.luau
+index a6d5533..b25cfe3 100644
+--- a/src/ServerScriptService/Server/Services/RobberyService.luau
++++ b/src/ServerScriptService/Server/Services/RobberyService.luau
+@@ -7,6 +7,10 @@
+ -- (2 stars) -> 15 s holdout inside the store -> Escaping -> WantedService.Escaped while
+ -- Escaping -> EconomyService.grant(reward, "robbery:<id>") exactly once.
+ -- Death/reset, bust/jail, leaving the store and disconnecting end the session with no cash.
++-- Recoverable payout: a robbery only starts while the player's cash data is loaded. If the
++-- grant still fails temporarily at escape time, the reward stays pending (same transaction
++-- id) and is retried every few seconds; the economy's duplicate-transaction guard makes any
++-- retry pay at most once.
+ local HttpService = game:GetService("HttpService")
+ local Players = game:GetService("Players")
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+@@ -24,6 +28,7 @@ local WorldService = require(Services.WorldService)
+ local WantedService = require(Services.WantedService)
+ local JailService = require(Services.JailService)
+ local EconomyService = require(Services.EconomyService)
++local PoliceService = require(Services.PoliceService)
+ 
+ local RobberyService = {}
+ 
+@@ -34,10 +39,13 @@ type Store = {
+ 	Area: BasePart,
+ }
+ type Live = { Session: RobberyRules.Session, Character: Model, LastInProgressReport: number }
++type Pending = { TxId: string, Amount: number, SessionId: string, StoreId: string, NextTry: number }
+ 
+ local stores: { [string]: Store } = {}
+ local live: { [Player]: Live } = {}
+ local paidIds: { [string]: boolean } = {} -- belt and braces next to EconomyService's own tx guard
++local pendingPayouts: { [Player]: Pending } = {} -- escaped, reward not yet recorded
++local PAYOUT_RETRY_SECONDS = 2
+ local noticeRemote: RemoteEvent
+ 
+ local function now(): number
+@@ -77,6 +85,7 @@ local function endSession(player: Player, entry: Live)
+ 	if live[player] == entry then
+ 		live[player] = nil
+ 	end
++	PoliceService.setDispatchHold(player, false)
+ 	publish(player, nil)
+ end
+ 
+@@ -102,7 +111,8 @@ function RobberyService.tryStart(player: Player, storeId: string): (boolean, Typ
+ 		InSafeZone = player:GetAttribute(PlayerAttributes.InSafeZone) == true,
+ 		InVehicle = humanoid ~= nil and humanoid.SeatPart ~= nil,
+ 		DistanceToRegister = if root then (root.Position - store.Register.Position).Magnitude else math.huge,
+-		HasActiveSession = live[player] ~= nil,
++		HasActiveSession = live[player] ~= nil or pendingPayouts[player] ~= nil,
++		CashReady = EconomyService.getStatus(player) == "Loaded",
+ 	}
+ 	local ok, err = RobberyRules.canStart(store.State, facts, t, RobberyConfig)
+ 	if not ok then
+@@ -115,6 +125,9 @@ function RobberyService.tryStart(player: Player, storeId: string): (boolean, Typ
+ 	local session = RobberyRules.start(store.State, HttpService:GenerateGUID(false), player.UserId, storeId, t, RobberyConfig)
+ 	local entry: Live = { Session = session, Character = character :: Model, LastInProgressReport = t }
+ 	live[player] = entry
++	if RobberyConfig.PoliceDispatchAtHoldEnd then
++		PoliceService.setDispatchHold(player, true)
++	end
+ 	WantedService.reportCrime(player, RobberyConfig.WantedCrime)
+ 	publish(player, session)
+ 	notify(player, "Started", { Id = session.Id, HoldEndsAt = session.HoldEndsAt, Reward = session.Reward })
+@@ -140,6 +153,7 @@ local function tick()
+ 		if event == "Failed" then
+ 			failSession(player, entry, reason :: Types.RobberyFailReason)
+ 		elseif event == "HoldComplete" then
++			PoliceService.setDispatchHold(player, false) -- police respond now
+ 			publish(player, session)
+ 			notify(player, "Escape", { Id = session.Id, Reward = session.Reward, Deadline = session.EscapeDeadline })
+ 			print(`[Robbery] {player.Name} {session.Id} holdout complete; escaping`)
+@@ -164,15 +178,47 @@ local function onEscaped(player: Player)
+ 	if paidIds[session.Id] then
+ 		return
+ 	end
+-	paidIds[session.Id] = true
+-	local ok, err = EconomyService.grant(player, session.Reward, "robbery:" .. session.Id, "store robbery " .. session.StoreId)
+-	if ok then
+-		notify(player, "Paid", { Id = session.Id, Amount = session.Reward })
+-		print(`[Robbery] {player.Name} {session.Id} escaped; paid {session.Reward}`)
++	pendingPayouts[player] = {
++		TxId = "robbery:" .. session.Id, -- stable: every retry uses the same id
++		Amount = session.Reward,
++		SessionId = session.Id,
++		StoreId = session.StoreId,
++		NextTry = 0,
++	}
++	RobberyService.tryPayout(player)
++end
++
++-- One payout attempt for a pending reward. Returns the outcome (nil if nothing pending).
++function RobberyService.tryPayout(player: Player): Types.PayoutOutcome?
++	local pending = pendingPayouts[player]
++	if not pending then
++		return nil
++	end
++	local ok, err = EconomyService.grant(player, pending.Amount, pending.TxId, "store robbery " .. pending.StoreId)
++	local outcome = RobberyRules.payoutOutcome(ok, err)
++	if outcome == "Retry" then
++		if pending.NextTry == 0 then
++			player:SetAttribute(PlayerAttributes.RobberyPhase, "PayoutPending")
++			player:SetAttribute(PlayerAttributes.RobberyReward, pending.Amount)
++			notify(player, "PayoutPending", { Id = pending.SessionId, Amount = pending.Amount })
++			warn(`[Robbery] {player.Name} {pending.SessionId} payout pending ({tostring(err)}); retrying`)
++		end
++		pending.NextTry = now() + PAYOUT_RETRY_SECONDS
++		return outcome
++	end
++	pendingPayouts[player] = nil
++	paidIds[pending.SessionId] = true
++	publish(player, nil)
++	if outcome == "Paid" then
++		notify(player, "Paid", { Id = pending.SessionId, Amount = pending.Amount })
++		print(`[Robbery] {player.Name} {pending.SessionId} escaped; paid {pending.Amount}`)
++	elseif outcome == "AlreadyPaid" then
++		print(`[Robbery] {player.Name} {pending.SessionId} already paid (duplicate tx refused)`)
+ 	else
+-		notify(player, "PayoutFailed", { Id = session.Id, Reason = err })
+-		warn(`[Robbery] {player.Name} {session.Id} payout failed: {tostring(err)}`)
++		notify(player, "PayoutFailed", { Id = pending.SessionId, Reason = err })
++		warn(`[Robbery] {player.Name} {pending.SessionId} payout rejected: {tostring(err)}`)
+ 	end
++	return outcome
+ end
+ 
+ -- Studio dev tools only: lets a solo tester rob again without waiting out the cooldown.
+@@ -213,6 +259,13 @@ end
+ function RobberyService.start()
+ 	WantedService.Escaped:Connect(onEscaped)
+ 	Players.PlayerRemoving:Connect(function(player)
++		local pending = pendingPayouts[player]
++		if pending then
++			pendingPayouts[player] = nil
++			-- Only reachable if cash data was lost mid-session and never came back; the player
++			-- was told the reward is pending and to stay in the game.
++			warn(`[Robbery] {player.Name} left with an unpaid reward {pending.Amount} ({pending.TxId}); not recorded`)
++		end
+ 		local entry = live[player]
+ 		if entry then
+ 			RobberyRules.tick(entry.Session, stores[entry.Session.StoreId] and stores[entry.Session.StoreId].State, {
+@@ -226,6 +279,12 @@ function RobberyService.start()
+ 		while true do
+ 			task.wait(RobberyConfig.TickInterval)
+ 			tick()
++			local t = now()
++			for player, pending in pendingPayouts do
++				if player.Parent == Players and t >= pending.NextTry then
++					RobberyService.tryPayout(player)
++				end
++			end
+ 		end
+ 	end)
+ end
+diff --git a/src/ServerScriptService/Server/Services/VehicleService.luau b/src/ServerScriptService/Server/Services/VehicleService.luau
+index dd5798b..973d11b 100644
+--- a/src/ServerScriptService/Server/Services/VehicleService.luau
++++ b/src/ServerScriptService/Server/Services/VehicleService.luau
+@@ -15,6 +15,7 @@ local VehicleFactory = require(Server.Vehicle.VehicleFactory)
+ local RateLimiter = require(Server.Util.RateLimiter)
+ local WorldService = require(script.Parent.WorldService)
+ local JailService = require(script.Parent.JailService)
++local EconomyService = require(script.Parent.EconomyService)
+ 
+ local VehicleService = {}
+ 
+@@ -118,6 +119,9 @@ local function spawnVehicle(player: Player, vehicleId: string): (boolean, Types.
+ 	if not stats or stats.PlayerSpawnable == false then
+ 		return false, "UnknownVehicle"
+ 	end
++	if not EconomyService.ownsVehicle(player, vehicleId) then
++		return false, "NotOwned" -- the server's profile decides, never the client
++	end
+ 	if not JailService.allows(player, "SpawnVehicle") then
+ 		return false, "Jailed"
+ 	end
+diff --git a/src/ServerScriptService/Server/Services/WorldService.luau b/src/ServerScriptService/Server/Services/WorldService.luau
+index 85dd6b6..28aac38 100644
+--- a/src/ServerScriptService/Server/Services/WorldService.luau
++++ b/src/ServerScriptService/Server/Services/WorldService.luau
+@@ -24,6 +24,15 @@ function WorldService.init()
+ 	if city and not city:FindFirstChild("Store") then
+ 		CityBuilder.buildStore(city)
+ 	end
++	if city and not city:FindFirstChild("Dealership") then
++		CityBuilder.buildDealership(city)
++	end
++end
++
++-- The dealership folder (City.Dealership), if built.
++function WorldService.getDealership(): Folder?
++	local folder = city and city:FindFirstChild("Dealership")
++	return if folder and folder:IsA("Folder") then folder else nil
+ end
+ 
+ -- The robbable store folder (City.Store), if built.
+diff --git a/src/ServerScriptService/Server/World/CityBuilder.luau b/src/ServerScriptService/Server/World/CityBuilder.luau
+index 71f23dd..c71cdb5 100644
+--- a/src/ServerScriptService/Server/World/CityBuilder.luau
++++ b/src/ServerScriptService/Server/World/CityBuilder.luau
+@@ -2,6 +2,8 @@
+ -- Turns a CityLayout blueprint into anchored parts under Workspace.City.
+ -- Yields between chunks so it is safe to run in Studio edit mode or at server boot.
+ local CityLayout = require(script.Parent.CityLayout)
++local VehicleConfig = require(game:GetService("ReplicatedStorage").Shared.Config.VehicleConfig)
++local VehicleFactory = require(script.Parent.Parent.Vehicle.VehicleFactory)
+ 
+ local CityBuilder = {}
+ 
+@@ -236,4 +238,101 @@ function CityBuilder.buildStore(city: Instance): Folder
+ 	return folder
+ end
+ 
++-- Adds City.Dealership (showroom, sales-desk ShopPrompt, anchored display car, sign) if
++-- missing. The prompt only opens the client's shop window; purchases are validated by
++-- DealershipService on the server.
++function CityBuilder.buildDealership(city: Instance): Folder
++	local existing = city:FindFirstChild("Dealership")
++	if existing and existing:IsA("Folder") then
++		return existing
++	end
++	local spec = CityLayout.dealership()
++	local folder = Instance.new("Folder")
++	folder.Name = "Dealership"
++	for _, partSpec in spec.Parts do
++		local part = Instance.new("Part")
++		part.Name = partSpec.Name
++		part.Anchored = true
++		part.CanCollide = partSpec.CanCollide
++		part.Size = partSpec.Size
++		part.CFrame = CFrame.new(partSpec.Center)
++		part.Color = partSpec.Color
++		part.Material = partSpec.Material
++		part.TopSurface = Enum.SurfaceType.Smooth
++		part.BottomSurface = Enum.SurfaceType.Smooth
++		if partSpec.Material == Enum.Material.Glass then
++			part.Transparency = 0.6
++		end
++		part.Parent = folder
++	end
++	local roof = folder:FindFirstChild("DealerRoof")
++	if roof then
++		local light = Instance.new("PointLight")
++		light.Range = 30
++		light.Brightness = 1.3
++		light.Parent = roof
++	end
++	local desk = folder:FindFirstChild("DealerDesk") :: BasePart?
++	if desk then
++		local attachment = Instance.new("Attachment")
++		attachment.Name = "PromptAttachment"
++		attachment.Parent = desk -- parent first: WorldCFrame is relative to the parent part
++		attachment.WorldCFrame = spec.Desk
++		local prompt = Instance.new("ProximityPrompt")
++		prompt.Name = "ShopPrompt"
++		prompt.ActionText = "Browse cars"
++		prompt.ObjectText = "Dealership"
++		prompt.HoldDuration = 0
++		prompt.MaxActivationDistance = 14
++		prompt.RequiresLineOfSight = false
++		prompt.KeyboardKeyCode = Enum.KeyCode.E
++		prompt.Parent = attachment
++	end
++	-- Display car: a real model of the first catalogue car, anchored and not drivable.
++	local ok, display = pcall(function()
++		local stats = VehicleConfig.get("Muscle")
++		return stats and VehicleFactory.build("Muscle", stats)
++	end)
++	if ok and display then
++		display.Name = "DisplayCar"
++		for _, d in display:GetDescendants() do
++			if d:IsA("BasePart") then
++				d.Anchored = true
++			elseif d:IsA("ProximityPrompt") or d:IsA("Constraint") or d:IsA("Script") then
++				d:Destroy()
++			end
++		end
++		local seat = display:FindFirstChildWhichIsA("Seat", true)
++		if seat then
++			seat.Disabled = true
++		end
++		local _, size = display:GetBoundingBox()
++		display:PivotTo(spec.Display * CFrame.new(0, size.Y / 2 + 0.05, 0))
++		display.Parent = folder
++	end
++	local sign = Instance.new("Part")
++	sign.Name = "DealerSign"
++	sign.Anchored = true
++	sign.Size = spec.Sign.Size
++	sign.CFrame = CFrame.new(spec.Sign.Center)
++	sign.Color = Color3.fromRGB(30, 60, 120)
++	sign.Material = Enum.Material.SmoothPlastic
++	local gui = Instance.new("SurfaceGui")
++	gui.Face = Enum.NormalId.Front -- faces -Z, towards the road
++	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
++	gui.PixelsPerStud = 25
++	local label = Instance.new("TextLabel")
++	label.Size = UDim2.fromScale(1, 1)
++	label.BackgroundTransparency = 1
++	label.Text = "OUTLAW MOTORS"
++	label.TextScaled = true
++	label.Font = Enum.Font.GothamBlack
++	label.TextColor3 = Color3.fromRGB(255, 255, 255)
++	label.Parent = gui
++	gui.Parent = sign
++	sign.Parent = folder
++	folder.Parent = city
++	return folder
++end
++
+ return CityBuilder
+diff --git a/src/ServerScriptService/Server/World/CityLayout.luau b/src/ServerScriptService/Server/World/CityLayout.luau
+index f165d38..51e607b 100644
+--- a/src/ServerScriptService/Server/World/CityLayout.luau
++++ b/src/ServerScriptService/Server/World/CityLayout.luau
+@@ -222,6 +222,53 @@ function CityLayout.store(): StoreSpec
+ 	}
+ end
+ 
++-- Car dealership (Phase 4C): one showroom on the north edge of block (200, 200), facing the
++-- z = 100 road, on a site checked free of buildings. Width runs along X; the open front
++-- faces -Z. A sales desk with the shop prompt, and one display car on the floor.
++CityLayout.DEALERSHIP_CENTER = Vector3.new(200, 0, 136)
++CityLayout.DEALERSHIP_WIDTH = 40 -- along X
++CityLayout.DEALERSHIP_DEPTH = 30 -- along Z
++CityLayout.DEALERSHIP_HEIGHT = 14
++
++export type DealershipSpec = {
++	Parts: { PartSpec },
++	Desk: CFrame, -- top centre of the sales desk, where the prompt lives
++	Display: CFrame, -- where the display car stands (wheels on the floor)
++	Sign: { Center: Vector3, Size: Vector3 },
++}
++
++function CityLayout.dealership(): DealershipSpec
++	local c = CityLayout.DEALERSHIP_CENTER
++	local hx = CityLayout.DEALERSHIP_WIDTH / 2
++	local hz = CityLayout.DEALERSHIP_DEPTH / 2
++	local h = CityLayout.DEALERSHIP_HEIGHT
++	local floorTop = CityLayout.CURB_TOP + 0.2
++	local wallColor = Color3.fromRGB(230, 232, 236)
++	local trim = Color3.fromRGB(30, 60, 120)
++	local glass = Color3.fromRGB(150, 200, 220)
++	local parts: { PartSpec } = {}
++	local function add(name: string, x: number, z: number, sizeX: number, sizeZ: number, partTop: number, thickness: number, color: Color3, material: Enum.Material)
++		table.insert(parts, slab(name, "Dealership", c.X + x, c.Z + z, sizeX, sizeZ, partTop, thickness, color, material, true))
++	end
++	add("DealerFloor", 0, 0, 2 * hx, 2 * hz, floorTop, 0.4, Color3.fromRGB(200, 200, 205), Enum.Material.Marble)
++	add("DealerRoof", 0, 0, 2 * hx + 2, 2 * hz + 2, floorTop + h + 1, 1, trim, Enum.Material.Concrete)
++	add("DealerWallBack", 0, hz + 0.5, 2 * hx + 2, 1, floorTop + h, h, wallColor, Enum.Material.Concrete)
++	add("DealerWallWest", -hx - 0.5, 0, 1, 2 * hz, floorTop + h, h, wallColor, Enum.Material.Concrete)
++	add("DealerWallEast", hx + 0.5, 0, 1, 2 * hz, floorTop + h, h, wallColor, Enum.Material.Concrete)
++	-- Front (-Z): glass either side of a 14-stud doorway, header above it.
++	local pane = hx - 7
++	add("DealerFrontWest", -hx + pane / 2, -hz - 0.5, pane, 1, floorTop + h, h, glass, Enum.Material.Glass)
++	add("DealerFrontEast", hx - pane / 2, -hz - 0.5, pane, 1, floorTop + h, h, glass, Enum.Material.Glass)
++	add("DealerFrontHeader", 0, -hz - 0.5, 14, 1, floorTop + h, 4, wallColor, Enum.Material.Concrete)
++	add("DealerDesk", -hx + 8, hz - 6, 8, 3, floorTop + 3.5, 3.5, Color3.fromRGB(60, 60, 70), Enum.Material.SmoothPlastic)
++	return {
++		Parts = parts,
++		Desk = CFrame.new(c.X - hx + 8, floorTop + 3.5, c.Z + hz - 6),
++		Display = CFrame.new(c.X + 6, floorTop, c.Z + 2) * CFrame.Angles(0, math.rad(-35), 0),
++		Sign = { Center = Vector3.new(c.X, floorTop + h + 3, c.Z - hz - 1.2), Size = Vector3.new(24, 4, 0.4) },
++	}
++end
++
+ function CityLayout.createBlueprint(): Blueprint
+ 	local parts: { PartSpec } = {}
+ 	local spawns: { SpawnSpec } = {}
+diff --git a/src/ServerStorage/Tests/Dealership.spec.luau b/src/ServerStorage/Tests/Dealership.spec.luau
+new file mode 100644
+index 0000000..2916c12
+--- /dev/null
++++ b/src/ServerStorage/Tests/Dealership.spec.luau
+@@ -0,0 +1,51 @@
++-- Dealership catalogue, the second vehicle and the purchase remote contract.
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local ServerScriptService = game:GetService("ServerScriptService")
++local DealershipConfig = require(ReplicatedStorage.Shared.Config.DealershipConfig)
++local VehicleConfig = require(ReplicatedStorage.Shared.Config.VehicleConfig)
++local EconomyConfig = require(ReplicatedStorage.Shared.Config.EconomyConfig)
++local Remotes = require(ReplicatedStorage.Shared.Net.Remotes)
++local CityLayout = require(ServerScriptService.Server.World.CityLayout)
++local Assert = require(script.Parent.Assert)
++
++return {
++	["the Muscle sells for $15,000 and every catalogue car exists and is drivable"] = function()
++		Assert.equal(DealershipConfig.priceOf("Muscle"), 15000)
++		Assert.equal(DealershipConfig.priceOf("Coupe"), nil, "the starter is not sold")
++		Assert.equal(DealershipConfig.priceOf("Police"), nil)
++		for _, item in DealershipConfig.Catalog do
++			local stats = VehicleConfig.get(item.VehicleId)
++			Assert.truthy(stats, `{item.VehicleId} has stats`)
++			Assert.truthy(stats.PlayerSpawnable ~= false, `{item.VehicleId} is player-spawnable`)
++			Assert.truthy(item.Price > 0 and item.Price <= EconomyConfig.MaxTransaction, `{item.VehicleId} price is a valid amount`)
++			Assert.equal(table.find(EconomyConfig.StarterVehicles, item.VehicleId), nil)
++		end
++	end,
++	["the Muscle handles differently from the Coupe"] = function()
++		local coupe = assert(VehicleConfig.get("Coupe"))
++		local muscle = assert(VehicleConfig.get("Muscle"))
++		Assert.truthy(muscle.MaxForwardSpeed > coupe.MaxForwardSpeed, "faster")
++		Assert.truthy(muscle.Acceleration > coupe.Acceleration, "quicker off the line")
++		Assert.truthy(muscle.LateralGrip < coupe.LateralGrip, "less grip")
++		Assert.truthy(muscle.MaxYawRate < coupe.MaxYawRate, "slower to turn")
++		Assert.truthy(muscle.BrakeDeceleration < coupe.BrakeDeceleration, "longer braking")
++	end,
++	["purchases go through one request remote; the client never sends a price"] = function()
++		Assert.equal(Remotes.Definitions.RequestPurchaseVehicle, "RemoteFunction")
++		Assert.equal(DealershipConfig.priceOf("Muscle") ~= nil, true)
++		Assert.throws(function()
++			(DealershipConfig :: any).Catalog[1].Price = 1
++		end, "prices are read-only")
++	end,
++	["the dealership stands inside the city, clear of the roads"] = function()
++		local c = CityLayout.DEALERSHIP_CENTER
++		local hx, hz = CityLayout.DEALERSHIP_WIDTH / 2, CityLayout.DEALERSHIP_DEPTH / 2
++		local half = CityLayout.ROAD_WIDTH / 2
++		for _, line in CityLayout.GRID_LINES do
++			Assert.truthy(math.abs(c.X - line) >= hx + half, `overlaps road x={line}`)
++			Assert.truthy(math.abs(c.Z - line) >= hz + half, `overlaps road z={line}`)
++		end
++		local store = CityLayout.STORE_CENTER
++		Assert.truthy((store - c).Magnitude > 100, "away from the store")
++	end,
++}
+diff --git a/src/ServerStorage/Tests/EconomyRules.spec.luau b/src/ServerStorage/Tests/EconomyRules.spec.luau
+index 7000fac..a01d03f 100644
+--- a/src/ServerStorage/Tests/EconomyRules.spec.luau
++++ b/src/ServerStorage/Tests/EconomyRules.spec.luau
+@@ -76,7 +76,7 @@ return {
+ 		Assert.equal(p.Cash, C.MaxBalance - 10)
+ 	end,
+ 	["valid saved data is kept exactly; malformed data is refused, never reset"] = function()
+-		local saved = { Version = 1, Cash = 12345, RecentTransactions = { "x", "y", 5 } }
++		local saved = { Version = 2, Cash = 12345, RecentTransactions = { "x", "y", 5 }, OwnedVehicles = { "Coupe" } }
+ 		local p, kind = EconomyRules.validateSaved(saved, C)
+ 		Assert.equal(kind, "Existing")
+ 		Assert.equal(p.Cash, 12345, "not reset to starting cash")
+@@ -87,6 +87,74 @@ return {
+ 			Assert.equal(why, "Corrupt")
+ 		end
+ 	end,
++	["new profiles own exactly the starter Coupe"] = function()
++		local p = fresh()
++		Assert.equal(p.Version, C.ProfileVersion)
++		Assert.equal(#p.OwnedVehicles, 1)
++		Assert.equal(p.OwnedVehicles[1], "Coupe")
++	end,
++	["cash-only (v1) profiles migrate without losing cash or transaction history"] = function()
++		for _, legacy in { { Version = 1, Cash = 9800, RecentTransactions = { "robbery:a" } }, { Cash = 9800, RecentTransactions = { "robbery:a" } } } do
++			local p, kind = EconomyRules.validateSaved(legacy, C)
++			Assert.equal(kind, "Migrated")
++			Assert.equal(p.Version, C.ProfileVersion)
++			Assert.equal(p.Cash, 9800)
++			Assert.equal(p.RecentTransactions[1], "robbery:a")
++			Assert.equal(#p.OwnedVehicles, 1)
++			Assert.equal(p.OwnedVehicles[1], "Coupe")
++		end
++		-- a v1 record that somehow carries a vehicle list does not gain cars from it
++		local p = EconomyRules.validateSaved({ Version = 1, Cash = 5, OwnedVehicles = { "Muscle" } }, C)
++		Assert.equal(EconomyRules.ownsVehicle(p, "Muscle"), false)
++	end,
++	["v2 ownership is kept; junk is dropped; damaged or newer records are refused untouched"] = function()
++		local p, kind = EconomyRules.validateSaved({ Version = 2, Cash = 1, RecentTransactions = {}, OwnedVehicles = { "Muscle", 7, "Muscle", "" } }, C)
++		Assert.equal(kind, "Existing")
++		Assert.equal(EconomyRules.ownsVehicle(p, "Muscle"), true)
++		Assert.equal(EconomyRules.ownsVehicle(p, "Coupe"), true, "starter is always owned")
++		Assert.equal(#p.OwnedVehicles, 2, "duplicates and junk removed")
++		for _, bad in {
++			{ Version = 2, Cash = 1, RecentTransactions = {} }, -- v2 without its list
++			{ Version = 3, Cash = 1, RecentTransactions = {}, OwnedVehicles = {} }, -- newer schema
++			{ Version = 0, Cash = 1 },
++			{ Version = 1.5, Cash = 1 },
++		} do
++			local profile, why = EconomyRules.validateSaved(bad, C)
++			Assert.equal(profile, nil)
++			Assert.equal(why, "Corrupt")
++		end
++	end,
++	["buying a car takes the price once and records ownership in the same step"] = function()
++		local p = fresh()
++		p.Cash = 20000
++		Assert.equal((EconomyRules.purchaseVehicle(p, "Muscle", 15000, "buy:1", C)), true)
++		Assert.equal(p.Cash, 5000)
++		Assert.equal(EconomyRules.ownsVehicle(p, "Muscle"), true)
++		-- the same request again, or a new request for the same car, never charges twice
++		local ok, err = EconomyRules.purchaseVehicle(p, "Muscle", 15000, "buy:1", C)
++		Assert.equal(ok, false)
++		Assert.equal(err, "DuplicateTransaction")
++		ok, err = EconomyRules.purchaseVehicle(p, "Muscle", 15000, "buy:2", C)
++		Assert.equal(err, "AlreadyOwned")
++		Assert.equal(p.Cash, 5000)
++		Assert.equal(#p.OwnedVehicles, 2)
++	end,
++	["a failed purchase changes nothing"] = function()
++		local p = fresh()
++		p.Cash = 14999
++		local ok, err = EconomyRules.purchaseVehicle(p, "Muscle", 15000, "buy:x", C)
++		Assert.equal(ok, false)
++		Assert.equal(err, "InsufficientFunds")
++		Assert.equal(p.Cash, 14999)
++		Assert.equal(EconomyRules.ownsVehicle(p, "Muscle"), false)
++		Assert.equal(#p.RecentTransactions, 0, "a refused purchase doesn't burn its transaction id")
++		for _, case in { { "", 100, "InvalidVehicle" }, { 5, 100, "InvalidVehicle" }, { "Muscle", -1, "InvalidAmount" }, { "Muscle", 0 / 0, "InvalidAmount" }, { "Muscle", "15000", "InvalidAmount" } } do
++			local ok2, err2 = EconomyRules.purchaseVehicle(p, case[1], case[2], "buy:y", C)
++			Assert.equal(ok2, false)
++			Assert.equal(err2, case[3])
++		end
++		Assert.equal(p.Cash, 14999)
++	end,
+ 	["session locks: own or stale locks can be claimed, live foreign locks cannot"] = function()
+ 		local T = C.SessionLockTimeout
+ 		Assert.equal(EconomyRules.canClaimLock(nil, "me", 1000, T), true)
+diff --git a/src/ServerStorage/Tests/ProfileStore.spec.luau b/src/ServerStorage/Tests/ProfileStore.spec.luau
+index c949c15..2be6648 100644
+--- a/src/ServerStorage/Tests/ProfileStore.spec.luau
++++ b/src/ServerStorage/Tests/ProfileStore.spec.luau
+@@ -53,6 +53,36 @@ return {
+ 		Assert.equal(result, "Existing")
+ 		Assert.equal(again.Cash, 777)
+ 	end,
++	["a cash-only record migrates on load, is written back as v2, and keeps the balance"] = function()
++		local store = fakeStore()
++		store.Data.k = { Profile = { Version = 1, Cash = 9800, RecentTransactions = { "robbery:a" } } }
++		local profile, result = ProfileStore.load(store, "k", "A", 1000, C)
++		Assert.equal(result, "Migrated")
++		Assert.equal(profile.Cash, 9800)
++		Assert.equal(store.Data.k.Profile.Version, C.ProfileVersion, "migration persisted with the lock claim")
++		Assert.equal(store.Data.k.Profile.Cash, 9800)
++		Assert.equal(store.Data.k.Profile.OwnedVehicles[1], "Coupe")
++		local again, result2 = ProfileStore.load(store, "k", "A", 1001, C)
++		Assert.equal(result2, "Existing")
++		Assert.equal(again.Cash, 9800)
++	end,
++	["a purchase saves cash and ownership together; a failed save changes neither"] = function()
++		local store = fakeStore()
++		local profile = ProfileStore.load(store, "k", "A", 1000, C)
++		profile.Cash = 15000
++		Assert.equal((ProfileStore.save(store, "k", "A", profile, 1001, false)), true)
++		profile.Cash -= 15000
++		table.insert(profile.OwnedVehicles, "Muscle")
++		store.Fail = true
++		Assert.equal((ProfileStore.save(store, "k", "A", profile, 1002, false)), false)
++		Assert.equal(store.Data.k.Profile.Cash, 15000, "stored record untouched by the failed save")
++		Assert.equal(#store.Data.k.Profile.OwnedVehicles, 1)
++		store.Fail = false
++		Assert.equal((ProfileStore.save(store, "k", "A", profile, 1003, true)), true)
++		local again = ProfileStore.load(store, "k", "B", 1004, C)
++		Assert.equal(again.Cash, 0)
++		Assert.equal(table.find(again.OwnedVehicles, "Muscle") ~= nil, true, "owned after rejoin")
++	end,
+ 	["a store outage during load never creates or overwrites data"] = function()
+ 		local store = fakeStore()
+ 		store.Data.k = { Profile = { Version = 1, Cash = 9000, RecentTransactions = {} } }
+diff --git a/src/ServerStorage/Tests/RobberyRules.spec.luau b/src/ServerStorage/Tests/RobberyRules.spec.luau
+index 72e12e3..89ccef6 100644
+--- a/src/ServerStorage/Tests/RobberyRules.spec.luau
++++ b/src/ServerStorage/Tests/RobberyRules.spec.luau
+@@ -12,7 +12,7 @@ local Assert = require(script.Parent.Assert)
+ 
+ local C = RobberyConfig
+ local function facts(overrides: { [string]: any }?)
+-	local f = { Alive = true, Jailed = false, InSafeZone = false, InVehicle = false, DistanceToRegister = 3, HasActiveSession = false }
++	local f = { Alive = true, Jailed = false, InSafeZone = false, InVehicle = false, DistanceToRegister = 3, HasActiveSession = false, CashReady = true }
+ 	for k, v in overrides or {} do
+ 		f[k] = v
+ 	end
+@@ -50,6 +50,7 @@ return {
+ 			{ { InSafeZone = true }, "InSafeZone" },
+ 			{ { InVehicle = true }, "InVehicle" },
+ 			{ { HasActiveSession = true }, "AlreadyRobbing" },
++			{ { CashReady = false }, "CashUnavailable" },
+ 			{ { DistanceToRegister = C.PromptDistance + C.DistanceSlack + 0.1 }, "TooFar" },
+ 			{ { DistanceToRegister = 0 / 0 }, "TooFar" },
+ 			{ { DistanceToRegister = math.huge }, "TooFar" },
+@@ -116,6 +117,13 @@ return {
+ 		Assert.equal((RobberyRules.tick(session, store, tickFacts({ Alive = false }), 130, C)), nil, "settled sessions don't change")
+ 		Assert.equal(RobberyRules.isLive(session), false)
+ 	end,
++	["payout results: paid, already paid, retry only for temporary data loss"] = function()
++		Assert.equal(RobberyRules.payoutOutcome(true, nil), "Paid")
++		Assert.equal(RobberyRules.payoutOutcome(false, "DuplicateTransaction"), "AlreadyPaid")
++		Assert.equal(RobberyRules.payoutOutcome(false, "DataNotLoaded"), "Retry")
++		Assert.equal(RobberyRules.payoutOutcome(false, "NotInGame"), "Rejected")
++		Assert.equal(RobberyRules.payoutOutcome(false, "InvalidAmount"), "Rejected")
++	end,
+ 	["jail blocks robbery and the notice remote is server-to-client only"] = function()
+ 		local jail = JailRules.new()
+ 		JailRules.sentence(jail, 0, 12, true)
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+new file mode 100644
+index 0000000..e7d00fa
+--- /dev/null
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+@@ -0,0 +1,160 @@
++--!strict
++-- Dealership window. Opens from the showroom's ShopPrompt, shows the catalogue with prices
++-- and ownership, and sends RequestPurchaseVehicle(vehicleId). The server validates the
++-- request and decides the price; this window only displays results.
++local Players = game:GetService("Players")
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local RunService = game:GetService("RunService")
++local Workspace = game:GetService("Workspace")
++
++local Shared = ReplicatedStorage.Shared
++local Remotes = require(Shared.Net.Remotes)
++local VehicleConfig = require(Shared.Config.VehicleConfig)
++local DealershipConfig = require(Shared.Config.DealershipConfig)
++local PlayerAttributes = require(Shared.Player.PlayerAttributes)
++local UiKit = require(script.Parent.UiKit)
++
++local DealershipController = {}
++
++local player = Players.LocalPlayer
++
++local RESULT_TEXT: { [string]: string } = {
++	AlreadyOwned = "You already own this car.",
++	TooFar = "Walk up to the sales desk to buy.",
++	NotAlive = "You need to be alive to buy a car.",
++	Jailed = "You can't buy a car while in jail.",
++	Busy = "Your purchase is already being processed.",
++	Cooldown = "One moment, then try again.",
++	DataNotLoaded = "Your data isn't loaded right now. Try again shortly.",
++	NotForSale = "That car isn't for sale.",
++	DuplicateTransaction = "That purchase was already processed.",
++	TooManyVehicles = "Your garage is full.",
++	NetworkError = "Couldn't reach the server. Nothing was charged.",
++}
++
++function DealershipController.init()
++	local gui = Instance.new("ScreenGui")
++	gui.Name = "DealershipGui"
++	gui.ResetOnSpawn = false
++	gui.DisplayOrder = 9
++	gui.Parent = player:WaitForChild("PlayerGui")
++
++	local window = UiKit.panel(gui, "Dealership", 340)
++	UiKit.text(window, "Title", "OUTLAW MOTORS", UDim2.new(1, -60, 0, 36), UDim2.fromOffset(12, 8), 22, Color3.fromRGB(120, 180, 255)).TextXAlignment = Enum.TextXAlignment.Left
++	local close = UiKit.button(window, "Close", "X", UDim2.fromOffset(44, 44), UDim2.new(1, -52, 0, 6), Color3.fromRGB(70, 70, 80))
++	close.Activated:Connect(function()
++		window.Visible = false
++	end)
++	local message = UiKit.text(window, "Message", "", UDim2.new(1, -24, 0, 40), UDim2.new(0, 12, 1, -46), 15)
++
++	type Row = { VehicleId: string, Price: number, Button: TextButton, Pending: boolean }
++	local rows: { Row } = {}
++
++	local function refresh()
++		local owned = UiKit.ownedVehicles(player)
++		local cash = player:GetAttribute(PlayerAttributes.Cash)
++		for _, row in rows do
++			if row.Pending then
++				continue
++			end
++			if table.find(owned, row.VehicleId) then
++				row.Button.Text = "Owned"
++				row.Button.BackgroundColor3 = Color3.fromRGB(60, 120, 70)
++				row.Button.AutoButtonColor = false
++			else
++				row.Button.Text = `Buy {UiKit.money(row.Price)}`
++				local affordable = type(cash) == "number" and cash >= row.Price
++				row.Button.BackgroundColor3 = if affordable then Color3.fromRGB(40, 110, 200) else Color3.fromRGB(90, 90, 100)
++				row.Button.AutoButtonColor = true
++			end
++		end
++	end
++
++	for order, item in DealershipConfig.Catalog do
++		local stats = VehicleConfig.get(item.VehicleId)
++		if not stats then
++			continue
++		end
++		local card = Instance.new("Frame")
++		card.Name = item.VehicleId
++		card.BackgroundColor3 = Color3.fromRGB(35, 38, 48)
++		card.Size = UDim2.new(1, -24, 0, 64)
++		card.Position = UDim2.fromOffset(12, 52 + (order - 1) * 72)
++		card.Parent = window
++		UiKit.corner(card, 10)
++		local swatch = Instance.new("Frame")
++		swatch.BackgroundColor3 = stats.BodyColor
++		swatch.Size = UDim2.fromOffset(10, 44)
++		swatch.Position = UDim2.fromOffset(8, 10)
++		swatch.Parent = card
++		UiKit.corner(swatch, 4)
++		local name = UiKit.text(card, "Name", stats.DisplayName, UDim2.new(1, -170, 0, 26), UDim2.fromOffset(26, 6), 18)
++		name.TextXAlignment = Enum.TextXAlignment.Left
++		local detail = UiKit.text(card, "Detail", `Top speed {stats.MaxForwardSpeed} · Accel {stats.Acceleration}`, UDim2.new(1, -170, 0, 22), UDim2.fromOffset(26, 34), 13, Color3.fromRGB(190, 190, 200))
++		detail.TextXAlignment = Enum.TextXAlignment.Left
++		local buy = UiKit.button(card, "Buy", "", UDim2.fromOffset(132, 48), UDim2.new(1, -140, 0, 8), Color3.fromRGB(40, 110, 200))
++		local row: Row = { VehicleId = item.VehicleId, Price = item.Price, Button = buy, Pending = false }
++		table.insert(rows, row)
++		buy.Activated:Connect(function()
++			if row.Pending or table.find(UiKit.ownedVehicles(player), row.VehicleId) then
++				return
++			end
++			row.Pending = true
++			buy.Text = "Buying..."
++			message.Text = ""
++			task.spawn(function()
++				local ok, result, err = pcall(function()
++					return Remotes.getFunction("RequestPurchaseVehicle"):InvokeServer(row.VehicleId)
++				end)
++				row.Pending = false
++				if ok and result == true then
++					message.TextColor3 = Color3.fromRGB(120, 255, 140)
++					message.Text = `Bought the {stats.DisplayName}! Open the garage (Spawn Car) to drive it.`
++				else
++					local code = if ok then tostring(err) else "NetworkError"
++					message.TextColor3 = Color3.fromRGB(255, 120, 120)
++					if code == "InsufficientFunds" then
++						local cash = player:GetAttribute(PlayerAttributes.Cash)
++						local short = if type(cash) == "number" then row.Price - cash else row.Price
++						message.Text = `Not enough cash: you need {UiKit.money(short)} more.`
++					else
++						message.Text = RESULT_TEXT[code] or "Purchase failed. Nothing was charged."
++					end
++				end
++				refresh()
++			end)
++		end)
++	end
++	window.Size = UDim2.fromOffset(340, 52 + #rows * 72 + 52)
++	refresh()
++	player:GetAttributeChangedSignal(PlayerAttributes.Cash):Connect(refresh)
++	player:GetAttributeChangedSignal(PlayerAttributes.OwnedVehicles):Connect(refresh)
++
++	-- Open from the showroom prompt; close when walking away from the desk.
++	task.spawn(function()
++		local city = Workspace:WaitForChild("City", 30)
++		local dealership = city and city:WaitForChild("Dealership", 30)
++		local desk = dealership and dealership:WaitForChild("DealerDesk", 30)
++		local prompt = desk and desk:FindFirstChild("ShopPrompt", true)
++		if not prompt or not prompt:IsA("ProximityPrompt") then
++			return
++		end
++		prompt.Triggered:Connect(function()
++			message.Text = ""
++			refresh()
++			window.Visible = true
++		end)
++		RunService.Heartbeat:Connect(function()
++			if not window.Visible then
++				return
++			end
++			local character = player.Character
++			local root = character and character:FindFirstChild("HumanoidRootPart")
++			if not root or not root:IsA("BasePart") or (root.Position - (desk :: BasePart).Position).Magnitude > DealershipConfig.InteractDistance + 10 then
++				window.Visible = false
++			end
++		end)
++	end)
++end
++
++return DealershipController
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
+new file mode 100644
+index 0000000..533b2bf
+--- /dev/null
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/GarageController.luau
+@@ -0,0 +1,93 @@
++--!strict
++-- Garage window: lists the vehicles the server says this player owns (OwnedVehicles
++-- attribute) and spawns the chosen one. The server re-checks ownership on every spawn
++-- request, so this list is display only. V (or DPad up) spawns the last chosen car.
++local Players = game:GetService("Players")
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++
++local VehicleConfig = require(ReplicatedStorage.Shared.Config.VehicleConfig)
++local PlayerAttributes = require(ReplicatedStorage.Shared.Player.PlayerAttributes)
++local VehicleController = require(script.Parent.VehicleController)
++local UiKit = require(script.Parent.UiKit)
++
++local GarageController = {}
++
++local player = Players.LocalPlayer
++local selected = VehicleConfig.DefaultVehicleId
++local panel: Frame? = nil
++local rebuild: () -> () = function() end
++
++function GarageController.getSelected(): string
++	return selected
++end
++
++function GarageController.spawnSelected()
++	VehicleController.requestSpawn(selected)
++end
++
++function GarageController.toggle()
++	if panel then
++		panel.Visible = not panel.Visible
++		if panel.Visible then
++			rebuild()
++		end
++	end
++end
++
++function GarageController.init()
++	local gui = Instance.new("ScreenGui")
++	gui.Name = "GarageGui"
++	gui.ResetOnSpawn = false
++	gui.DisplayOrder = 8
++	gui.Parent = player:WaitForChild("PlayerGui")
++
++	local window = UiKit.panel(gui, "Garage", 300)
++	panel = window
++	UiKit.text(window, "Title", "GARAGE", UDim2.new(1, -60, 0, 36), UDim2.fromOffset(12, 8), 22, Color3.fromRGB(255, 200, 70)).TextXAlignment = Enum.TextXAlignment.Left
++	local close = UiKit.button(window, "Close", "X", UDim2.fromOffset(44, 44), UDim2.new(1, -52, 0, 6), Color3.fromRGB(70, 70, 80))
++	close.Activated:Connect(function()
++		window.Visible = false
++	end)
++	local list = Instance.new("Frame")
++	list.Name = "List"
++	list.BackgroundTransparency = 1
++	list.Position = UDim2.fromOffset(12, 56)
++	list.Size = UDim2.new(1, -24, 1, -64)
++	list.Parent = window
++	local layout = Instance.new("UIListLayout")
++	layout.Padding = UDim.new(0, 8)
++	layout.Parent = list
++
++	rebuild = function()
++		for _, child in list:GetChildren() do
++			if child:IsA("GuiObject") then
++				child:Destroy()
++			end
++		end
++		local ids = UiKit.ownedVehicles(player)
++		for order, id in ids do
++			local stats = VehicleConfig.get(id)
++			if stats then
++				local row = UiKit.button(list, id, `{stats.DisplayName}{if id == selected then "  ✓" else ""}`, UDim2.new(1, 0, 0, 48), UDim2.new(), stats.BodyColor)
++				row.LayoutOrder = order
++				row.TextSize = 18
++				row.Activated:Connect(function()
++					selected = id
++					window.Visible = false
++					VehicleController.requestSpawn(id)
++				end)
++			end
++		end
++		window.Size = UDim2.fromOffset(300, 64 + #ids * 56)
++	end
++	player:GetAttributeChangedSignal(PlayerAttributes.OwnedVehicles):Connect(function()
++		if not table.find(UiKit.ownedVehicles(player), selected) then
++			selected = VehicleConfig.DefaultVehicleId
++		end
++		if window.Visible then
++			rebuild()
++		end
++	end)
++end
++
++return GarageController
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
+index 79c1468..f0b497d 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
+@@ -24,6 +24,7 @@ local REJECT_TEXT: { [string]: string } = {
+ 	StoreCooldown = "This store was robbed recently.",
+ 	StoreBusy = "Someone is already robbing this store.",
+ 	AlreadyRobbing = "You're already on a robbery.",
++	CashUnavailable = "Your cash data isn't loaded right now. Try again in a moment.",
+ }
+ local FAIL_TEXT: { [string]: string } = {
+ 	Died = "Robbery failed: you died. No cash.",
+@@ -135,15 +136,17 @@ function RobberyHudController.init()
+ 			showToast(FAIL_TEXT[payload.Reason] or "Robbery failed. No cash.", RED, 4)
+ 		elseif kind == "Paid" and type(payload.Amount) == "number" then
+ 			showToast(`Escaped! +{money(payload.Amount)} from the robbery.`, GREEN, 4)
++		elseif kind == "PayoutPending" then
++			showToast("Escaped! Your cash data is reconnecting; the reward will be added. Stay in the game.", AMBER, 5)
+ 		elseif kind == "PayoutFailed" then
+-			showToast("Escaped, but your cash couldn't be saved right now.", RED, 4)
++			showToast("Escaped, but the reward couldn't be paid.", RED, 4)
+ 		end
+ 	end)
+ 
+ 	RunService.RenderStepped:Connect(function()
+ 		local phase = player:GetAttribute(PlayerAttributes.RobberyPhase)
+ 		local jailed = player:GetAttribute(PlayerAttributes.Jailed) == true
+-		panel.Visible = (phase == "Holding" or phase == "Escaping") and not jailed
++		panel.Visible = (phase == "Holding" or phase == "Escaping" or phase == "PayoutPending") and not jailed
+ 		if phase == "Holding" then
+ 			local endsAt = player:GetAttribute(PlayerAttributes.RobberyHoldEndsAt)
+ 			local left = if type(endsAt) == "number" then math.max(0, math.ceil(endsAt - Workspace:GetServerTimeNow())) else 0
+@@ -153,6 +156,10 @@ function RobberyHudController.init()
+ 			local reward = player:GetAttribute(PlayerAttributes.RobberyReward)
+ 			title.Text = "ESCAPE THE POLICE"
+ 			detail.Text = `Lose your wanted stars to keep {if type(reward) == "number" then money(reward) else "the cash"}`
++		elseif phase == "PayoutPending" then
++			local reward = player:GetAttribute(PlayerAttributes.RobberyReward)
++			title.Text = "REWARD PENDING"
++			detail.Text = `{if type(reward) == "number" then money(reward) else "Your reward"} will be added when your cash data reconnects`
+ 		end
+ 	end)
+ end
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/UiKit.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/UiKit.luau
+new file mode 100644
+index 0000000..23496ba
+--- /dev/null
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/UiKit.luau
+@@ -0,0 +1,80 @@
++--!strict
++-- Small shared builders for the 4C windows (garage, dealership): a centred panel, rows and
++-- buttons sized for touch (44+ px tall).
++local UiKit = {}
++
++function UiKit.corner(parent: Instance, radius: number)
++	local c = Instance.new("UICorner")
++	c.CornerRadius = UDim.new(0, radius)
++	c.Parent = parent
++end
++
++function UiKit.panel(parent: Instance, name: string, width: number): Frame
++	local panel = Instance.new("Frame")
++	panel.Name = name
++	-- Top-centre, just below the HUD row (buttons y 8-52, stars/cash y 58-84), so the cash
++	-- badge stays visible on short phone screens (iPhone 7 landscape is 374 px tall).
++	panel.AnchorPoint = Vector2.new(0.5, 0)
++	panel.Position = UDim2.new(0.5, 0, 0, 92)
++	panel.Size = UDim2.fromOffset(width, 120)
++	panel.BackgroundColor3 = Color3.fromRGB(22, 24, 30)
++	panel.BackgroundTransparency = 0.08
++	panel.Visible = false
++	panel.Parent = parent
++	UiKit.corner(panel, 14)
++	local limit = Instance.new("UISizeConstraint")
++	limit.MaxSize = Vector2.new(width, 360)
++	limit.Parent = panel
++	return panel
++end
++
++function UiKit.text(parent: Instance, name: string, text: string, size: UDim2, position: UDim2, textSize: number, color: Color3?): TextLabel
++	local l = Instance.new("TextLabel")
++	l.Name = name
++	l.Text = text
++	l.Size = size
++	l.Position = position
++	l.BackgroundTransparency = 1
++	l.TextColor3 = color or Color3.new(1, 1, 1)
++	l.Font = Enum.Font.GothamBold
++	l.TextSize = textSize
++	l.TextWrapped = true
++	l.Parent = parent
++	return l
++end
++
++function UiKit.button(parent: Instance, name: string, text: string, size: UDim2, position: UDim2, color: Color3): TextButton
++	local b = Instance.new("TextButton")
++	b.Name = name
++	b.Text = text
++	b.Size = size
++	b.Position = position
++	b.BackgroundColor3 = color
++	b.TextColor3 = Color3.new(1, 1, 1)
++	b.Font = Enum.Font.GothamBold
++	b.TextSize = 16
++	b.AutoButtonColor = true
++	b.Parent = parent
++	UiKit.corner(b, 10)
++	return b
++end
++
++function UiKit.money(amount: number): string
++	local text = tostring(math.floor(amount))
++	local formatted = text:reverse():gsub("(%d%d%d)", "%1,"):reverse()
++	return "$" .. formatted:gsub("^,", "")
++end
++
++-- Owned vehicle ids from the server-written OwnedVehicles attribute.
++function UiKit.ownedVehicles(player: Player): { string }
++	local raw = player:GetAttribute("OwnedVehicles")
++	local ids = {}
++	if type(raw) == "string" then
++		for id in raw:gmatch("[^,]+") do
++			table.insert(ids, id)
++		end
++	end
++	return ids
++end
++
++return UiKit
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleHudController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleHudController.luau
+index be3e32f..53c248b 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleHudController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleHudController.luau
+@@ -11,6 +11,7 @@ local VehicleConfig = require(Shared.Config.VehicleConfig)
+ local VehicleMath = require(Shared.Vehicle.VehicleMath)
+ local VehicleController = require(script.Parent.VehicleController)
+ local VehicleInputController = require(script.Parent.VehicleInputController)
++local GarageController = require(script.Parent.GarageController)
+ 
+ local VehicleHudController = {}
+ 
+@@ -23,6 +24,7 @@ local ERROR_TEXT: { [string]: string } = {
+ 	BadRequest = "Spawn request was rejected.",
+ 	NetworkError = "Could not reach the server.",
+ 	Jailed = "You can't spawn a car while in jail.",
++	NotOwned = "You don't own that car. Buy it at the dealership.",
+ }
+ 
+ local function corner(parent: Instance, radius: number)
+@@ -107,7 +109,7 @@ function VehicleHudController.init()
+ 	spawnButton.Parent = gui
+ 	corner(spawnButton, 10)
+ 	spawnButton.Activated:Connect(function()
+-		VehicleController.requestSpawn(VehicleConfig.DefaultVehicleId)
++		GarageController.toggle() -- choose which owned car to spawn
+ 	end)
+ 
+ 	local toast = label(gui, "Toast", UDim2.fromOffset(380, 36), UDim2.new(0.5, 0, 0, 140), Vector2.new(0.5, 0), 16)
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau
+index 6f718a6..c07c347 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau
+@@ -14,11 +14,14 @@ local CombatStatusController = require(Controllers.CombatStatusController)
+ local SafeZoneHudController = require(Controllers.SafeZoneHudController)
+ local JailHudController = require(Controllers.JailHudController)
+ local CashHudController = require(Controllers.CashHudController)
++local GarageController = require(Controllers.GarageController)
++local DealershipController = require(Controllers.DealershipController)
+ local RobberyHudController = require(Controllers.RobberyHudController)
+ 
+ VehicleInputController.init()
+ VehicleController.init()
+ VehicleCameraController.init()
++GarageController.init()
+ VehicleHudController.init()
+ task.spawn(WantedHudController.init)
+ task.spawn(DevPanelController.init)
+@@ -26,9 +29,10 @@ task.spawn(CombatStatusController.init)
+ task.spawn(SafeZoneHudController.init)
+ task.spawn(JailHudController.init)
+ task.spawn(CashHudController.init)
++task.spawn(DealershipController.init)
+ task.spawn(RobberyHudController.init)
+ 
+ VehicleInputController.ExitRequested:Connect(VehicleController.requestExit)
+ VehicleInputController.SpawnRequested:Connect(function()
+-	VehicleController.requestSpawn(VehicleConfig.DefaultVehicleId)
++	GarageController.spawnSelected() -- V: the last car chosen in the garage (Coupe at first)
+ end)

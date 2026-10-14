@@ -1,0 +1,32 @@
+diff --git a/src/ServerScriptService/Server/Data/DataStoreAdapter.luau b/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
+index 867ae5d..cec75ea 100644
+--- a/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
++++ b/src/ServerScriptService/Server/Data/DataStoreAdapter.luau
+@@ -4,6 +4,7 @@
+ -- broken DataStore never wipes progress.
+ local DataStoreService = game:GetService("DataStoreService")
+ local RunService = game:GetService("RunService")
++local Workspace = game:GetService("Workspace")
+ 
+ local DataStoreAdapter = {}
+ 
+@@ -19,15 +20,17 @@ function DataStoreAdapter.setSimulatedFailure(enabled: boolean)
+ 	failureMode = enabled
+ end
+ 
++-- Also on while the Studio-only Workspace attribute SimulateDataStoreFailure is true, so a test
++-- can toggle failures with no player in the game (e.g. after a kick).
+ function DataStoreAdapter.isSimulatingFailure(): boolean
+-	return failureMode
++	return failureMode or (RunService:IsStudio() and Workspace:GetAttribute("SimulateDataStoreFailure") == true)
+ end
+ 
+ function DataStoreAdapter.get(baseName: string): any
+ 	local store = DataStoreService:GetDataStore(DataStoreAdapter.storeName(baseName))
+ 	return {
+ 		UpdateAsync = function(_, key: string, transform: (any) -> any): any
+-			if failureMode then
++			if DataStoreAdapter.isSimulatingFailure() then
+ 				error("Simulated DataStore failure (Studio test)")
+ 			end
+ 			return store:UpdateAsync(key, transform)

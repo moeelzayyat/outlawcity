@@ -1,0 +1,35 @@
+diff --git a/src/ServerStorage/Tests/RobberyRules.spec.luau b/src/ServerStorage/Tests/RobberyRules.spec.luau
+index 72e12e3..89ccef6 100644
+--- a/src/ServerStorage/Tests/RobberyRules.spec.luau
++++ b/src/ServerStorage/Tests/RobberyRules.spec.luau
+@@ -12,7 +12,7 @@ local Assert = require(script.Parent.Assert)
+ 
+ local C = RobberyConfig
+ local function facts(overrides: { [string]: any }?)
+-	local f = { Alive = true, Jailed = false, InSafeZone = false, InVehicle = false, DistanceToRegister = 3, HasActiveSession = false }
++	local f = { Alive = true, Jailed = false, InSafeZone = false, InVehicle = false, DistanceToRegister = 3, HasActiveSession = false, CashReady = true }
+ 	for k, v in overrides or {} do
+ 		f[k] = v
+ 	end
+@@ -50,6 +50,7 @@ return {
+ 			{ { InSafeZone = true }, "InSafeZone" },
+ 			{ { InVehicle = true }, "InVehicle" },
+ 			{ { HasActiveSession = true }, "AlreadyRobbing" },
++			{ { CashReady = false }, "CashUnavailable" },
+ 			{ { DistanceToRegister = C.PromptDistance + C.DistanceSlack + 0.1 }, "TooFar" },
+ 			{ { DistanceToRegister = 0 / 0 }, "TooFar" },
+ 			{ { DistanceToRegister = math.huge }, "TooFar" },
+@@ -116,6 +117,13 @@ return {
+ 		Assert.equal((RobberyRules.tick(session, store, tickFacts({ Alive = false }), 130, C)), nil, "settled sessions don't change")
+ 		Assert.equal(RobberyRules.isLive(session), false)
+ 	end,
++	["payout results: paid, already paid, retry only for temporary data loss"] = function()
++		Assert.equal(RobberyRules.payoutOutcome(true, nil), "Paid")
++		Assert.equal(RobberyRules.payoutOutcome(false, "DuplicateTransaction"), "AlreadyPaid")
++		Assert.equal(RobberyRules.payoutOutcome(false, "DataNotLoaded"), "Retry")
++		Assert.equal(RobberyRules.payoutOutcome(false, "NotInGame"), "Rejected")
++		Assert.equal(RobberyRules.payoutOutcome(false, "InvalidAmount"), "Rejected")
++	end,
+ 	["jail blocks robbery and the notice remote is server-to-client only"] = function()
+ 		local jail = JailRules.new()
+ 		JailRules.sentence(jail, 0, 12, true)

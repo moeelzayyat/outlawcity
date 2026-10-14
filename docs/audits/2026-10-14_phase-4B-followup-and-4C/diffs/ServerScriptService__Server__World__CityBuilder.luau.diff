@@ -1,0 +1,115 @@
+diff --git a/src/ServerScriptService/Server/World/CityBuilder.luau b/src/ServerScriptService/Server/World/CityBuilder.luau
+index 71f23dd..c71cdb5 100644
+--- a/src/ServerScriptService/Server/World/CityBuilder.luau
++++ b/src/ServerScriptService/Server/World/CityBuilder.luau
+@@ -2,6 +2,8 @@
+ -- Turns a CityLayout blueprint into anchored parts under Workspace.City.
+ -- Yields between chunks so it is safe to run in Studio edit mode or at server boot.
+ local CityLayout = require(script.Parent.CityLayout)
++local VehicleConfig = require(game:GetService("ReplicatedStorage").Shared.Config.VehicleConfig)
++local VehicleFactory = require(script.Parent.Parent.Vehicle.VehicleFactory)
+ 
+ local CityBuilder = {}
+ 
+@@ -236,4 +238,101 @@ function CityBuilder.buildStore(city: Instance): Folder
+ 	return folder
+ end
+ 
++-- Adds City.Dealership (showroom, sales-desk ShopPrompt, anchored display car, sign) if
++-- missing. The prompt only opens the client's shop window; purchases are validated by
++-- DealershipService on the server.
++function CityBuilder.buildDealership(city: Instance): Folder
++	local existing = city:FindFirstChild("Dealership")
++	if existing and existing:IsA("Folder") then
++		return existing
++	end
++	local spec = CityLayout.dealership()
++	local folder = Instance.new("Folder")
++	folder.Name = "Dealership"
++	for _, partSpec in spec.Parts do
++		local part = Instance.new("Part")
++		part.Name = partSpec.Name
++		part.Anchored = true
++		part.CanCollide = partSpec.CanCollide
++		part.Size = partSpec.Size
++		part.CFrame = CFrame.new(partSpec.Center)
++		part.Color = partSpec.Color
++		part.Material = partSpec.Material
++		part.TopSurface = Enum.SurfaceType.Smooth
++		part.BottomSurface = Enum.SurfaceType.Smooth
++		if partSpec.Material == Enum.Material.Glass then
++			part.Transparency = 0.6
++		end
++		part.Parent = folder
++	end
++	local roof = folder:FindFirstChild("DealerRoof")
++	if roof then
++		local light = Instance.new("PointLight")
++		light.Range = 30
++		light.Brightness = 1.3
++		light.Parent = roof
++	end
++	local desk = folder:FindFirstChild("DealerDesk") :: BasePart?
++	if desk then
++		local attachment = Instance.new("Attachment")
++		attachment.Name = "PromptAttachment"
++		attachment.Parent = desk -- parent first: WorldCFrame is relative to the parent part
++		attachment.WorldCFrame = spec.Desk
++		local prompt = Instance.new("ProximityPrompt")
++		prompt.Name = "ShopPrompt"
++		prompt.ActionText = "Browse cars"
++		prompt.ObjectText = "Dealership"
++		prompt.HoldDuration = 0
++		prompt.MaxActivationDistance = 14
++		prompt.RequiresLineOfSight = false
++		prompt.KeyboardKeyCode = Enum.KeyCode.E
++		prompt.Parent = attachment
++	end
++	-- Display car: a real model of the first catalogue car, anchored and not drivable.
++	local ok, display = pcall(function()
++		local stats = VehicleConfig.get("Muscle")
++		return stats and VehicleFactory.build("Muscle", stats)
++	end)
++	if ok and display then
++		display.Name = "DisplayCar"
++		for _, d in display:GetDescendants() do
++			if d:IsA("BasePart") then
++				d.Anchored = true
++			elseif d:IsA("ProximityPrompt") or d:IsA("Constraint") or d:IsA("Script") then
++				d:Destroy()
++			end
++		end
++		local seat = display:FindFirstChildWhichIsA("Seat", true)
++		if seat then
++			seat.Disabled = true
++		end
++		local _, size = display:GetBoundingBox()
++		display:PivotTo(spec.Display * CFrame.new(0, size.Y / 2 + 0.05, 0))
++		display.Parent = folder
++	end
++	local sign = Instance.new("Part")
++	sign.Name = "DealerSign"
++	sign.Anchored = true
++	sign.Size = spec.Sign.Size
++	sign.CFrame = CFrame.new(spec.Sign.Center)
++	sign.Color = Color3.fromRGB(30, 60, 120)
++	sign.Material = Enum.Material.SmoothPlastic
++	local gui = Instance.new("SurfaceGui")
++	gui.Face = Enum.NormalId.Front -- faces -Z, towards the road
++	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
++	gui.PixelsPerStud = 25
++	local label = Instance.new("TextLabel")
++	label.Size = UDim2.fromScale(1, 1)
++	label.BackgroundTransparency = 1
++	label.Text = "OUTLAW MOTORS"
++	label.TextScaled = true
++	label.Font = Enum.Font.GothamBlack
++	label.TextColor3 = Color3.fromRGB(255, 255, 255)
++	label.Parent = gui
++	gui.Parent = sign
++	sign.Parent = folder
++	folder.Parent = city
++	return folder
++end
++
+ return CityBuilder

@@ -1,0 +1,12 @@
+diff --git a/src/ServerScriptService/Server/Main.server.luau b/src/ServerScriptService/Server/Main.server.luau
+index 0465823..4625639 100644
+--- a/src/ServerScriptService/Server/Main.server.luau
++++ b/src/ServerScriptService/Server/Main.server.luau
+@@ -20,6 +20,7 @@ local services: { Service } = {
+ 	require(Services.JailService) :: any,
+ 	require(Services.WantedService) :: any,
+ 	require(Services.RobberyService) :: any,
++	require(Services.DealershipService) :: any,
+ 	require(Services.CombatService) :: any,
+ 	require(Services.PoliceService) :: any,
+ 	require(script.Parent.Dev.DevToolsService) :: any,

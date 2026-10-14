@@ -1,0 +1,29 @@
+diff --git a/src/ServerScriptService/Server/Dev/DevCommandRules.luau b/src/ServerScriptService/Server/Dev/DevCommandRules.luau
+index c646561..7440e24 100644
+--- a/src/ServerScriptService/Server/Dev/DevCommandRules.luau
++++ b/src/ServerScriptService/Server/Dev/DevCommandRules.luau
+@@ -18,7 +18,9 @@ export type Command =
+ 	| { Name: "SetDataStoreFailure", Value: boolean }
+ 	| { Name: "SaveNow" }
+ 	| { Name: "ClearRobberyCooldown" }
+-	| { Name: "TryRobStore" } -- same server checks as the register prompt, minus the prompt's own range limit
++	| { Name: "SetCashUnavailable", Value: boolean } -- simulates losing cash data mid-session
++	| { Name: "TryRobStore" }
++	| { Name: "WriteLegacyProfile" } -- stores a v1 cash-only record; rejoin to test migration -- same server checks as the register prompt, minus the prompt's own range limit
+ 
+ local function finite(value: any): boolean
+ 	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
+@@ -66,6 +68,13 @@ function DevCommandRules.parse(name: any, value: any): (Command?, string?)
+ 		return { Name = "SaveNow" }, nil
+ 	elseif name == "ClearRobberyCooldown" then
+ 		return { Name = "ClearRobberyCooldown" }, nil
++	elseif name == "SetCashUnavailable" then
++		if type(value) ~= "boolean" then
++			return nil, "SetCashUnavailable needs true or false"
++		end
++		return { Name = "SetCashUnavailable", Value = value }, nil
++	elseif name == "WriteLegacyProfile" then
++		return { Name = "WriteLegacyProfile" }, nil
+ 	elseif name == "TryRobStore" then
+ 		return { Name = "TryRobStore" }, nil
+ 	end

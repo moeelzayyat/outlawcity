@@ -1,0 +1,28 @@
+diff --git a/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau b/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+index 38c7115..b84949e 100644
+--- a/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
++++ b/src/ReplicatedStorage/Shared/Config/EconomyConfig.luau
+@@ -6,7 +6,12 @@ local EconomyConfig = {
+ 	MaxTransaction = 1_000_000, -- largest single grant or deduction
+ 	RecentTransactionLimit = 200, -- transaction ids remembered per player (duplicate guard)
+ 	TransactionIdMaxLength = 64,
+-	ProfileVersion = 1,
++	-- 1: cash only (4A). 2: + OwnedVehicles (4C). Older records are migrated on load; a record
++	-- from a NEWER version is refused untouched, so an old server can never downgrade it.
++	ProfileVersion = 2,
++	StarterVehicles = table.freeze({ "Coupe" }), -- every profile owns these (new and migrated)
++	MaxOwnedVehicles = 50,
++	VehicleIdMaxLength = 32,
+ 
+ 	DataStoreName = "OutlawCity_PlayerData_v1", -- Studio uses DataStoreName .. "_Studio"
+ 	LoadAttempts = 3, -- tries per load round, with exponential backoff
+@@ -15,6 +20,9 @@ local EconomyConfig = {
+ 	SessionLockTimeout = 180, -- seconds after which another server's lock counts as stale
+ 	AutosaveInterval = 60,
+ 	SaveAttempts = 3,
++	-- If the save on leave fails, the unsaved profile is kept on this server and retried.
++	OrphanRetryInterval = 10,
++	OrphanRetryLimit = 900, -- seconds; stops early if another server takes the lock
+ }
+ 
+ return table.freeze(EconomyConfig)

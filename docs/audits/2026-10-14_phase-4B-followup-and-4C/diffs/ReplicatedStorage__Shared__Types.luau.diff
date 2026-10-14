@@ -1,0 +1,42 @@
+diff --git a/src/ReplicatedStorage/Shared/Types.luau b/src/ReplicatedStorage/Shared/Types.luau
+index df26211..aa7f263 100644
+--- a/src/ReplicatedStorage/Shared/Types.luau
++++ b/src/ReplicatedStorage/Shared/Types.luau
+@@ -41,7 +41,10 @@ export type VehicleInput = {
+ }
+ 
+ -- Error codes returned by RequestSpawnVehicle.
+-export type SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn" | "Jailed"
++export type SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn" | "Jailed" | "NotOwned"
++
++-- Why a dealership purchase was refused (EconomyError values pass through).
++export type PurchaseError = "BadRequest" | "NotForSale" | "TooFar" | "NotAlive" | "Jailed" | "Busy" | "Cooldown" | EconomyError
+ 
+ -- Every player is a civilian in the open world; more statuses may follow (e.g. "Jailed").
+ export type PlayerStatus = "Civilian"
+@@ -104,6 +107,7 @@ export type Profile = {
+ 	Version: number,
+ 	Cash: number,
+ 	RecentTransactions: { string }, -- most recent last; bounded; blocks duplicate grants/deductions
++	OwnedVehicles: { string }, -- vehicle ids this player may spawn (v2+); always includes the starters
+ }
+ 
+ export type EconomyError =
+@@ -113,11 +117,16 @@ export type EconomyError =
+ 	| "InsufficientFunds"
+ 	| "BalanceCap"
+ 	| "DataNotLoaded"
++	| "InvalidVehicle"
++	| "AlreadyOwned"
++	| "TooManyVehicles"
+ 	| "NotInGame"
+ 
+ -- Store robbery (Phase 4B).
+ export type RobberyPhase = "Holding" | "Escaping" | "Paid" | "Failed"
+-export type RobberyStartError = "Dead" | "Jailed" | "InSafeZone" | "InVehicle" | "TooFar" | "StoreCooldown" | "StoreBusy" | "AlreadyRobbing"
++-- What to do with a payout attempt's result: settle it, or keep the reward pending and retry.
++export type PayoutOutcome = "Paid" | "AlreadyPaid" | "Retry" | "Rejected"
++export type RobberyStartError = "Dead" | "Jailed" | "InSafeZone" | "InVehicle" | "TooFar" | "StoreCooldown" | "StoreBusy" | "AlreadyRobbing" | "CashUnavailable"
+ export type RobberyFailReason = "Died" | "Busted" | "LeftArea" | "Disconnected" | "EscapeTimedOut"
+ 
+ -- Errors from JailService.jailForBust.

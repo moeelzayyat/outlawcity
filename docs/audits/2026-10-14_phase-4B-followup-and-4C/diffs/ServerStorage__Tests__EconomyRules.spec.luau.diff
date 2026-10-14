@@ -1,0 +1,88 @@
+diff --git a/src/ServerStorage/Tests/EconomyRules.spec.luau b/src/ServerStorage/Tests/EconomyRules.spec.luau
+index 7000fac..a01d03f 100644
+--- a/src/ServerStorage/Tests/EconomyRules.spec.luau
++++ b/src/ServerStorage/Tests/EconomyRules.spec.luau
+@@ -76,7 +76,7 @@ return {
+ 		Assert.equal(p.Cash, C.MaxBalance - 10)
+ 	end,
+ 	["valid saved data is kept exactly; malformed data is refused, never reset"] = function()
+-		local saved = { Version = 1, Cash = 12345, RecentTransactions = { "x", "y", 5 } }
++		local saved = { Version = 2, Cash = 12345, RecentTransactions = { "x", "y", 5 }, OwnedVehicles = { "Coupe" } }
+ 		local p, kind = EconomyRules.validateSaved(saved, C)
+ 		Assert.equal(kind, "Existing")
+ 		Assert.equal(p.Cash, 12345, "not reset to starting cash")
+@@ -87,6 +87,74 @@ return {
+ 			Assert.equal(why, "Corrupt")
+ 		end
+ 	end,
++	["new profiles own exactly the starter Coupe"] = function()
++		local p = fresh()
++		Assert.equal(p.Version, C.ProfileVersion)
++		Assert.equal(#p.OwnedVehicles, 1)
++		Assert.equal(p.OwnedVehicles[1], "Coupe")
++	end,
++	["cash-only (v1) profiles migrate without losing cash or transaction history"] = function()
++		for _, legacy in { { Version = 1, Cash = 9800, RecentTransactions = { "robbery:a" } }, { Cash = 9800, RecentTransactions = { "robbery:a" } } } do
++			local p, kind = EconomyRules.validateSaved(legacy, C)
++			Assert.equal(kind, "Migrated")
++			Assert.equal(p.Version, C.ProfileVersion)
++			Assert.equal(p.Cash, 9800)
++			Assert.equal(p.RecentTransactions[1], "robbery:a")
++			Assert.equal(#p.OwnedVehicles, 1)
++			Assert.equal(p.OwnedVehicles[1], "Coupe")
++		end
++		-- a v1 record that somehow carries a vehicle list does not gain cars from it
++		local p = EconomyRules.validateSaved({ Version = 1, Cash = 5, OwnedVehicles = { "Muscle" } }, C)
++		Assert.equal(EconomyRules.ownsVehicle(p, "Muscle"), false)
++	end,
++	["v2 ownership is kept; junk is dropped; damaged or newer records are refused untouched"] = function()
++		local p, kind = EconomyRules.validateSaved({ Version = 2, Cash = 1, RecentTransactions = {}, OwnedVehicles = { "Muscle", 7, "Muscle", "" } }, C)
++		Assert.equal(kind, "Existing")
++		Assert.equal(EconomyRules.ownsVehicle(p, "Muscle"), true)
++		Assert.equal(EconomyRules.ownsVehicle(p, "Coupe"), true, "starter is always owned")
++		Assert.equal(#p.OwnedVehicles, 2, "duplicates and junk removed")
++		for _, bad in {
++			{ Version = 2, Cash = 1, RecentTransactions = {} }, -- v2 without its list
++			{ Version = 3, Cash = 1, RecentTransactions = {}, OwnedVehicles = {} }, -- newer schema
++			{ Version = 0, Cash = 1 },
++			{ Version = 1.5, Cash = 1 },
++		} do
++			local profile, why = EconomyRules.validateSaved(bad, C)
++			Assert.equal(profile, nil)
++			Assert.equal(why, "Corrupt")
++		end
++	end,
++	["buying a car takes the price once and records ownership in the same step"] = function()
++		local p = fresh()
++		p.Cash = 20000
++		Assert.equal((EconomyRules.purchaseVehicle(p, "Muscle", 15000, "buy:1", C)), true)
++		Assert.equal(p.Cash, 5000)
++		Assert.equal(EconomyRules.ownsVehicle(p, "Muscle"), true)
++		-- the same request again, or a new request for the same car, never charges twice
++		local ok, err = EconomyRules.purchaseVehicle(p, "Muscle", 15000, "buy:1", C)
++		Assert.equal(ok, false)
++		Assert.equal(err, "DuplicateTransaction")
++		ok, err = EconomyRules.purchaseVehicle(p, "Muscle", 15000, "buy:2", C)
++		Assert.equal(err, "AlreadyOwned")
++		Assert.equal(p.Cash, 5000)
++		Assert.equal(#p.OwnedVehicles, 2)
++	end,
++	["a failed purchase changes nothing"] = function()
++		local p = fresh()
++		p.Cash = 14999
++		local ok, err = EconomyRules.purchaseVehicle(p, "Muscle", 15000, "buy:x", C)
++		Assert.equal(ok, false)
++		Assert.equal(err, "InsufficientFunds")
++		Assert.equal(p.Cash, 14999)
++		Assert.equal(EconomyRules.ownsVehicle(p, "Muscle"), false)
++		Assert.equal(#p.RecentTransactions, 0, "a refused purchase doesn't burn its transaction id")
++		for _, case in { { "", 100, "InvalidVehicle" }, { 5, 100, "InvalidVehicle" }, { "Muscle", -1, "InvalidAmount" }, { "Muscle", 0 / 0, "InvalidAmount" }, { "Muscle", "15000", "InvalidAmount" } } do
++			local ok2, err2 = EconomyRules.purchaseVehicle(p, case[1], case[2], "buy:y", C)
++			Assert.equal(ok2, false)
++			Assert.equal(err2, case[3])
++		end
++		Assert.equal(p.Cash, 14999)
++	end,
+ 	["session locks: own or stale locks can be claimed, live foreign locks cannot"] = function()
+ 		local T = C.SessionLockTimeout
+ 		Assert.equal(EconomyRules.canClaimLock(nil, "me", 1000, T), true)

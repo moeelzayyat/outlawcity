@@ -1,0 +1,30 @@
+diff --git a/src/ServerScriptService/Server/Data/ProfileStore.luau b/src/ServerScriptService/Server/Data/ProfileStore.luau
+index b12e757..9b1cba2 100644
+--- a/src/ServerScriptService/Server/Data/ProfileStore.luau
++++ b/src/ServerScriptService/Server/Data/ProfileStore.luau
+@@ -16,7 +16,7 @@ local EconomyRules = require(ReplicatedStorage.Shared.Economy.EconomyRules)
+ local ProfileStore = {}
+ 
+ export type Store = { UpdateAsync: (self: any, key: string, transform: (any) -> any) -> any }
+-export type LoadResult = "New" | "Existing"
++export type LoadResult = "New" | "Existing" | "Migrated"
+ export type LoadError = "StoreError" | "SessionLocked" | "Corrupt"
+ export type SaveError = "StoreError" | "LockLost"
+ 
+@@ -43,7 +43,7 @@ function ProfileStore.load(store: Store, key: string, sessionId: string, now: nu
+ 	if not ok then
+ 		return nil, "StoreError", tostring(err)
+ 	end
+-	if outcome ~= "New" and outcome ~= "Existing" then
++	if outcome ~= "New" and outcome ~= "Existing" and outcome ~= "Migrated" then
+ 		return nil, outcome :: any, nil
+ 	end
+ 	return profile, outcome :: any, nil
+@@ -65,6 +65,7 @@ function ProfileStore.save(store: Store, key: string, sessionId: string, profile
+ 					Version = profile.Version,
+ 					Cash = profile.Cash,
+ 					RecentTransactions = table.clone(profile.RecentTransactions),
++					OwnedVehicles = table.clone(profile.OwnedVehicles),
+ 				},
+ 				Lock = if release then nil else { Id = sessionId, At = now },
+ 			}

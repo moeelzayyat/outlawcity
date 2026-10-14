@@ -1,0 +1,31 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau
+index 6f718a6..c07c347 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Main.client.luau
+@@ -14,11 +14,14 @@ local CombatStatusController = require(Controllers.CombatStatusController)
+ local SafeZoneHudController = require(Controllers.SafeZoneHudController)
+ local JailHudController = require(Controllers.JailHudController)
+ local CashHudController = require(Controllers.CashHudController)
++local GarageController = require(Controllers.GarageController)
++local DealershipController = require(Controllers.DealershipController)
+ local RobberyHudController = require(Controllers.RobberyHudController)
+ 
+ VehicleInputController.init()
+ VehicleController.init()
+ VehicleCameraController.init()
++GarageController.init()
+ VehicleHudController.init()
+ task.spawn(WantedHudController.init)
+ task.spawn(DevPanelController.init)
+@@ -26,9 +29,10 @@ task.spawn(CombatStatusController.init)
+ task.spawn(SafeZoneHudController.init)
+ task.spawn(JailHudController.init)
+ task.spawn(CashHudController.init)
++task.spawn(DealershipController.init)
+ task.spawn(RobberyHudController.init)
+ 
+ VehicleInputController.ExitRequested:Connect(VehicleController.requestExit)
+ VehicleInputController.SpawnRequested:Connect(function()
+-	VehicleController.requestSpawn(VehicleConfig.DefaultVehicleId)
++	GarageController.spawnSelected() -- V: the last car chosen in the garage (Coupe at first)
+ end)

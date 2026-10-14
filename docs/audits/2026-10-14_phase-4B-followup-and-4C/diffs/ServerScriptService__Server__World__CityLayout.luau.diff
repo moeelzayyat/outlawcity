@@ -1,0 +1,58 @@
+diff --git a/src/ServerScriptService/Server/World/CityLayout.luau b/src/ServerScriptService/Server/World/CityLayout.luau
+index f165d38..51e607b 100644
+--- a/src/ServerScriptService/Server/World/CityLayout.luau
++++ b/src/ServerScriptService/Server/World/CityLayout.luau
+@@ -222,6 +222,53 @@ function CityLayout.store(): StoreSpec
+ 	}
+ end
+ 
++-- Car dealership (Phase 4C): one showroom on the north edge of block (200, 200), facing the
++-- z = 100 road, on a site checked free of buildings. Width runs along X; the open front
++-- faces -Z. A sales desk with the shop prompt, and one display car on the floor.
++CityLayout.DEALERSHIP_CENTER = Vector3.new(200, 0, 136)
++CityLayout.DEALERSHIP_WIDTH = 40 -- along X
++CityLayout.DEALERSHIP_DEPTH = 30 -- along Z
++CityLayout.DEALERSHIP_HEIGHT = 14
++
++export type DealershipSpec = {
++	Parts: { PartSpec },
++	Desk: CFrame, -- top centre of the sales desk, where the prompt lives
++	Display: CFrame, -- where the display car stands (wheels on the floor)
++	Sign: { Center: Vector3, Size: Vector3 },
++}
++
++function CityLayout.dealership(): DealershipSpec
++	local c = CityLayout.DEALERSHIP_CENTER
++	local hx = CityLayout.DEALERSHIP_WIDTH / 2
++	local hz = CityLayout.DEALERSHIP_DEPTH / 2
++	local h = CityLayout.DEALERSHIP_HEIGHT
++	local floorTop = CityLayout.CURB_TOP + 0.2
++	local wallColor = Color3.fromRGB(230, 232, 236)
++	local trim = Color3.fromRGB(30, 60, 120)
++	local glass = Color3.fromRGB(150, 200, 220)
++	local parts: { PartSpec } = {}
++	local function add(name: string, x: number, z: number, sizeX: number, sizeZ: number, partTop: number, thickness: number, color: Color3, material: Enum.Material)
++		table.insert(parts, slab(name, "Dealership", c.X + x, c.Z + z, sizeX, sizeZ, partTop, thickness, color, material, true))
++	end
++	add("DealerFloor", 0, 0, 2 * hx, 2 * hz, floorTop, 0.4, Color3.fromRGB(200, 200, 205), Enum.Material.Marble)
++	add("DealerRoof", 0, 0, 2 * hx + 2, 2 * hz + 2, floorTop + h + 1, 1, trim, Enum.Material.Concrete)
++	add("DealerWallBack", 0, hz + 0.5, 2 * hx + 2, 1, floorTop + h, h, wallColor, Enum.Material.Concrete)
++	add("DealerWallWest", -hx - 0.5, 0, 1, 2 * hz, floorTop + h, h, wallColor, Enum.Material.Concrete)
++	add("DealerWallEast", hx + 0.5, 0, 1, 2 * hz, floorTop + h, h, wallColor, Enum.Material.Concrete)
++	-- Front (-Z): glass either side of a 14-stud doorway, header above it.
++	local pane = hx - 7
++	add("DealerFrontWest", -hx + pane / 2, -hz - 0.5, pane, 1, floorTop + h, h, glass, Enum.Material.Glass)
++	add("DealerFrontEast", hx - pane / 2, -hz - 0.5, pane, 1, floorTop + h, h, glass, Enum.Material.Glass)
++	add("DealerFrontHeader", 0, -hz - 0.5, 14, 1, floorTop + h, 4, wallColor, Enum.Material.Concrete)
++	add("DealerDesk", -hx + 8, hz - 6, 8, 3, floorTop + 3.5, 3.5, Color3.fromRGB(60, 60, 70), Enum.Material.SmoothPlastic)
++	return {
++		Parts = parts,
++		Desk = CFrame.new(c.X - hx + 8, floorTop + 3.5, c.Z + hz - 6),
++		Display = CFrame.new(c.X + 6, floorTop, c.Z + 2) * CFrame.Angles(0, math.rad(-35), 0),
++		Sign = { Center = Vector3.new(c.X, floorTop + h + 3, c.Z - hz - 1.2), Size = Vector3.new(24, 4, 0.4) },
++	}
++end
++
+ function CityLayout.createBlueprint(): Blueprint
+ 	local parts: { PartSpec } = {}
+ 	local spawns: { SpawnSpec } = {}

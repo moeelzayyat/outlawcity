@@ -1,0 +1,15 @@
+diff --git a/src/ServerScriptService/Server/Dev/DevToolsService.luau b/src/ServerScriptService/Server/Dev/DevToolsService.luau
+index 412e8e1..d4de636 100644
+--- a/src/ServerScriptService/Server/Dev/DevToolsService.luau
++++ b/src/ServerScriptService/Server/Dev/DevToolsService.luau
+@@ -58,6 +58,10 @@ local function run(player: Player, name: unknown, value: unknown): (boolean, str
+ 	elseif command.Name == "ClearRobberyCooldown" then
+ 		RobberyService.clearCooldownsForTesting()
+ 		return true, nil
++	elseif command.Name == "SetCashUnavailable" then
++		return EconomyService.setUnavailableForTesting(player, (command :: any).Value), nil
++	elseif command.Name == "WriteLegacyProfile" then
++		return EconomyService.writeLegacyRecordForTesting(player), nil
+ 	elseif command.Name == "TryRobStore" then
+ 		return RobberyService.tryStart(player, "Store1")
+ 	end

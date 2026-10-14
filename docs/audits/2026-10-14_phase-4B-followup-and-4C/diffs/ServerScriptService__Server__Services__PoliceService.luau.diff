@@ -1,0 +1,40 @@
+diff --git a/src/ServerScriptService/Server/Services/PoliceService.luau b/src/ServerScriptService/Server/Services/PoliceService.luau
+index e4e5712..9a02652 100644
+--- a/src/ServerScriptService/Server/Services/PoliceService.luau
++++ b/src/ServerScriptService/Server/Services/PoliceService.luau
+@@ -228,6 +228,14 @@ local function bust(target: Player)
+ 	endPursuit("busted")
+ end
+ 
++-- Players the unit must not be dispatched to yet (server systems only). A unit already
++-- chasing the player keeps chasing.
++local dispatchHolds: { [Player]: boolean } = {}
++
++function PoliceService.setDispatchHold(player: Player, held: boolean)
++	dispatchHolds[player] = if held then true else nil
++end
++
+ local function tick(dt: number)
+ 	local now = Workspace:GetServerTimeNow()
+ 	local current = unit
+@@ -237,6 +245,9 @@ local function tick(dt: number)
+ 		local best, bestStars = nil :: Player?, 0
+ 		for _, player in Players:GetPlayers() do
+ 			local stars = WantedService.getStars(player)
++			if dispatchHolds[player] then
++				continue -- e.g. a store robbery still in its holdout: police respond when it ends
++			end
+ 			if PoliceDispatchRules.unitsFor(stars, PoliceConfig.MaxUnits) > 0 and stars > bestStars then
+ 				best, bestStars = player, stars
+ 			end
+@@ -375,6 +386,10 @@ function PoliceService.init()
+ 	WantedService.setPoliceSightProvider(seesPlayer)
+ end
+ 
++Players.PlayerRemoving:Connect(function(player)
++	dispatchHolds[player] = nil
++end)
++
+ function PoliceService.start()
+ 	RunService.PreSimulation:Connect(physicsStep)
+ 	task.spawn(function()

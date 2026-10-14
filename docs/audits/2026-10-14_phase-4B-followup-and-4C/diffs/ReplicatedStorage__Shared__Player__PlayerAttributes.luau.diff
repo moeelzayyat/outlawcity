@@ -1,0 +1,14 @@
+diff --git a/src/ReplicatedStorage/Shared/Player/PlayerAttributes.luau b/src/ReplicatedStorage/Shared/Player/PlayerAttributes.luau
+index be27922..eef3729 100644
+--- a/src/ReplicatedStorage/Shared/Player/PlayerAttributes.luau
++++ b/src/ReplicatedStorage/Shared/Player/PlayerAttributes.luau
+@@ -15,7 +15,8 @@ local PlayerAttributes = table.freeze({
+ 	JailReleaseAt = "JailReleaseAt", -- server time the sentence ends (0 when not jailed)
+ 	Cash = "Cash", -- server-authoritative balance (EconomyService); absent until data has loaded
+ 	CashStatus = "CashStatus", -- "Loading" | "Loaded" | "Unavailable"
+-	RobberyPhase = "RobberyPhase", -- "Holding" | "Escaping" while a robbery session is live (else nil)
++	OwnedVehicles = "OwnedVehicles", -- comma-separated vehicle ids from the profile (display only)
++	RobberyPhase = "RobberyPhase", -- "Holding" | "Escaping" | "PayoutPending" while a robbery is live or unpaid (else nil)
+ 	RobberyHoldEndsAt = "RobberyHoldEndsAt", -- server time the holdout completes
+ 	RobberyReward = "RobberyReward", -- cash promised for escaping (display only)
+ })

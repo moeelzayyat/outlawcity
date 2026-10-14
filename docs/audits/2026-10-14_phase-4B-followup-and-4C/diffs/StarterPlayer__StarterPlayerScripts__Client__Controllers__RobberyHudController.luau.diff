@@ -1,0 +1,43 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
+index 79c1468..f0b497d 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/RobberyHudController.luau
+@@ -24,6 +24,7 @@ local REJECT_TEXT: { [string]: string } = {
+ 	StoreCooldown = "This store was robbed recently.",
+ 	StoreBusy = "Someone is already robbing this store.",
+ 	AlreadyRobbing = "You're already on a robbery.",
++	CashUnavailable = "Your cash data isn't loaded right now. Try again in a moment.",
+ }
+ local FAIL_TEXT: { [string]: string } = {
+ 	Died = "Robbery failed: you died. No cash.",
+@@ -135,15 +136,17 @@ function RobberyHudController.init()
+ 			showToast(FAIL_TEXT[payload.Reason] or "Robbery failed. No cash.", RED, 4)
+ 		elseif kind == "Paid" and type(payload.Amount) == "number" then
+ 			showToast(`Escaped! +{money(payload.Amount)} from the robbery.`, GREEN, 4)
++		elseif kind == "PayoutPending" then
++			showToast("Escaped! Your cash data is reconnecting; the reward will be added. Stay in the game.", AMBER, 5)
+ 		elseif kind == "PayoutFailed" then
+-			showToast("Escaped, but your cash couldn't be saved right now.", RED, 4)
++			showToast("Escaped, but the reward couldn't be paid.", RED, 4)
+ 		end
+ 	end)
+ 
+ 	RunService.RenderStepped:Connect(function()
+ 		local phase = player:GetAttribute(PlayerAttributes.RobberyPhase)
+ 		local jailed = player:GetAttribute(PlayerAttributes.Jailed) == true
+-		panel.Visible = (phase == "Holding" or phase == "Escaping") and not jailed
++		panel.Visible = (phase == "Holding" or phase == "Escaping" or phase == "PayoutPending") and not jailed
+ 		if phase == "Holding" then
+ 			local endsAt = player:GetAttribute(PlayerAttributes.RobberyHoldEndsAt)
+ 			local left = if type(endsAt) == "number" then math.max(0, math.ceil(endsAt - Workspace:GetServerTimeNow())) else 0
+@@ -153,6 +156,10 @@ function RobberyHudController.init()
+ 			local reward = player:GetAttribute(PlayerAttributes.RobberyReward)
+ 			title.Text = "ESCAPE THE POLICE"
+ 			detail.Text = `Lose your wanted stars to keep {if type(reward) == "number" then money(reward) else "the cash"}`
++		elseif phase == "PayoutPending" then
++			local reward = player:GetAttribute(PlayerAttributes.RobberyReward)
++			title.Text = "REWARD PENDING"
++			detail.Text = `{if type(reward) == "number" then money(reward) else "Your reward"} will be added when your cash data reconnects`
+ 		end
+ 	end)
+ end

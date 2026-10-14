@@ -1,0 +1,41 @@
+diff --git a/src/ServerStorage/Tests/ProfileStore.spec.luau b/src/ServerStorage/Tests/ProfileStore.spec.luau
+index c949c15..2be6648 100644
+--- a/src/ServerStorage/Tests/ProfileStore.spec.luau
++++ b/src/ServerStorage/Tests/ProfileStore.spec.luau
+@@ -53,6 +53,36 @@ return {
+ 		Assert.equal(result, "Existing")
+ 		Assert.equal(again.Cash, 777)
+ 	end,
++	["a cash-only record migrates on load, is written back as v2, and keeps the balance"] = function()
++		local store = fakeStore()
++		store.Data.k = { Profile = { Version = 1, Cash = 9800, RecentTransactions = { "robbery:a" } } }
++		local profile, result = ProfileStore.load(store, "k", "A", 1000, C)
++		Assert.equal(result, "Migrated")
++		Assert.equal(profile.Cash, 9800)
++		Assert.equal(store.Data.k.Profile.Version, C.ProfileVersion, "migration persisted with the lock claim")
++		Assert.equal(store.Data.k.Profile.Cash, 9800)
++		Assert.equal(store.Data.k.Profile.OwnedVehicles[1], "Coupe")
++		local again, result2 = ProfileStore.load(store, "k", "A", 1001, C)
++		Assert.equal(result2, "Existing")
++		Assert.equal(again.Cash, 9800)
++	end,
++	["a purchase saves cash and ownership together; a failed save changes neither"] = function()
++		local store = fakeStore()
++		local profile = ProfileStore.load(store, "k", "A", 1000, C)
++		profile.Cash = 15000
++		Assert.equal((ProfileStore.save(store, "k", "A", profile, 1001, false)), true)
++		profile.Cash -= 15000
++		table.insert(profile.OwnedVehicles, "Muscle")
++		store.Fail = true
++		Assert.equal((ProfileStore.save(store, "k", "A", profile, 1002, false)), false)
++		Assert.equal(store.Data.k.Profile.Cash, 15000, "stored record untouched by the failed save")
++		Assert.equal(#store.Data.k.Profile.OwnedVehicles, 1)
++		store.Fail = false
++		Assert.equal((ProfileStore.save(store, "k", "A", profile, 1003, true)), true)
++		local again = ProfileStore.load(store, "k", "B", 1004, C)
++		Assert.equal(again.Cash, 0)
++		Assert.equal(table.find(again.OwnedVehicles, "Muscle") ~= nil, true, "owned after rejoin")
++	end,
+ 	["a store outage during load never creates or overwrites data"] = function()
+ 		local store = fakeStore()
+ 		store.Data.k = { Profile = { Version = 1, Cash = 9000, RecentTransactions = {} } }

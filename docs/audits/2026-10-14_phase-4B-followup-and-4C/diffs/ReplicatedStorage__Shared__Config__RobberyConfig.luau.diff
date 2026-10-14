@@ -1,0 +1,14 @@
+diff --git a/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau b/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
+index 79f8801..756c7df 100644
+--- a/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
++++ b/src/ReplicatedStorage/Shared/Config/RobberyConfig.luau
+@@ -10,6 +10,9 @@ local RobberyConfig = {
+ 	DistanceSlack = 4, -- extra studs the server allows for latency
+ 	MaxEscapeSeconds = 300, -- after the holdout, escape within this or the payout is lost
+ 	TickInterval = 0.25,
++	-- Owner decision (4B follow-up): stars and the police alert come at the start, but the NPC
++	-- unit is only sent when the holdout ends, so a robber has a head start to the getaway car.
++	PoliceDispatchAtHoldEnd = true,
+ }
+ 
+ return table.freeze(RobberyConfig)

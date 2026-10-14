@@ -9,3 +9,6 @@ build/
 
 # Studio place backups (kept locally, too large for git)
 backups/
+
+# Audit upload archives (rebuilt from docs/audits/<task-id>/)
+docs/audits/*.zip

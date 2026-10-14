@@ -1,0 +1,43 @@
+diff --git a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+index 75713ca..13aff00 100644
+--- a/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
++++ b/src/ReplicatedStorage/Shared/Robbery/RobberyRules.luau
+@@ -29,6 +29,7 @@ export type StartFacts = {
+ 	InVehicle: boolean,
+ 	DistanceToRegister: number,
+ 	HasActiveSession: boolean,
++	CashReady: boolean, -- the player's cash profile is loaded, so a reward can be recorded
+ }
+ export type TickFacts = { Connected: boolean, Alive: boolean, Jailed: boolean, InArea: boolean }
+ type Config = {
+@@ -60,6 +61,9 @@ function RobberyRules.canStart(store: StoreState, facts: StartFacts, now: number
+ 	if facts.HasActiveSession then
+ 		return false, "AlreadyRobbing"
+ 	end
++	if not facts.CashReady then
++		return false, "CashUnavailable" -- don't start a mission whose reward couldn't be recorded
++	end
+ 	if not (facts.DistanceToRegister <= config.PromptDistance + config.DistanceSlack) then
+ 		return false, "TooFar" -- also catches NaN distances
+ 	end
+@@ -140,6 +144,20 @@ function RobberyRules.onEscaped(session: Session): boolean
+ 	return true
+ end
+ 
++-- Classifies the result of EconomyService.grant for a robbery reward. Only temporary failures
++-- (cash data not loaded right now) keep the reward pending for another try; a duplicate
++-- transaction means this exact reward was already paid.
++function RobberyRules.payoutOutcome(ok: boolean, err: string?): Types.PayoutOutcome
++	if ok then
++		return "Paid"
++	elseif err == "DuplicateTransaction" then
++		return "AlreadyPaid"
++	elseif err == "DataNotLoaded" then
++		return "Retry"
++	end
++	return "Rejected"
++end
++
+ function RobberyRules.isLive(session: Session): boolean
+ 	return session.Phase == "Holding" or session.Phase == "Escaping"
+ end

@@ -1,0 +1,166 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+new file mode 100644
+index 0000000..e7d00fa
+--- /dev/null
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/DealershipController.luau
+@@ -0,0 +1,160 @@
++--!strict
++-- Dealership window. Opens from the showroom's ShopPrompt, shows the catalogue with prices
++-- and ownership, and sends RequestPurchaseVehicle(vehicleId). The server validates the
++-- request and decides the price; this window only displays results.
++local Players = game:GetService("Players")
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++local RunService = game:GetService("RunService")
++local Workspace = game:GetService("Workspace")
++
++local Shared = ReplicatedStorage.Shared
++local Remotes = require(Shared.Net.Remotes)
++local VehicleConfig = require(Shared.Config.VehicleConfig)
++local DealershipConfig = require(Shared.Config.DealershipConfig)
++local PlayerAttributes = require(Shared.Player.PlayerAttributes)
++local UiKit = require(script.Parent.UiKit)
++
++local DealershipController = {}
++
++local player = Players.LocalPlayer
++
++local RESULT_TEXT: { [string]: string } = {
++	AlreadyOwned = "You already own this car.",
++	TooFar = "Walk up to the sales desk to buy.",
++	NotAlive = "You need to be alive to buy a car.",
++	Jailed = "You can't buy a car while in jail.",
++	Busy = "Your purchase is already being processed.",
++	Cooldown = "One moment, then try again.",
++	DataNotLoaded = "Your data isn't loaded right now. Try again shortly.",
++	NotForSale = "That car isn't for sale.",
++	DuplicateTransaction = "That purchase was already processed.",
++	TooManyVehicles = "Your garage is full.",
++	NetworkError = "Couldn't reach the server. Nothing was charged.",
++}
++
++function DealershipController.init()
++	local gui = Instance.new("ScreenGui")
++	gui.Name = "DealershipGui"
++	gui.ResetOnSpawn = false
++	gui.DisplayOrder = 9
++	gui.Parent = player:WaitForChild("PlayerGui")
++
++	local window = UiKit.panel(gui, "Dealership", 340)
++	UiKit.text(window, "Title", "OUTLAW MOTORS", UDim2.new(1, -60, 0, 36), UDim2.fromOffset(12, 8), 22, Color3.fromRGB(120, 180, 255)).TextXAlignment = Enum.TextXAlignment.Left
++	local close = UiKit.button(window, "Close", "X", UDim2.fromOffset(44, 44), UDim2.new(1, -52, 0, 6), Color3.fromRGB(70, 70, 80))
++	close.Activated:Connect(function()
++		window.Visible = false
++	end)
++	local message = UiKit.text(window, "Message", "", UDim2.new(1, -24, 0, 40), UDim2.new(0, 12, 1, -46), 15)
++
++	type Row = { VehicleId: string, Price: number, Button: TextButton, Pending: boolean }
++	local rows: { Row } = {}
++
++	local function refresh()
++		local owned = UiKit.ownedVehicles(player)
++		local cash = player:GetAttribute(PlayerAttributes.Cash)
++		for _, row in rows do
++			if row.Pending then
++				continue
++			end
++			if table.find(owned, row.VehicleId) then
++				row.Button.Text = "Owned"
++				row.Button.BackgroundColor3 = Color3.fromRGB(60, 120, 70)
++				row.Button.AutoButtonColor = false
++			else
++				row.Button.Text = `Buy {UiKit.money(row.Price)}`
++				local affordable = type(cash) == "number" and cash >= row.Price
++				row.Button.BackgroundColor3 = if affordable then Color3.fromRGB(40, 110, 200) else Color3.fromRGB(90, 90, 100)
++				row.Button.AutoButtonColor = true
++			end
++		end
++	end
++
++	for order, item in DealershipConfig.Catalog do
++		local stats = VehicleConfig.get(item.VehicleId)
++		if not stats then
++			continue
++		end
++		local card = Instance.new("Frame")
++		card.Name = item.VehicleId
++		card.BackgroundColor3 = Color3.fromRGB(35, 38, 48)
++		card.Size = UDim2.new(1, -24, 0, 64)
++		card.Position = UDim2.fromOffset(12, 52 + (order - 1) * 72)
++		card.Parent = window
++		UiKit.corner(card, 10)
++		local swatch = Instance.new("Frame")
++		swatch.BackgroundColor3 = stats.BodyColor
++		swatch.Size = UDim2.fromOffset(10, 44)
++		swatch.Position = UDim2.fromOffset(8, 10)
++		swatch.Parent = card
++		UiKit.corner(swatch, 4)
++		local name = UiKit.text(card, "Name", stats.DisplayName, UDim2.new(1, -170, 0, 26), UDim2.fromOffset(26, 6), 18)
++		name.TextXAlignment = Enum.TextXAlignment.Left
++		local detail = UiKit.text(card, "Detail", `Top speed {stats.MaxForwardSpeed} · Accel {stats.Acceleration}`, UDim2.new(1, -170, 0, 22), UDim2.fromOffset(26, 34), 13, Color3.fromRGB(190, 190, 200))
++		detail.TextXAlignment = Enum.TextXAlignment.Left
++		local buy = UiKit.button(card, "Buy", "", UDim2.fromOffset(132, 48), UDim2.new(1, -140, 0, 8), Color3.fromRGB(40, 110, 200))
++		local row: Row = { VehicleId = item.VehicleId, Price = item.Price, Button = buy, Pending = false }
++		table.insert(rows, row)
++		buy.Activated:Connect(function()
++			if row.Pending or table.find(UiKit.ownedVehicles(player), row.VehicleId) then
++				return
++			end
++			row.Pending = true
++			buy.Text = "Buying..."
++			message.Text = ""
++			task.spawn(function()
++				local ok, result, err = pcall(function()
++					return Remotes.getFunction("RequestPurchaseVehicle"):InvokeServer(row.VehicleId)
++				end)
++				row.Pending = false
++				if ok and result == true then
++					message.TextColor3 = Color3.fromRGB(120, 255, 140)
++					message.Text = `Bought the {stats.DisplayName}! Open the garage (Spawn Car) to drive it.`
++				else
++					local code = if ok then tostring(err) else "NetworkError"
++					message.TextColor3 = Color3.fromRGB(255, 120, 120)
++					if code == "InsufficientFunds" then
++						local cash = player:GetAttribute(PlayerAttributes.Cash)
++						local short = if type(cash) == "number" then row.Price - cash else row.Price
++						message.Text = `Not enough cash: you need {UiKit.money(short)} more.`
++					else
++						message.Text = RESULT_TEXT[code] or "Purchase failed. Nothing was charged."
++					end
++				end
++				refresh()
++			end)
++		end)
++	end
++	window.Size = UDim2.fromOffset(340, 52 + #rows * 72 + 52)
++	refresh()
++	player:GetAttributeChangedSignal(PlayerAttributes.Cash):Connect(refresh)
++	player:GetAttributeChangedSignal(PlayerAttributes.OwnedVehicles):Connect(refresh)
++
++	-- Open from the showroom prompt; close when walking away from the desk.
++	task.spawn(function()
++		local city = Workspace:WaitForChild("City", 30)
++		local dealership = city and city:WaitForChild("Dealership", 30)
++		local desk = dealership and dealership:WaitForChild("DealerDesk", 30)
++		local prompt = desk and desk:FindFirstChild("ShopPrompt", true)
++		if not prompt or not prompt:IsA("ProximityPrompt") then
++			return
++		end
++		prompt.Triggered:Connect(function()
++			message.Text = ""
++			refresh()
++			window.Visible = true
++		end)
++		RunService.Heartbeat:Connect(function()
++			if not window.Visible then
++				return
++			end
++			local character = player.Character
++			local root = character and character:FindFirstChild("HumanoidRootPart")
++			if not root or not root:IsA("BasePart") or (root.Position - (desk :: BasePart).Position).Magnitude > DealershipConfig.InteractDistance + 10 then
++				window.Visible = false
++			end
++		end)
++	end)
++end
++
++return DealershipController

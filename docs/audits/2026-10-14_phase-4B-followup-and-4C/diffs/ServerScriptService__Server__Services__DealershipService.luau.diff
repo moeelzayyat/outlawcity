@@ -1,0 +1,83 @@
+diff --git a/src/ServerScriptService/Server/Services/DealershipService.luau b/src/ServerScriptService/Server/Services/DealershipService.luau
+new file mode 100644
+index 0000000..2976430
+--- /dev/null
++++ b/src/ServerScriptService/Server/Services/DealershipService.luau
+@@ -0,0 +1,77 @@
++--!strict
++-- Server authority for the dealership (Phase 4C). The client's shop window only asks
++-- RequestPurchaseVehicle(vehicleId); this service checks everything on the server:
++-- known catalogue car (price from DealershipConfig, never the client), one request at a time
++-- per player plus a rate limit, alive, not jailed, standing at the sales desk, and then
++-- EconomyService.purchaseVehicle takes the price and records ownership in one step with a
++-- fresh server transaction id. Owning the car already refuses a second charge.
++local Players = game:GetService("Players")
++local ReplicatedStorage = game:GetService("ReplicatedStorage")
++
++local Shared = ReplicatedStorage.Shared
++local Types = require(Shared.Types)
++local Remotes = require(Shared.Net.Remotes)
++local DealershipConfig = require(Shared.Config.DealershipConfig)
++local EconomyConfig = require(Shared.Config.EconomyConfig)
++local RateLimiter = require(script.Parent.Parent.Util.RateLimiter)
++local WorldService = require(script.Parent.WorldService)
++local JailService = require(script.Parent.JailService)
++local EconomyService = require(script.Parent.EconomyService)
++
++local DealershipService = {}
++
++local desk: BasePart? = nil
++local limiter = RateLimiter.new(DealershipConfig.RequestInterval)
++local inFlight: { [Player]: boolean } = {}
++
++local function purchase(player: Player, vehicleId: unknown): (boolean, Types.PurchaseError?)
++	if typeof(vehicleId) ~= "string" or #vehicleId == 0 or #vehicleId > EconomyConfig.VehicleIdMaxLength then
++		return false, "BadRequest"
++	end
++	local price = DealershipConfig.priceOf(vehicleId)
++	if not price then
++		return false, "NotForSale"
++	end
++	if inFlight[player] then
++		return false, "Busy"
++	end
++	if not limiter:tryConsume(player.UserId) then
++		return false, "Cooldown"
++	end
++	local character = player.Character
++	local humanoid = character and character:FindFirstChildOfClass("Humanoid")
++	local root = character and character:FindFirstChild("HumanoidRootPart")
++	if not humanoid or humanoid.Health <= 0 or not root or not root:IsA("BasePart") then
++		return false, "NotAlive"
++	end
++	if JailService.isJailed(player) then
++		return false, "Jailed"
++	end
++	if not desk or (root.Position - desk.Position).Magnitude > DealershipConfig.InteractDistance + DealershipConfig.DistanceSlack then
++		return false, "TooFar"
++	end
++	inFlight[player] = true
++	local ok, err = EconomyService.purchaseVehicle(player, vehicleId, price, EconomyService.newTransactionId("buy:" .. vehicleId))
++	inFlight[player] = nil
++	return ok, err
++end
++
++function DealershipService.init()
++	local folder = WorldService.getDealership()
++	local part = folder and folder:FindFirstChild("DealerDesk")
++	if part and part:IsA("BasePart") then
++		desk = part
++	else
++		warn("[Dealership] no City.Dealership desk; purchases disabled")
++	end
++	Remotes.getFunction("RequestPurchaseVehicle").OnServerInvoke = purchase
++end
++
++function DealershipService.start()
++	Players.PlayerRemoving:Connect(function(player)
++		inFlight[player] = nil
++		limiter:reset(player.UserId)
++	end)
++end
++
++return DealershipService

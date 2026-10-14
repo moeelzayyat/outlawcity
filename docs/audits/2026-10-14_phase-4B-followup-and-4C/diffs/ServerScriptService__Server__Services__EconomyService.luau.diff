@@ -1,0 +1,235 @@
+diff --git a/src/ServerScriptService/Server/Services/EconomyService.luau b/src/ServerScriptService/Server/Services/EconomyService.luau
+index fb2a44e..51bf17d 100644
+--- a/src/ServerScriptService/Server/Services/EconomyService.luau
++++ b/src/ServerScriptService/Server/Services/EconomyService.luau
+@@ -8,6 +8,9 @@
+ --    transaction ids, insufficient funds). There is no client remote that changes cash.
+ --  * Autosave every AutosaveInterval for changed profiles; save + release on leave and on
+ --    server shutdown.
++--  * If the save on leave fails, the profile is kept as an "orphan" and its save retried in
++--    the background (and at shutdown), so cash already earned isn't silently dropped. A
++--    player who rejoins this server before it saves gets that newer profile back.
+ -- Future systems (robbery rewards, vehicle purchases) call grant/deduct with their own
+ -- unique transaction ids, e.g. "robbery:<serverJob>:<n>", so retries can't pay twice.
+ local HttpService = game:GetService("HttpService")
+@@ -36,6 +39,8 @@ type Session = {
+ }
+ 
+ local sessions: { [Player]: Session } = {}
++type Orphan = { Name: string, Profile: Types.Profile, Since: number }
++local orphans: { [string]: Orphan } = {} -- key -> profile whose save on leave failed
+ local store: any
+ -- A Studio playtest has no JobId; give each server a unique lock id either way.
+ local sessionId = if game.JobId ~= "" then game.JobId else "studio-" .. HttpService:GenerateGUID(false)
+@@ -47,6 +52,9 @@ end
+ local function publish(player: Player, session: Session)
+ 	player:SetAttribute(PlayerAttributes.CashStatus, session.Status)
+ 	player:SetAttribute(PlayerAttributes.Cash, if session.Profile then session.Profile.Cash else nil)
++	local owned = if session.Profile then table.clone(session.Profile.OwnedVehicles) else table.clone(EconomyConfig.StarterVehicles)
++	table.sort(owned)
++	player:SetAttribute(PlayerAttributes.OwnedVehicles, table.concat(owned, ","))
+ end
+ 
+ local function keyFor(player: Player): string
+@@ -92,25 +100,54 @@ local function loadWithRecovery(player: Player, session: Session)
+ 	end
+ end
+ 
+-local function save(player: Player, session: Session, release: boolean): boolean
+-	if session.Status ~= "Loaded" or not session.Profile then
+-		return false -- never write for a profile we didn't load
+-	end
+-	for attempt = 1, EconomyConfig.SaveAttempts do
+-		local ok, err, detail = ProfileStore.save(store, session.Key, sessionId, session.Profile, os.time(), release)
++-- Returns (saved, lockLost).
++local function saveProfile(name: string, key: string, profile: Types.Profile, release: boolean, attempts: number): (boolean, boolean)
++	for attempt = 1, attempts do
++		local ok, err, detail = ProfileStore.save(store, key, sessionId, profile, os.time(), release)
+ 		if ok then
+-			session.Dirty = false
+-			return true
++			return true, false
+ 		end
+-		log(`{player.Name}: save attempt {attempt} failed ({err}{if detail then ": " .. detail else ""})`)
++		log(`{name}: save attempt {attempt} failed ({err}{if detail then ": " .. detail else ""})`)
+ 		if err == "LockLost" then
+-			return false
++			return false, true
+ 		end
+-		if attempt < EconomyConfig.SaveAttempts then
++		if attempt < attempts then
+ 			task.wait(EconomyConfig.RetryBaseDelay * 2 ^ (attempt - 1))
+ 		end
+ 	end
+-	return false
++	return false, false
++end
++
++local function save(player: Player, session: Session, release: boolean): boolean
++	if session.Status ~= "Loaded" or not session.Profile then
++		return false -- never write for a profile we didn't load
++	end
++	local ok = saveProfile(player.Name, session.Key, session.Profile :: Types.Profile, release, EconomyConfig.SaveAttempts)
++	if ok then
++		session.Dirty = false
++	end
++	return ok
++end
++
++-- Background retries for profiles whose save on leave failed.
++local function retryOrphan(key: string, orphan: Orphan)
++	while orphans[key] == orphan do
++		task.wait(EconomyConfig.OrphanRetryInterval)
++		if orphans[key] ~= orphan then
++			return -- the player came back and took the profile over
++		end
++		local ok, lockLost = saveProfile(orphan.Name, key, orphan.Profile, true, 1)
++		if ok then
++			orphans[key] = nil
++			log(`{orphan.Name}: saved after leaving (cash={orphan.Profile.Cash})`)
++		elseif lockLost then
++			orphans[key] = nil
++			warn(`[Economy] {orphan.Name}: another server owns this profile now; unsaved changes dropped (cash={orphan.Profile.Cash})`)
++		elseif os.clock() - orphan.Since > EconomyConfig.OrphanRetryLimit then
++			orphans[key] = nil
++			warn(`[Economy] {orphan.Name}: gave up saving after {EconomyConfig.OrphanRetryLimit}s; unsaved cash={orphan.Profile.Cash}`)
++		end
++	end
+ end
+ 
+ local function change(player: Player, kind: "grant" | "deduct", amount: any, txId: any, reason: string): (boolean, Types.EconomyError?)
+@@ -162,6 +199,43 @@ function EconomyService.getStatus(player: Player): string
+ 	return if session then session.Status else "Unavailable"
+ end
+ 
++-- Starter vehicles are always allowed (even while data is loading or unavailable); anything
++-- else needs a loaded profile that owns it.
++function EconomyService.ownsVehicle(player: Player, vehicleId: string): boolean
++	if table.find(EconomyConfig.StarterVehicles, vehicleId) then
++		return true
++	end
++	local session = sessions[player]
++	return session ~= nil and session.Status == "Loaded" and session.Profile ~= nil and EconomyRules.ownsVehicle(session.Profile, vehicleId)
++end
++
++-- Server-only purchase: price and ownership change together on the profile, then it is saved
++-- right away (and again by autosave/leave if that save fails; both always travel together).
++function EconomyService.purchaseVehicle(player: Player, vehicleId: string, price: number, txId: string): (boolean, Types.EconomyError?)
++	local session = sessions[player]
++	if not session or player.Parent ~= Players then
++		return false, "NotInGame"
++	end
++	if session.Status ~= "Loaded" or not session.Profile then
++		return false, "DataNotLoaded"
++	end
++	local profile = session.Profile :: Types.Profile
++	local ok, err = EconomyRules.purchaseVehicle(profile, vehicleId, price, txId, EconomyConfig)
++	if not ok then
++		log(`{player.Name}: purchase {tostring(vehicleId)} for {tostring(price)} refused: {err} (tx {tostring(txId)})`)
++		return false, err
++	end
++	session.Dirty = true
++	publish(player, session)
++	log(`{player.Name}: bought {vehicleId} for {price} (tx {txId}) -> cash {profile.Cash}`)
++	task.spawn(function()
++		if save(player, session, false) then
++			log(`{player.Name}: purchase saved`)
++		end
++	end)
++	return true, nil
++end
++
+ -- Unique transaction id helper for server systems.
+ function EconomyService.newTransactionId(prefix: string): string
+ 	return `{prefix}:{HttpService:GenerateGUID(false)}`
+@@ -174,9 +248,57 @@ function EconomyService.saveNowForTesting(player: Player): boolean
+ 	return session ~= nil and save(player, session, false)
+ end
+ 
++-- Studio test hook: pretend this player's cash data just became unavailable (true) or came
++-- back (false). The in-memory profile is kept, but no grants, deductions or saves happen.
++function EconomyService.setUnavailableForTesting(player: Player, unavailable: boolean): boolean
++	assert(RunService:IsStudio(), "Studio-only")
++	local session = sessions[player]
++	if not session or not session.Profile then
++		return false
++	end
++	session.Status = if unavailable then "Unavailable" else "Loaded"
++	publish(player, session)
++	log(`{player.Name}: Studio test: data {if unavailable then "unavailable" else "available again"}`)
++	return true
++end
++
++-- Studio test hook: rewrites this player's stored record as a version-1 (cash-only) profile
++-- and stops saving this session, so the next join exercises the migration for real.
++function EconomyService.writeLegacyRecordForTesting(player: Player): boolean
++	assert(RunService:IsStudio(), "Studio-only")
++	local session = sessions[player]
++	if not session or session.Status ~= "Loaded" or not session.Profile then
++		return false
++	end
++	local profile = session.Profile :: Types.Profile
++	local ok = pcall(function()
++		store:UpdateAsync(session.Key, function()
++			return { Profile = { Version = 1, Cash = profile.Cash, RecentTransactions = table.clone(profile.RecentTransactions) } }
++		end)
++	end)
++	if ok then
++		session.Status = "Unavailable" -- nothing more is saved this session
++		publish(player, session)
++		log(`{player.Name}: Studio test: stored record rewritten as version 1 (cash={profile.Cash}); rejoin to migrate`)
++	end
++	return ok
++end
++
+ local function onPlayerAdded(player: Player)
+ 	local session: Session = { Status = "Loading", Profile = nil, Dirty = false, Key = keyFor(player), Leaving = false }
+ 	sessions[player] = session
++	local orphan = orphans[session.Key]
++	if orphan then
++		-- Rejoined this server before its unsaved profile was written: that copy is the newest
++		-- data and this server still holds the lock, so use it instead of the stored record.
++		orphans[session.Key] = nil
++		session.Profile = orphan.Profile
++		session.Status = "Loaded"
++		session.Dirty = true
++		publish(player, session)
++		log(`{player.Name}: rejoined; using the unsaved profile kept on this server (cash={orphan.Profile.Cash})`)
++		return
++	end
+ 	publish(player, session)
+ 	task.spawn(loadWithRecovery, player, session)
+ end
+@@ -188,8 +310,14 @@ local function onPlayerRemoving(player: Player)
+ 	end
+ 	session.Leaving = true
+ 	if session.Status == "Loaded" then
++		local profile = session.Profile :: Types.Profile
+ 		if save(player, session, true) then
+-			log(`{player.Name}: saved on leave (cash={(session.Profile :: Types.Profile).Cash})`)
++			log(`{player.Name}: saved on leave (cash={profile.Cash})`)
++		elseif sessions[player] == session then
++			local orphan: Orphan = { Name = player.Name, Profile = profile, Since = os.clock() }
++			orphans[session.Key] = orphan
++			warn(`[Economy] {player.Name}: save on leave failed; keeping the profile and retrying (cash={profile.Cash})`)
++			task.spawn(retryOrphan, session.Key, orphan)
+ 		end
+ 	else
+ 		log(`{player.Name}: left with data {session.Status}; nothing saved (protects stored progress)`)
+@@ -222,6 +350,16 @@ function EconomyService.start()
+ 				pending -= 1
+ 			end)
+ 		end
++		for key, orphan in orphans do
++			pending += 1
++			task.spawn(function()
++				if saveProfile(orphan.Name, key, orphan.Profile, true, 1) then
++					orphans[key] = nil
++					log(`{orphan.Name}: saved at shutdown (cash={orphan.Profile.Cash})`)
++				end
++				pending -= 1
++			end)
++		end
+ 		local started = os.clock()
+ 		while pending > 0 and os.clock() - started < 25 do
+ 			task.wait(0.1)

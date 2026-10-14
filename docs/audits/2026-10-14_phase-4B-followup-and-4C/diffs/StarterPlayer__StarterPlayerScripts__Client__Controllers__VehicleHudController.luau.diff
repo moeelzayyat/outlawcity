@@ -1,0 +1,29 @@
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleHudController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleHudController.luau
+index be3e32f..53c248b 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleHudController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/VehicleHudController.luau
+@@ -11,6 +11,7 @@ local VehicleConfig = require(Shared.Config.VehicleConfig)
+ local VehicleMath = require(Shared.Vehicle.VehicleMath)
+ local VehicleController = require(script.Parent.VehicleController)
+ local VehicleInputController = require(script.Parent.VehicleInputController)
++local GarageController = require(script.Parent.GarageController)
+ 
+ local VehicleHudController = {}
+ 
+@@ -23,6 +24,7 @@ local ERROR_TEXT: { [string]: string } = {
+ 	BadRequest = "Spawn request was rejected.",
+ 	NetworkError = "Could not reach the server.",
+ 	Jailed = "You can't spawn a car while in jail.",
++	NotOwned = "You don't own that car. Buy it at the dealership.",
+ }
+ 
+ local function corner(parent: Instance, radius: number)
+@@ -107,7 +109,7 @@ function VehicleHudController.init()
+ 	spawnButton.Parent = gui
+ 	corner(spawnButton, 10)
+ 	spawnButton.Activated:Connect(function()
+-		VehicleController.requestSpawn(VehicleConfig.DefaultVehicleId)
++		GarageController.toggle() -- choose which owned car to spawn
+ 	end)
+ 
+ 	local toast = label(gui, "Toast", UDim2.fromOffset(380, 36), UDim2.new(0.5, 0, 0, 140), Vector2.new(0.5, 0), 16)
