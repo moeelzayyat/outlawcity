@@ -1,0 +1,306 @@
+diff --git a/src/ReplicatedStorage/Shared/Atmosphere/AtmosphereRules.luau b/src/ReplicatedStorage/Shared/Atmosphere/AtmosphereRules.luau
+index e5ce662..08ef56b 100644
+--- a/src/ReplicatedStorage/Shared/Atmosphere/AtmosphereRules.luau
++++ b/src/ReplicatedStorage/Shared/Atmosphere/AtmosphereRules.luau
+@@ -10,6 +10,17 @@ function AtmosphereRules.flashPhase(t: number, interval: number): number
+ 	return if math.floor(t / interval) % 2 == 0 then 1 else 2
+ end
+ 
++-- Which live bar is lit for a phase: none without bars; a single bar blinks (lit in phase 1,
++-- dark in phase 2); with two or more the phase picks the bar.
++function AtmosphereRules.litIndex(phase: number, barCount: number): number?
++	if barCount <= 0 then
++		return nil
++	elseif barCount == 1 then
++		return if phase == 1 then 1 else nil
++	end
++	return math.clamp(phase, 1, barCount)
++end
++
+ -- The siren may play only with its flag on AND an approved sound id set.
+ function AtmosphereRules.sirenEnabled(flags: { Siren: boolean }, soundId: string?): boolean
+ 	return flags.Siren == true and type(soundId) == "string" and soundId:match("^rbxassetid://%d+$") ~= nil
+diff --git a/src/ServerStorage/Tests/AtmosphereRules.spec.luau b/src/ServerStorage/Tests/AtmosphereRules.spec.luau
+index c923fbe..018024b 100644
+--- a/src/ServerStorage/Tests/AtmosphereRules.spec.luau
++++ b/src/ServerStorage/Tests/AtmosphereRules.spec.luau
+@@ -41,6 +41,15 @@ return {
+ 		Assert.equal(AtmosphereRules.flashPhase(1, 0), 1, "bad interval never errors")
+ 		Assert.equal(AtmosphereRules.flashPhase(0 / 0, 0.25), 1)
+ 	end,
++	["zero, one or two live bars are handled safely"] = function()
++		Assert.equal(AtmosphereRules.litIndex(1, 0), nil, "no bars: nothing lit")
++		Assert.equal(AtmosphereRules.litIndex(2, 0), nil)
++		Assert.equal(AtmosphereRules.litIndex(1, 1), 1, "one bar blinks")
++		Assert.equal(AtmosphereRules.litIndex(2, 1), nil)
++		Assert.equal(AtmosphereRules.litIndex(1, 2), 1)
++		Assert.equal(AtmosphereRules.litIndex(2, 2), 2)
++		Assert.equal(AtmosphereRules.litIndex(2, 3), 2, "never past the live list")
++	end,
+ 	["only the NPC police unit is decorated"] = function()
+ 		Assert.equal(AtmosphereRules.isPoliceUnit("PoliceUnit", "NpcVehicles", C), true)
+ 		Assert.equal(AtmosphereRules.isPoliceUnit("PoliceUnit", "Vehicles", C), false, "never a player's car")
+diff --git a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/AtmosphereController.luau b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/AtmosphereController.luau
+index 419c69a..b75f50f 100644
+--- a/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/AtmosphereController.luau
++++ b/src/StarterPlayer/StarterPlayerScripts/Client/Controllers/AtmosphereController.luau
+@@ -2,11 +2,16 @@
+ -- City atmosphere Batch 1, client-side presentation only (docs/CITY_ATMOSPHERE_AUDIO_AUDIT.md).
+ --  * Lighting (P-A): applies the AtmosphereConfig preset to this client's Lighting. The place's
+ --    own values are untouched, so turning the flag off restores the old look.
+---  * PoliceLights (P-C): while the NPC police unit exists, its two LightBar parts flash red/blue
+---    and one local PointLight flashes with them. Everything created here is local and removed
+---    when the unit goes away. The unit itself (server-owned, its AI and pursuit) is not touched.
++--  * PoliceLights (P-C): while the NPC police unit exists, its LightBar parts flash red/blue and
++--    one local PointLight flashes with them. Everything created here is local and removed when
++--    the unit goes away. The unit itself (server-owned, its AI and pursuit) is not touched.
++--    Bars can stream out and back in on their own while the unit stays: the live bar list is
++--    rebuilt from what is actually inside the model, a departing bar gets its local modifier
++--    reset and never stays a flashing target, and the single light moves (or waits unparented)
++--    instead of being duplicated.
+ --  * Siren (P-C): only with its flag on and an owner-approved sound id.
+ local Lighting = game:GetService("Lighting")
++local Players = game:GetService("Players")
+ local ReplicatedStorage = game:GetService("ReplicatedStorage")
+ local RunService = game:GetService("RunService")
+ local Workspace = game:GetService("Workspace")
+@@ -19,8 +24,15 @@ local AtmosphereController = {}
+ 
+ local config = AtmosphereConfig
+ local LOCAL_TAG = "OutlawAtmosphere" -- name of every instance this controller creates
++local DEBUG_ATTRIBUTE = "AtmosphereDebug" -- Studio only: live counts for tests
+ 
+-type Decorated = { Model: Model, Bars: { BasePart }, Light: PointLight?, Siren: Sound?, Connections: { RBXScriptConnection } }
++type Decorated = {
++	Model: Model,
++	Bars: { BasePart },
++	Light: PointLight?,
++	Siren: Sound?,
++	Connections: { RBXScriptConnection },
++}
+ local decorated: { [Model]: Decorated } = {}
+ 
+ local function applyLighting()
+@@ -48,24 +60,102 @@ local function applyLighting()
+ 	(correction :: ColorCorrectionEffect).Saturation = preset.ColorCorrectionSaturation
+ end
+ 
+-local function lightBars(model: Model): { BasePart }
++local function publishDebug()
++	if not RunService:IsStudio() then
++		return
++	end
++	local units, bars, lights, connections, sirens = 0, 0, 0, 0, 0
++	for _, entry in decorated do
++		units += 1
++		bars += #entry.Bars
++		lights += if entry.Light and entry.Light.Parent then 1 else 0
++		connections += #entry.Connections
++		sirens += if entry.Siren then 1 else 0
++	end
++	local player = Players.LocalPlayer
++	if player then
++		player:SetAttribute(DEBUG_ATTRIBUTE, `units={units} bars={bars} lights={lights} connections={connections} sirens={sirens}`)
++	end
++end
++
++-- The LightBar parts currently inside the model (optionally ignoring one that is leaving), in a
++-- stable left-to-right order so the halves alternate.
++local function liveBars(model: Model, leaving: Instance?): { BasePart }
+ 	local bars = {}
+ 	for _, d in model:GetDescendants() do
+-		if d.Name == "LightBar" and d:IsA("BasePart") then
++		if d ~= leaving and d.Name == "LightBar" and d:IsA("BasePart") then
+ 			table.insert(bars, d)
+ 		end
+ 	end
+-	-- Stable order (left, right) so the two halves alternate.
++	local chassis = model.PrimaryPart
+ 	table.sort(bars, function(a, b)
+-		local chassis = model.PrimaryPart
+-		if not chassis then
+-			return a:GetFullName() < b:GetFullName()
++		if chassis and chassis ~= leaving then
++			return chassis.CFrame:PointToObjectSpace(a.Position).X < chassis.CFrame:PointToObjectSpace(b.Position).X
+ 		end
+-		return chassis.CFrame:PointToObjectSpace(a.Position).X < chassis.CFrame:PointToObjectSpace(b.Position).X
++		return a:GetFullName() < b:GetFullName()
+ 	end)
+ 	return bars
+ end
+ 
++-- Keeps the one local light attached to a live bar, unparented while there is none, and makes
++-- a new one only if the old one was destroyed (it is never duplicated).
++local function placeLight(entry: Decorated)
++	if not config.Flags.PoliceLights then
++		return
++	end
++	local target = entry.Bars[1]
++	local light = entry.Light
++	if not target then
++		if light then
++			light.Parent = nil
++		end
++		return
++	end
++	if not light then
++		local created = Instance.new("PointLight")
++		created.Name = LOCAL_TAG
++		created.Range = config.PoliceLightRange
++		created.Brightness = config.PoliceLightBrightness
++		created.Shadows = false
++		created.Destroying:Connect(function()
++			if entry.Light == created then
++				entry.Light = nil
++			end
++		end)
++		entry.Light = created
++		light = created
++	end
++	if light and not table.find(entry.Bars, light.Parent :: any) then
++		light.Parent = target
++	end
++end
++
++local function rebuild(entry: Decorated, leaving: Instance?)
++	entry.Bars = liveBars(entry.Model, leaving)
++	placeLight(entry)
++	local chassis = entry.Model.PrimaryPart
++	if chassis == leaving then
++		chassis = nil
++	end
++	if AtmosphereRules.sirenEnabled(config.Flags, config.SirenSoundId) then
++		if entry.Siren and chassis and entry.Siren.Parent ~= chassis then
++			entry.Siren.Parent = chassis
++		elseif not entry.Siren and chassis then
++			local siren = Instance.new("Sound")
++			siren.Name = LOCAL_TAG
++			siren.SoundId = config.SirenSoundId :: string
++			siren.Looped = true
++			siren.Volume = config.SirenVolume
++			siren.RollOffMode = Enum.RollOffMode.InverseTapered
++			siren.RollOffMaxDistance = config.SirenRollOffMaxDistance
++			siren.Parent = chassis
++			siren:Play()
++			entry.Siren = siren
++		end
++	end
++	publishDebug()
++end
++
+ local function undecorate(model: Model)
+ 	local entry = decorated[model]
+ 	if not entry then
+@@ -75,18 +165,21 @@ local function undecorate(model: Model)
+ 	for _, connection in entry.Connections do
+ 		connection:Disconnect()
+ 	end
++	table.clear(entry.Connections)
+ 	if entry.Light then
+ 		entry.Light:Destroy()
++		entry.Light = nil
+ 	end
+ 	if entry.Siren then
+ 		entry.Siren:Stop()
+ 		entry.Siren:Destroy()
++		entry.Siren = nil
+ 	end
+ 	for _, bar in entry.Bars do
+-		if bar.Parent then
+-			bar.LocalTransparencyModifier = 0
+-		end
++		bar.LocalTransparencyModifier = 0
+ 	end
++	table.clear(entry.Bars)
++	publishDebug()
+ end
+ 
+ local function decorate(model: Model)
+@@ -95,36 +188,25 @@ local function decorate(model: Model)
+ 	end
+ 	local entry: Decorated = { Model = model, Bars = {}, Light = nil, Siren = nil, Connections = {} }
+ 	decorated[model] = entry
+-	local function refreshBars()
+-		entry.Bars = lightBars(model)
+-		if config.Flags.PoliceLights and not entry.Light and #entry.Bars > 0 then
+-			local light = Instance.new("PointLight")
+-			light.Name = LOCAL_TAG
+-			light.Range = config.PoliceLightRange
+-			light.Brightness = config.PoliceLightBrightness
+-			light.Shadows = false
+-			light.Parent = entry.Bars[1]
+-			entry.Light = light
+-		end
+-		local chassis = model.PrimaryPart
+-		if AtmosphereRules.sirenEnabled(config.Flags, config.SirenSoundId) and not entry.Siren and chassis then
+-			local siren = Instance.new("Sound")
+-			siren.Name = LOCAL_TAG
+-			siren.SoundId = config.SirenSoundId :: string
+-			siren.Looped = true
+-			siren.Volume = config.SirenVolume
+-			siren.RollOffMode = Enum.RollOffMode.InverseTapered
+-			siren.RollOffMaxDistance = config.SirenRollOffMaxDistance
+-			siren.Parent = chassis
+-			siren:Play()
+-			entry.Siren = siren
+-		end
+-	end
+-	refreshBars()
+-	-- With streaming, parts can arrive after the model; pick them up when they do.
++	rebuild(entry, nil)
++	-- With streaming, parts arrive and leave on their own while the model stays.
+ 	table.insert(entry.Connections, model.DescendantAdded:Connect(function(d)
+ 		if d.Name == "LightBar" or d == model.PrimaryPart then
+-			refreshBars()
++			rebuild(entry, nil)
++		end
++	end))
++	table.insert(entry.Connections, model.DescendantRemoving:Connect(function(d)
++		if d.Name == "LightBar" and d:IsA("BasePart") then
++			d.LocalTransparencyModifier = 0 -- the departing bar keeps no local dimming
++			if entry.Light and entry.Light.Parent == d then
++				entry.Light.Parent = nil -- keep the light, don't let it leave with the bar
++			end
++			rebuild(entry, d)
++		elseif d == model.PrimaryPart then
++			if entry.Siren and entry.Siren.Parent == d then
++				entry.Siren.Parent = nil
++			end
++			rebuild(entry, d)
+ 		end
+ 	end))
+ 	table.insert(entry.Connections, model.AncestryChanged:Connect(function()
+@@ -132,6 +214,7 @@ local function decorate(model: Model)
+ 			undecorate(model)
+ 		end
+ 	end))
++	publishDebug()
+ end
+ 
+ local function onFlashStep()
+@@ -144,14 +227,19 @@ local function onFlashStep()
+ 			undecorate(model)
+ 			continue
+ 		end
++		local litIndex = AtmosphereRules.litIndex(phase, #entry.Bars)
+ 		for index, bar in entry.Bars do
+-			bar.LocalTransparencyModifier = if index == phase then 0 else config.DimTransparency
++			bar.LocalTransparencyModifier = if index == litIndex then 0 else config.DimTransparency
+ 		end
+-		local lit = entry.Bars[phase]
+-		if entry.Light and lit then
+-			entry.Light.Color = lit.Color
+-			if entry.Light.Parent ~= lit then
+-				entry.Light.Parent = lit
++		local light = entry.Light
++		if light then
++			local lit = if litIndex then entry.Bars[litIndex] else nil
++			light.Enabled = lit ~= nil
++			if lit then
++				light.Color = lit.Color
++				if light.Parent ~= lit then
++					light.Parent = lit
++				end
+ 			end
+ 		end
+ 	end

@@ -1,0 +1,20 @@
+diff --git a/src/ServerStorage/Tests/AtmosphereRules.spec.luau b/src/ServerStorage/Tests/AtmosphereRules.spec.luau
+index c923fbe..018024b 100644
+--- a/src/ServerStorage/Tests/AtmosphereRules.spec.luau
++++ b/src/ServerStorage/Tests/AtmosphereRules.spec.luau
+@@ -41,6 +41,15 @@ return {
+ 		Assert.equal(AtmosphereRules.flashPhase(1, 0), 1, "bad interval never errors")
+ 		Assert.equal(AtmosphereRules.flashPhase(0 / 0, 0.25), 1)
+ 	end,
++	["zero, one or two live bars are handled safely"] = function()
++		Assert.equal(AtmosphereRules.litIndex(1, 0), nil, "no bars: nothing lit")
++		Assert.equal(AtmosphereRules.litIndex(2, 0), nil)
++		Assert.equal(AtmosphereRules.litIndex(1, 1), 1, "one bar blinks")
++		Assert.equal(AtmosphereRules.litIndex(2, 1), nil)
++		Assert.equal(AtmosphereRules.litIndex(1, 2), 1)
++		Assert.equal(AtmosphereRules.litIndex(2, 2), 2)
++		Assert.equal(AtmosphereRules.litIndex(2, 3), 2, "never past the live list")
++	end,
+ 	["only the NPC police unit is decorated"] = function()
+ 		Assert.equal(AtmosphereRules.isPoliceUnit("PoliceUnit", "NpcVehicles", C), true)
+ 		Assert.equal(AtmosphereRules.isPoliceUnit("PoliceUnit", "Vehicles", C), false, "never a player's car")

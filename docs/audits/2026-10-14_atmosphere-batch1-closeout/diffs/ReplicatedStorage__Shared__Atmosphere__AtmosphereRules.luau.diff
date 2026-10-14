@@ -1,0 +1,22 @@
+diff --git a/src/ReplicatedStorage/Shared/Atmosphere/AtmosphereRules.luau b/src/ReplicatedStorage/Shared/Atmosphere/AtmosphereRules.luau
+index e5ce662..08ef56b 100644
+--- a/src/ReplicatedStorage/Shared/Atmosphere/AtmosphereRules.luau
++++ b/src/ReplicatedStorage/Shared/Atmosphere/AtmosphereRules.luau
+@@ -10,6 +10,17 @@ function AtmosphereRules.flashPhase(t: number, interval: number): number
+ 	return if math.floor(t / interval) % 2 == 0 then 1 else 2
+ end
+ 
++-- Which live bar is lit for a phase: none without bars; a single bar blinks (lit in phase 1,
++-- dark in phase 2); with two or more the phase picks the bar.
++function AtmosphereRules.litIndex(phase: number, barCount: number): number?
++	if barCount <= 0 then
++		return nil
++	elseif barCount == 1 then
++		return if phase == 1 then 1 else nil
++	end
++	return math.clamp(phase, 1, barCount)
++end
++
+ -- The siren may play only with its flag on AND an approved sound id set.
+ function AtmosphereRules.sirenEnabled(flags: { Siren: boolean }, soundId: string?): boolean
+ 	return flags.Siren == true and type(soundId) == "string" and soundId:match("^rbxassetid://%d+$") ~= nil
