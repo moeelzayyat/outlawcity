@@ -169,6 +169,59 @@ function CityLayout.jail(): { Parts: { PartSpec }, Slots: { CFrame } }
 	return { Parts = parts, Slots = slots }
 end
 
+-- Convenience store (Phase 4B): one robbable building on the east edge of block (-200, 0),
+-- facing the x = -100 road, on a site checked free of buildings. Depth runs along X, the
+-- open front faces +X. The holdout area is the interior; the register sits at the back.
+CityLayout.STORE_ID = "Store1"
+CityLayout.STORE_CENTER = Vector3.new(-132, 0, -60)
+CityLayout.STORE_DEPTH = 24 -- along X
+CityLayout.STORE_WIDTH = 30 -- along Z
+CityLayout.STORE_HEIGHT = 12
+
+export type StoreSpec = {
+	Id: string,
+	Parts: { PartSpec },
+	Register: CFrame, -- top centre of the counter, where the prompt lives
+	Area: { Center: Vector3, Size: Vector3 }, -- holdout box (interior plus the doorway)
+	Sign: { Center: Vector3, Size: Vector3 },
+}
+
+function CityLayout.store(): StoreSpec
+	local c = CityLayout.STORE_CENTER
+	local hx = CityLayout.STORE_DEPTH / 2
+	local hz = CityLayout.STORE_WIDTH / 2
+	local h = CityLayout.STORE_HEIGHT
+	local floorTop = CityLayout.CURB_TOP + 0.2
+	local wallColor = Color3.fromRGB(205, 190, 160)
+	local trim = Color3.fromRGB(40, 120, 70)
+	local parts: { PartSpec } = {}
+	local function add(name: string, x: number, z: number, sizeX: number, sizeZ: number, partTop: number, thickness: number, color: Color3, material: Enum.Material, canCollide: boolean?)
+		table.insert(parts, slab(name, "Store", c.X + x, c.Z + z, sizeX, sizeZ, partTop, thickness, color, material, canCollide ~= false))
+	end
+	add("StoreFloor", 0, 0, 2 * hx, 2 * hz, floorTop, 0.4, Color3.fromRGB(215, 215, 205), Enum.Material.SmoothPlastic)
+	add("StoreRoof", 0, 0, 2 * hx + 2, 2 * hz + 2, floorTop + h + 1, 1, trim, Enum.Material.Concrete)
+	add("StoreWallBack", -hx - 0.5, 0, 1, 2 * hz + 2, floorTop + h, h, wallColor, Enum.Material.Brick)
+	add("StoreWallNorth", 0, -hz - 0.5, 2 * hx, 1, floorTop + h, h, wallColor, Enum.Material.Brick)
+	add("StoreWallSouth", 0, hz + 0.5, 2 * hx, 1, floorTop + h, h, wallColor, Enum.Material.Brick)
+	-- Front: glass panes either side of a 10-stud doorway, and a header above it.
+	local pane = hz - 5
+	add("StoreFrontNorth", hx + 0.5, -hz + pane / 2, 1, pane, floorTop + h, h, Color3.fromRGB(150, 200, 220), Enum.Material.Glass)
+	add("StoreFrontSouth", hx + 0.5, hz - pane / 2, 1, pane, floorTop + h, h, Color3.fromRGB(150, 200, 220), Enum.Material.Glass)
+	add("StoreFrontHeader", hx + 0.5, 0, 1, 10, floorTop + h, 3, wallColor, Enum.Material.Brick)
+	-- Counter with the register, and two shelves.
+	add("StoreCounter", -hx + 5, 0, 3, 10, floorTop + 3.5, 3.5, Color3.fromRGB(120, 80, 50), Enum.Material.Wood)
+	add("StoreRegister", -hx + 5, 2, 1.6, 1.6, floorTop + 4.6, 1.1, Color3.fromRGB(30, 30, 35), Enum.Material.SmoothPlastic)
+	add("StoreShelfNorth", 2, -hz + 4, 10, 2, floorTop + 6, 6, Color3.fromRGB(70, 90, 160), Enum.Material.SmoothPlastic)
+	add("StoreShelfSouth", 2, hz - 4, 10, 2, floorTop + 6, 6, Color3.fromRGB(160, 70, 60), Enum.Material.SmoothPlastic)
+	return {
+		Id = CityLayout.STORE_ID,
+		Parts = parts,
+		Register = CFrame.new(c.X - hx + 5, floorTop + 4.6, c.Z + 2),
+		Area = { Center = Vector3.new(c.X + 0.5, floorTop + h / 2, c.Z), Size = Vector3.new(2 * hx + 3, h + 4, 2 * hz) },
+		Sign = { Center = Vector3.new(c.X + hx + 1.2, floorTop + h + 2.5, c.Z), Size = Vector3.new(0.4, 4, 20) },
+	}
+end
+
 function CityLayout.createBlueprint(): Blueprint
 	local parts: { PartSpec } = {}
 	local spawns: { SpawnSpec } = {}

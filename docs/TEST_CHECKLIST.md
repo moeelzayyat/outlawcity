@@ -135,6 +135,21 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] Dev `SetDataStoreFailure` true -> grant, "Save data now" fails (logged); false -> save succeeds
 - [ ] Set Workspace attribute `SimulateDataStoreFailureOnStart = true`, play: `Unavailable`, "$ offline", grants refused; stop -> "nothing saved"; play again, dev `SetDataStoreFailure` false -> within ~30 s `recovered`, real balance (not 500). **Remove the attribute afterwards.**
 
+## Store robbery (4B, solo; F8 dev panel "Store: clear cooldown")
+- [ ] `RobberyRules.spec` (9) passes
+- [ ] 24/7 MART stands on block (-200, 0) by the x = -100 road; "Rob store" prompt appears at the register
+- [ ] From the plaza (dev `TryRobStore`) -> "No robberies inside a safe zone"; 20 studs from the register -> "Get closer"; while jailed -> rejected; in a car -> "Get out of your car"
+- [ ] Rob: alarm toast, 2★, "ROBBING THE STORE 15s" counts down from the server; stars don't decay while inside
+- [ ] Holdout ends at 15 s -> "ESCAPE THE POLICE" panel; lose the stars -> one "+$2,000" toast; Output shows one `grant 2000 ... tx robbery:<id>`
+- [ ] Busted during holdout or escape -> "busted ... No cash"; cash unchanged
+- [ ] Die or reset during holdout or escape -> "you died. No cash"; later escape pays nothing
+- [ ] Walk out during the holdout -> "you left the store too early"
+- [ ] Prompt again during a robbery -> "already on a robbery"; prompt within 180 s of the last start -> "robbed recently. Try again in Ns"
+- [ ] An ordinary escape (dev stars) after a robbery pays nothing
+- [ ] Client sets its own `Cash` / `RobberyPhase` and fires `OnRobberyNotice` -> server unchanged
+- [ ] Stop/start after a paid robbery -> same balance (`loaded (Existing)`)
+- [ ] Phone (iPhone 7): prompt usable by tap; panel and toasts readable, no overlap with the top row
+
 ## Mobile (Device Simulator, phone landscape)
 - [ ] SAFE ZONE badge visible on iPhone 7 with the stars and the Combat button, no overlap
 - [ ] Combat button, Spawn Car, wanted stars and banners visible, no overlap or clipping on iPhone 7 (666×374) while driving

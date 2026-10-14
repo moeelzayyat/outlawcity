@@ -15,8 +15,13 @@ local Remotes = require(Shared.Net.Remotes)
 local WantedConfig = require(Shared.Config.WantedConfig)
 local WantedRules = require(Shared.Wanted.WantedRules)
 local PlayerAttributes = require(Shared.Player.PlayerAttributes)
+local Signal = require(Shared.Util.Signal)
 
 local WantedService = {}
+
+-- Fired (player, fromStars) when a wanted episode ends by escaping (heat decayed to zero).
+-- Never fired for busts or resets.
+WantedService.Escaped = Signal.new()
 
 local STEP_INTERVAL = 0.25
 
@@ -68,6 +73,7 @@ local function step(dt: number)
 		if result.Escaped then
 			addReputation(player, result.Reputation)
 			notify(player, "Escaped", { FromStars = result.EscapedFromStars, Reputation = result.Reputation })
+			WantedService.Escaped:Fire(player, result.EscapedFromStars)
 		end
 		if state.Heat ~= before or result.EvadingStarted or player:GetAttribute(PlayerAttributes.WantedEvading) ~= state.Evading then
 			publish(player, state)

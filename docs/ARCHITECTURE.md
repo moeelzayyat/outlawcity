@@ -1,6 +1,6 @@
 # OUTLAW CITY — Architecture
 
-Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) in progress. Last updated 2026-10-14.
+Status: Phases 1-3 built and solo-tested (driving, civilian spawning, wanted, combat rules, one NPC police unit, safe zones, monitor-only vehicle validation, short jail); Phase 4A (cash + persistence) approved; Phase 4B (one convenience-store robbery) built and solo-tested, awaiting owner approval. Last updated 2026-10-14.
 
 ## Source of truth and workflow
 
@@ -28,6 +28,8 @@ ReplicatedStorage
     Combat/CombatRules         THE harm gate: canHarm(attacker, victim, context) (unit-tested)
     Combat/CombatStatusRules   pure Peaceful/Combat switching rules (unit-tested)
     Zones/SafeZoneRules        pure safe-zone geometry with exit hysteresis (unit-tested)
+    Config/RobberyConfig       store robbery tuning (hold 15 s, reward 2000, cooldown 180 s, ranges)
+    Robbery/RobberyRules       pure robbery state machine: start checks, holdout, escape, single payout (unit-tested)
     Config/JailConfig          sentence 12 s (clamped 10-15), release-check cadence
     Jail/JailRules             pure sentencing, duplicate guard, release timing, restricted actions, slots (unit-tested)
     Config/EconomyConfig       starting cash 500, caps, DataStore name, retry/lock/autosave timings
@@ -46,6 +48,7 @@ ServerScriptService
     Services/SafeZoneService   4 Hz position check; publishes InSafeZone
     Services/JailService       busts -> jail cell; server-timed release; gates spawn/drive/combat
     Services/EconomyService    THE only place cash changes; DataStore load/save, autosave, failed-load lockout
+    Services/RobberyService    owns store robbery sessions: register prompt, server checks, holdout, escape payout
     Data/ProfileStore          load (atomic lock claim) / save (owner-only) over any UpdateAsync store (unit-tested with a fake)
     Data/DataStoreAdapter      real DataStore ("_Studio" suffix in Studio) + Studio-only failure simulation
     Services/VehicleValidationService  5 Hz monitor-only checks of player vehicles; diagnostics in ServerStorage.Diagnostics
@@ -81,6 +84,7 @@ StarterPlayer.StarterPlayerScripts
     Controllers/CombatStatusController   Peaceful/Combat toggle (top-centre row, left of Spawn Car)
     Controllers/SafeZoneHudController    SAFE ZONE badge under the Combat button (amber while wanted)
     Controllers/JailHudController        IN JAIL panel with countdown from the server's release time
+    Controllers/RobberyHudController     robbery objective panel (countdown / escape) and result toasts
     Controllers/CashHudController        $ balance (server attribute) right of the stars; "$ offline" if data didn't load
     Controllers/DevPanelController       STUDIO ONLY dev panel (F8 toggles); absent without DevRemotes
 
@@ -104,7 +108,7 @@ Workspace
 
 ## Boot order
 
-- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Economy, SafeZone, Jail, Vehicle, VehicleValidation, Wanted, Combat, Police, DevTools) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
+- Server `Main`: `Remotes.createAll()` → `service.init()` for each service in order (World, PlayerState, Spawn, Economy, SafeZone, Jail, Wanted, Robbery, Combat, Police, DevTools, Vehicle, VehicleValidation, the order in `Main`) → `service.start()` for each → sets `Workspace.ServerReady` → in Studio runs unit tests (disable with `Workspace` attribute `RunTestsOnStart = false`).
 - Client `Main`: `VehicleInputController.init()` → `VehicleController.init()` → `VehicleCameraController.init()` → `VehicleHudController.init()` → `WantedHudController.init()`, `DevPanelController.init()` and `CombatStatusController.init()` (all spawned), then wires input action signals.
 - HUD placement: the top-right corner belongs to Roblox's player list; game buttons live in the top-centre row.
 - Dev tools (Phase 3+): Studio-only, created only when `RunService:IsStudio()` is true on the server, so they can never activate in published servers.
@@ -120,12 +124,13 @@ All remotes live in `ReplicatedStorage.Shared.Net.Remotes.Definitions`. Nothing 
 | `RequestExitVehicle` | RemoteEvent | client → server | `()` | 0.5 s cooldown, caller must be in a `DriverSeat` under `Workspace.Vehicles` |
 | `RequestSetCombatStatus` | RemoteFunction | client → server | `(target: "Peaceful" \| "Combat") -> (ok, err: CombatSwitchError?, secondsUntilPeacefulAllowed)` | 1 s per-player rate limit, string ≤ 16 chars, exact status names; Peaceful refused while wanted or during the 30 s combat cooldown |
 | `OnWantedNotice` | RemoteEvent | server → client | `(kind: "Evading" \| "Escaped" \| "Busted", payload: { Stars?, FromStars?, Reputation? })` | server-only sender; the server never listens to it |
+| `OnRobberyNotice` | RemoteEvent | server → client | `(kind: "Rejected" \| "Started" \| "Escape" \| "Failed" \| "Paid" \| "PayoutFailed", payload: { Reason?, CooldownLeft?, Id?, HoldEndsAt?, Reward?, Amount? })` | server-only sender; the server never listens to it. There is **no client robbery request remote**: robberies start from the register's ProximityPrompt (`Triggered` on the server) |
 
 `SpawnError = "BadRequest" | "UnknownVehicle" | "NotAlive" | "Cooldown" | "NoFreeSpawn"`.
 
-Studio-only (not in the contract; created by `DevToolsService` only when `RunService:IsStudio()`): `ReplicatedStorage.DevRemotes.RequestDevCommand` (RemoteFunction) `(name, value) -> (ok, err)` with commands `SetHeat`, `SetStars`, `ReportCrime`, `ResetWanted`, `SetPoliceSight`, validated by `DevCommandRules` and re-checked against `IsStudio` on every call.
+Studio-only (not in the contract; created by `DevToolsService` only when `RunService:IsStudio()`): `ReplicatedStorage.DevRemotes.RequestDevCommand` (RemoteFunction) `(name, value) -> (ok, err)` with commands `SetHeat`, `SetStars`, `ReportCrime`, `ResetWanted`, `SetPoliceSight`, validated by `DevCommandRules` and re-checked against `IsStudio` on every call. Later stages added `SimulateBust`, cash commands (4A), `ClearRobberyCooldown` and `TryRobStore` (4B: runs the same server checks as the register prompt without the prompt's own range limit, so rejections can be tested).
 
-Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService), `Cash`, `CashStatus` (EconomyService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
+Replicated Player attributes (server-written only, names in `Shared.Player.PlayerAttributes`): `Status` (`"Civilian"`), `SpawnProtectedUntil` (server time), `WantedLevel` (stars), `WantedHeat`, `WantedEvading`, `CriminalReputation` (session only until persistence), `CombatStatus`, `CombatCooldownUntil` (server time, 0 = none), `InSafeZone` (SafeZoneService, 4 Hz), `Jailed`, `JailReleaseAt` (JailService), `Cash`, `CashStatus` (EconomyService), `RobberyPhase` (`Holding`/`Escaping`, else nil), `RobberyHoldEndsAt` (server time), `RobberyReward` (display only) (RobberyService). Client writes to these never replicate (verified in playtest). Later stages add combat-status and safe-zone attributes here.
 
 ## Wanted system
 
@@ -244,3 +249,16 @@ Rules:
 - **Save** (`ProfileStore.save`): writes only while this server still owns the lock (`LockLost` otherwise). Autosave runs every 60 s for changed profiles. Saves happen on leave (releasing the lock) and on shutdown (`BindToClose`, up to 25 s). Each save makes 3 attempts with backoff, and failures are logged and kept for the next save.
 - **Future use:** robbery rewards and vehicle purchases will call grant/deduct with their own unique ids (e.g. `robbery:<id>`, `buy:<vehicle>:<id>`). `Profile.Version` allows adding owned vehicles later via a migration.
 - **Studio-only tools:** dev commands `GrantCash`, `DeductCash` (raw values, so the server-side validation is what gets tested), `GrantCashTx` (fixed transaction id), `SetDataStoreFailure`, `SaveNow`. A Workspace attribute `SimulateDataStoreFailureOnStart` tests outages during load. All are gated by `RunService:IsStudio()`.
+
+## Store robbery (Phase 4B)
+
+- **Place:** one convenience store, `Workspace.City.Store` ("24/7 MART", `StoreId = "Store1"`), on the east edge of block (-200, 0) facing the x = -100 road (`CityLayout.store()`, built by `CityBuilder.buildStore` from `WorldService` if missing). It has an open doorway, a register with a `RobPrompt` ProximityPrompt (hold 1 s, 10 studs, key E / tap on mobile) and an invisible `Area` box covering the interior (the holdout zone).
+- **Owner:** `RobberyService` owns every session. `RobberyRules` (pure, `RobberyRules.spec`) decides; the service supplies server facts (clock, positions, jail, safe zone, alive) and does the side effects.
+- **Start** (prompt `Triggered`, on the server): alive, not jailed, not in a safe zone, on foot, within 10 + 4 studs of the register (server-measured), no live session for this player, the store isn't being robbed and isn't cooling down. Rejections go back as `OnRobberyNotice("Rejected", { Reason })` with a clear message on the HUD.
+- **Session:** id = `HttpService:GenerateGUID()` made on the server. Start reports `StoreRobbery` (70 heat = 2★) through `WantedService.reportCrime`; while holding it re-reports `RobberyInProgress` (0 heat) once a second so heat can't decay before the holdout ends. The store's 180 s cooldown starts when the robbery starts (success or failure).
+- **Holdout (15 s, server clock):** fails with no cash on `Died` (death, reset or any character change), `Busted` (jailed), `LeftArea` (outside the store box), `Disconnected`.
+- **Escape:** after the holdout the session becomes `Escaping` and the store frees up. The player must lose their wanted level (`WantedService.Escaped`, fired only when heat decays to zero, never for a bust or a reset). Fails with no cash on `Busted`, `Died`, `Disconnected`, or no escape within 300 s (`EscapeTimedOut`). Leaving the store is fine once escaping.
+- **Payout:** `RobberyRules.onEscaped` moves `Escaping -> Paid` exactly once; then `EconomyService.grant(player, 2000, "robbery:<sessionId>", ...)`. Three guards stop a second payout: the phase transition, a per-server paid-id set, and EconomyService's persisted duplicate-transaction check. An ordinary escape with no robbery session pays nothing. If the grant fails (e.g. cash data `Unavailable`) the player gets `PayoutFailed` and there is no retry (known issue).
+- **Client:** `RobberyHudController` shows "ROBBING THE STORE Ns / Stay inside" while holding, "ESCAPE THE POLICE / Lose your wanted stars to keep $2,000" while escaping (from server attributes), and toasts for the alarm, rejections, failure reasons and the cash reward. It can't start, finish or pay anything.
+- **Tuning:** `RobberyConfig` (hold, reward, cooldown, ranges, escape limit) and `WantedConfig.Crimes.StoreRobbery` are the only places to change values.
+- **Not built (by owner decision):** banks, more stores, gangs, weapons, new vehicles, monetization. Police stay at one NPC unit.

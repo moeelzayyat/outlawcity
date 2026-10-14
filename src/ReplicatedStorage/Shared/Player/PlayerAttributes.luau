@@ -15,6 +15,9 @@ local PlayerAttributes = table.freeze({
 	JailReleaseAt = "JailReleaseAt", -- server time the sentence ends (0 when not jailed)
 	Cash = "Cash", -- server-authoritative balance (EconomyService); absent until data has loaded
 	CashStatus = "CashStatus", -- "Loading" | "Loaded" | "Unavailable"
+	RobberyPhase = "RobberyPhase", -- "Holding" | "Escaping" while a robbery session is live (else nil)
+	RobberyHoldEndsAt = "RobberyHoldEndsAt", -- server time the holdout completes
+	RobberyReward = "RobberyReward", -- cash promised for escaping (display only)
 })
 
 return PlayerAttributes

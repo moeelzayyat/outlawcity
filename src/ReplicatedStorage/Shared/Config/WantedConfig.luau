@@ -22,6 +22,10 @@ local WantedConfig: Types.WantedConfig = {
 		RammingPolice = { Heat = 25, Cooldown = 2 },
 		SpeedingNearPolice = { Heat = 6, Cooldown = 5 },
 		Evading = { Heat = 4, Cooldown = 3 },
+		-- Store robbery alarm: 70 heat lands mid-band in 2 stars (40-100).
+		StoreRobbery = { Heat = 70, Cooldown = 0 },
+		-- Re-reported each second while holding a store: no extra heat, but no decay either.
+		RobberyInProgress = { Heat = 0, Cooldown = 1 },
 	},
 }
 

@@ -66,3 +66,10 @@ Mark each item with the date and result when finally run.
 - [ ] Other players can't see or change anyone else's balance through any remote
 - [ ] Autosave under many players stays within DataStore request budgets (no throttling errors)
 - [ ] Published game uses the live store (no `_Studio` suffix) and Studio tests never touch it
+
+## Phase 4B — Store robbery
+- [ ] Two players at the register: only one session starts; the other sees "Someone is already robbing this store", then the cooldown message
+- [ ] Other players see the robber's wanted stars / police chase normally; nobody else is paid
+- [ ] A robber who leaves the game mid-robbery gets nothing and the store frees up for others
+- [ ] Holdout area check under real latency (no false "left the store" for a player standing inside)
+- [ ] Exploit attempts (fake position, spamming the prompt, firing remotes) don't start, finish or pay a robbery

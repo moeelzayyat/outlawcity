@@ -28,6 +28,7 @@ local ACTIONS: { Action } = {
 	{ Label = "Cash -100", Name = "DeductCash", Value = 100 },
 	{ Label = "Cash +100 (tx dup-test)", Name = "GrantCashTx", Value = "dup-test" },
 	{ Label = "Save data now", Name = "SaveNow", Value = nil },
+	{ Label = "Store: clear cooldown", Name = "ClearRobberyCooldown", Value = nil },
 }
 
 function DevPanelController.init()

@@ -17,6 +17,8 @@ export type Command =
 	| { Name: "GrantCashTx", Value: string } -- fixed 100 with a caller-chosen transaction id
 	| { Name: "SetDataStoreFailure", Value: boolean }
 	| { Name: "SaveNow" }
+	| { Name: "ClearRobberyCooldown" }
+	| { Name: "TryRobStore" } -- same server checks as the register prompt, minus the prompt's own range limit
 
 local function finite(value: any): boolean
 	return type(value) == "number" and value == value and value ~= math.huge and value ~= -math.huge
@@ -62,6 +64,10 @@ function DevCommandRules.parse(name: any, value: any): (Command?, string?)
 		return { Name = "SetDataStoreFailure", Value = value }, nil
 	elseif name == "SaveNow" then
 		return { Name = "SaveNow" }, nil
+	elseif name == "ClearRobberyCooldown" then
+		return { Name = "ClearRobberyCooldown" }, nil
+	elseif name == "TryRobStore" then
+		return { Name = "TryRobStore" }, nil
 	end
 	return nil, "Unknown command"
 end

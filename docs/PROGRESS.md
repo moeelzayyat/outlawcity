@@ -20,7 +20,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
 |---|---|
 | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
 | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 135 passed, 0 failed` (after 4A) |
+| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 144 passed, 0 failed` (after 4B) |
 | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
 | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
 | Chase camera | Playtest measurements above |
@@ -86,6 +86,19 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
 | **4A persistence / rejoin (real Studio DataStore)** | Stop play -> `saved on leave (cash=600)`; new playtest -> `loaded (Existing) cash=600`; replaying tx `dup-test` from the previous session -> `DuplicateTransaction` (duplicate guard persists) |
 | **4A simulated failures** | Mid-session outage: grant applied in memory (700), 3 save attempts failed and were logged, the save after the outage succeeded. Outage from server start: 3 load attempts failed -> `Unavailable`, HUD "$ offline", grant refused `DataNotLoaded`; left while Unavailable -> nothing saved; next session with the outage ending mid-session -> background retry loaded the real **700** (not the default 500) after 30.7 s: `recovered after a failed load` |
 | **4A HUD (mobile)** | iPhone 7 simulator while driving at 2★ in the safe zone: `$700` badge, stars, SAFE ZONE, Combat and Spawn Car with no overlap, clipping or truncation |
+| **4B pre-work** | Fresh backup `OutlawCity_4A.rbxl` (Studio log: place file downloaded 03:16:04Z). Outdated 4A status lines corrected (ARCHITECTURE status, PROGRESS Upcoming, ROADMAP). Vehicle validation still monitor-only; police still one unit |
+| **4B unit tests** | `RobberyRules.spec` (9): approved defaults (15 s, $2,000, 180 s, robbery alarm = 2★); every start blocker with its own reason (dead, jailed, safe zone, in vehicle, already robbing, too far incl. NaN/inf); store busy + cooldown (also after a failed robbery); holdout completes only at the full time; death/bust/leaving/disconnect fail the holdout; bust/death/disconnect/timeout fail the escape, leaving is fine; escape pays exactly once; jail blocks robbery and the notice remote is server→client only; store clear of roads with the register inside the area. **144/144** |
+| **4B store** | 24/7 MART visible on block (-200, 0) by the x = -100 road (screenshot). Bug found and fixed in test: the prompt attachment was positioned before parenting, so it sat at (-278, 10, -116); it is now parented first |
+| **4B rejections** | Plaza (in safe zone) -> `InSafeZone`; outside the door 20 studs away -> `TooFar`; while jailed -> `Jailed`; second prompt during a holdout -> `AlreadyRobbing`; prompt during the store cooldown -> `StoreCooldown`. Each reached the client as a `Rejected` notice; no session, no stars |
+| **4B successful robbery** | Prompt -> `Started`, 2★ (heat 70), heat held at 70 for the whole holdout; `Escape` exactly 15.0 s later (server clock); after losing the police, heat decayed to 0 in ~20 s -> one `Paid:2000`, Output `grant 2000 (store robbery Store1, tx robbery:<guid>) -> 2700`, reputation +10. Repeated on iPhone 7: 2700 -> 4700 |
+| **4B busted -> no cash** | First robbery: stayed by the store after the holdout; the NPC unit busted the player during the escape -> `Failed:Busted`, jailed 12 s, cash unchanged (700) |
+| **4B death / reset -> no cash** | Died during the holdout -> `Failed:Died`. Reset during the escape -> `Failed:Died`; the wanted level then decayed to 0 with **no** payout (cash unchanged 2700) |
+| **4B leaving the store** | Moved outside 3 s into the holdout -> `Failed:LeftArea`, no cash |
+| **4B no double pay** | A later ordinary escape (dev 1★, decayed to 0) after a paid robbery paid nothing; failed sessions never paid when heat later reached 0 |
+| **4B tampering** | Client set `Cash` = 999999 and `RobberyPhase` = Escaping on itself and fired `OnRobberyNotice` ("Paid", 1,000,000) at the server: server cash stayed 2700, server `RobberyPhase` nil |
+| **4B persistence** | Stop -> new playtest: `loaded (Existing) cash=2700`; after the iPhone 7 robbery, rejoin -> `cash=4700` |
+| **4B mobile** | iPhone 7 (666×374): prompt usable; "ROBBING THE STORE 11s" panel readable under the stars and cash badge, no overlap with the top row |
+| 4B regression | Police dispatch, chase, sighting, bust -> jail -> release, safe-zone enter/leave, cash load/save all normal; 0 vehicle-validation observations; no console errors |
 | 4A regression | Police dispatch -> bust -> jail -> release with cash unchanged (700); vehicle validation 0 observations; safe-zone enter/leave; driving; no console errors |
 | Jail regression | Police dispatch/chase/bust, wanted levels, safe-zone enter/leave, vehicle validation (0 observations in normal play), driving and spawning all working; no console errors |
 | 3G regression | Driving, car spawn/exit, civilian respawn, wanted, police chase/bust and the safe-zone enter/exit log all working; 108/108 tests; no console errors |
@@ -95,7 +108,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
 
 1. All multiplayer behaviour is unverified (policy); see `MULTIPLAYER_TESTS.md`.
 2. **NPC navigation against unpredictable human driving is UNVERIFIED** (owner note, 3D review). Every moving-target test in 3D used a scripted car on a fixed route at constant speed; those tests are not human-driving validation.
-3. **Crime detection:** exactly one gameplay crime detector exists — *ramming a police car* (`PoliceCollisionDetector`; first observed firing in 3D, triggered by a scripted test car). *Speeding near police* and *evading* are defined in `WantedConfig` but have **no detectors**; no other crimes exist. All other wanted levels in testing came from Studio dev tools.
+3. **Crime detection:** two gameplay crime sources exist — *ramming a police car* and (4B) *store robbery* (`StoreRobbery`, reported by RobberyService) (`PoliceCollisionDetector`; first observed firing in 3D, triggered by a scripted test car). *Speeding near police* and *evading* are defined in `WantedConfig` but have **no detectors**; no other crimes exist. All other wanted levels in testing came from Studio dev tools.
 4. Vehicle validation is **monitor-only**: anomalies are logged, nothing is corrected or punished. Its false-positive data covers ~1 minute of solo driving plus transitions and a police chase (about 450 samples); more normal-driving data is needed before enabling corrections. Medium jumps (60-150 studs) can occasionally go unnoticed: one of four was missed, probably because a longer sample gap raised the allowance. Large jumps were always caught. Real network latency is MULTIPLAYER UNVERIFIED.
 5. NPC navigation only verified on the grid + highway; the plaza diagonal and highway end plazas weren't driven in tests. No lane discipline (centre line); no knowledge of blocked roads beyond hard recovery. A head-on meet with the target can cause a U-turn before the chase.
 6. **MUST FIX BEFORE PUBLIC RELEASE (owner, jail review):** after a reset mid-sentence the new character briefly appears at its civilian respawn pad for a split second before being moved into the jail cell (re-placed immediately and again 0.3 s later). Likely fix: make the jailed player's next spawn the cell itself (a jail SpawnLocation via SpawnService) instead of moving them after spawning.
@@ -103,6 +116,12 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
 7. Wanted level survives death/respawn by design (prevents "reset to escape"); owner may want to confirm.
 8. `CriminalReputation`, combat status and jail sentences are still session-only. 4A persists **cash only**; adding reputation/jail to the profile needs approval.
 8a. Cash persistence was tested in Studio against a real DataStore (`_Studio` suffix). Not tested: two real servers contending for one player's lock (needs two live servers; MULTIPLAYER UNVERIFIED), DataStore throttling under load, and the published game's live store.
+8c. **4B escape definition:** "escaped" means the wanted level decayed to zero (the police lost sight long enough). In tests the successful escapes were done by moving the character ~800 studs away; escaping the NPC unit by driving was not tested.
+8d. **4B holdout position** uses the character's replicated position (client-simulated physics, as for every character). A cheater could fake standing inside, but only for a robbery they started at the register, and they still get 2★ and must escape. Exploit testing is MULTIPLAYER UNVERIFIED.
+8e. **4B payout failure:** if cash data is `Unavailable` when the player escapes, the grant fails with `PayoutFailed` and is not retried.
+8f. Robbery sessions and store cooldowns are per server and session-only: leaving mid-robbery forfeits it; a server restart clears cooldowns.
+8g. The NPC police car can't enter the store; at the storefront it hits hard recovery (`stalled repeatedly at (-113, -57)`) and re-routes. It still busted a player standing near the counter from 21 studs.
+8h. On small phones the robbery panel (y 136-212 on a 374-px-high screen) covers part of the middle of the view while active. The `InVehicle` rejection is unit-tested only.
 8b. The Studio-only dev panel is now taller than a small phone screen (it is clipped; F8 hides it; never in published servers).
 9. Player-vs-player harm (combat rules, safe zones, spawn protection) is verified only with mock players: no PvP damage exists yet.
 10. Parked cars have a tiny vertical velocity jitter at rest (positions stable to ±0.01 stud).
@@ -130,6 +149,7 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
 - 3A civilian spawning ✅ · 3B wanted ✅ · 3C combat status ✅ · 3D one NPC police unit ✅ (stays at one unit) · 3E safe zones ✅ — all solo-tested and provisionally approved
 - ~~3G server vehicle movement validation~~ — done (solo, **monitor-only**); awaiting owner review before any automatic correction or the jail
 - ~~Short jail (12 s, 10-15 configurable)~~ — provisionally approved (solo); Phase 3 signed off
-- ~~4A cash and persistence~~ — done (solo, real Studio DataStore); **awaiting owner approval** before the robbery system
-- Robbery system — after 4A review
+- ~~4A cash and persistence~~ — approved by the owner (solo, real Studio DataStore)
+- ~~4B one convenience-store robbery~~ — done (solo); **awaiting owner approval** before the dealership or a second vehicle
+- Dealership / second vehicle — after 4B review (not started)
 - 3F Studio-only test tools — maintained throughout

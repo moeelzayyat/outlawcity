@@ -115,6 +115,11 @@ export type EconomyError =
 	| "DataNotLoaded"
 	| "NotInGame"
 
+-- Store robbery (Phase 4B).
+export type RobberyPhase = "Holding" | "Escaping" | "Paid" | "Failed"
+export type RobberyStartError = "Dead" | "Jailed" | "InSafeZone" | "InVehicle" | "TooFar" | "StoreCooldown" | "StoreBusy" | "AlreadyRobbing"
+export type RobberyFailReason = "Died" | "Busted" | "LeftArea" | "Disconnected" | "EscapeTimedOut"
+
 -- Errors from JailService.jailForBust.
 export type JailError = "NotInGame" | "NotWanted" | "AlreadyJailed"
 

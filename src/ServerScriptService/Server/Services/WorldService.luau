@@ -21,6 +21,15 @@ function WorldService.init()
 	if city and not city:FindFirstChild("Jail") then
 		CityBuilder.buildJail(city)
 	end
+	if city and not city:FindFirstChild("Store") then
+		CityBuilder.buildStore(city)
+	end
+end
+
+-- The robbable store folder (City.Store), if built.
+function WorldService.getStore(): Folder?
+	local store = city and city:FindFirstChild("Store")
+	return if store and store:IsA("Folder") then store else nil
 end
 
 -- Jail cell standing spots, in slot order.

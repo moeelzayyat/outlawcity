@@ -47,8 +47,9 @@ Out of scope for Phase 3: robberies, weapons, gangs, helicopters, new districts,
 - Run every test in `MULTIPLAYER_TESTS.md` with real players; required before monetization or public beta.
 
 ## Phase 4 — Economy
-- **4A ✅ (solo; real Studio DataStore):** server-authoritative cash, starting cash, DataStore persistence with retries and session safety, one EconomyService, pure economy rules, duplicate-transaction protection, cash HUD, Studio-only cash dev tools. No robberies, purchases or monetization yet.
-- Later (needs approval): robbery system and rewards, vehicle ownership/purchases.
+- **4A ✅ approved (solo; real Studio DataStore):** server-authoritative cash, starting cash, DataStore persistence with retries and session safety, one EconomyService, pure economy rules, duplicate-transaction protection, cash HUD, Studio-only cash dev tools. No robberies, purchases or monetization yet.
+- **4B ✅ (solo; awaiting owner approval):** one convenience-store robbery (24/7 MART): server-owned sessions, 15 s holdout, 2★, $2,000 paid once only after escaping, 180 s store cooldown, fails on death/bust/leaving/disconnect, robbery HUD. No banks, more stores, gangs or weapons.
+- Later (needs approval): dealership and a second vehicle, vehicle ownership/purchases.
 - Original line: cash, server-authoritative rewards for arrests and robberies, DataStore persistence.
 - A first purchasable vehicle.
 

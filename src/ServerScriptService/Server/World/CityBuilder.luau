@@ -151,4 +151,89 @@ function CityBuilder.buildJail(city: Instance): Folder
 	return folder
 end
 
+-- Adds City.Store (building, register ProximityPrompt, invisible holdout Area, sign) if
+-- missing. The prompt is only a trigger: RobberyService re-validates everything on the server.
+function CityBuilder.buildStore(city: Instance): Folder
+	local existing = city:FindFirstChild("Store")
+	if existing and existing:IsA("Folder") then
+		return existing
+	end
+	local spec = CityLayout.store()
+	local folder = Instance.new("Folder")
+	folder.Name = "Store"
+	folder:SetAttribute("StoreId", spec.Id)
+	for _, partSpec in spec.Parts do
+		local part = Instance.new("Part")
+		part.Name = partSpec.Name
+		part.Anchored = true
+		part.CanCollide = partSpec.CanCollide
+		part.Size = partSpec.Size
+		part.CFrame = CFrame.new(partSpec.Center)
+		part.Color = partSpec.Color
+		part.Material = partSpec.Material
+		part.TopSurface = Enum.SurfaceType.Smooth
+		part.BottomSurface = Enum.SurfaceType.Smooth
+		if partSpec.Material == Enum.Material.Glass then
+			part.Transparency = 0.6
+		end
+		part.Parent = folder
+	end
+	local roof = folder:FindFirstChild("StoreRoof")
+	if roof then
+		local light = Instance.new("PointLight")
+		light.Range = 26
+		light.Brightness = 1.2
+		light.Parent = roof
+	end
+	local register = folder:FindFirstChild("StoreRegister") :: BasePart?
+	if register then
+		local attachment = Instance.new("Attachment")
+		attachment.Name = "PromptAttachment"
+		attachment.Parent = register -- parent first: WorldCFrame is relative to the parent part
+		attachment.WorldCFrame = spec.Register
+		local prompt = Instance.new("ProximityPrompt")
+		prompt.Name = "RobPrompt"
+		prompt.ActionText = "Rob store"
+		prompt.ObjectText = "Register"
+		prompt.HoldDuration = 1
+		prompt.MaxActivationDistance = 10
+		prompt.RequiresLineOfSight = false
+		prompt.KeyboardKeyCode = Enum.KeyCode.E
+		prompt.Parent = attachment
+	end
+	local area = Instance.new("Part")
+	area.Name = "Area"
+	area.Anchored = true
+	area.CanCollide = false
+	area.CanQuery = false
+	area.CanTouch = false
+	area.Transparency = 1
+	area.Size = spec.Area.Size
+	area.CFrame = CFrame.new(spec.Area.Center)
+	area.Parent = folder
+	local sign = Instance.new("Part")
+	sign.Name = "StoreSign"
+	sign.Anchored = true
+	sign.Size = spec.Sign.Size
+	sign.CFrame = CFrame.new(spec.Sign.Center)
+	sign.Color = Color3.fromRGB(40, 120, 70)
+	sign.Material = Enum.Material.SmoothPlastic
+	local gui = Instance.new("SurfaceGui")
+	gui.Face = Enum.NormalId.Right
+	gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
+	gui.PixelsPerStud = 25
+	local label = Instance.new("TextLabel")
+	label.Size = UDim2.fromScale(1, 1)
+	label.BackgroundTransparency = 1
+	label.Text = "24/7 MART"
+	label.TextScaled = true
+	label.Font = Enum.Font.GothamBlack
+	label.TextColor3 = Color3.fromRGB(255, 230, 120)
+	label.Parent = gui
+	gui.Parent = sign
+	sign.Parent = folder
+	folder.Parent = city
+	return folder
+end
+
 return CityBuilder

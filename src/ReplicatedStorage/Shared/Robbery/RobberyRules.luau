@@ -1,0 +1,147 @@
+--!strict
+-- Pure robbery state machine. The server (RobberyService) owns clocks, positions and payouts;
+-- these rules only decide. Unit-tested in ServerStorage.Tests.RobberyRules.spec.
+--
+--   start ──► Holding ──(HoldSeconds, stayed alive, inside, not jailed)──► Escaping
+--                 │                                                            │
+--                 └──► Failed (Died | Busted | LeftArea | Disconnected)        ├──(escaped police)──► Paid (once)
+--                                                                              └──► Failed (Died | Busted | Disconnected | EscapeTimedOut)
+local Types = require(script.Parent.Parent.Types)
+
+local RobberyRules = {}
+
+export type StoreState = { CooldownUntil: number, ActiveSession: string? }
+export type Session = {
+	Id: string,
+	UserId: number,
+	StoreId: string,
+	Phase: Types.RobberyPhase,
+	StartedAt: number,
+	HoldEndsAt: number,
+	EscapeDeadline: number,
+	Reward: number,
+	FailReason: Types.RobberyFailReason?,
+}
+export type StartFacts = {
+	Alive: boolean,
+	Jailed: boolean,
+	InSafeZone: boolean,
+	InVehicle: boolean,
+	DistanceToRegister: number,
+	HasActiveSession: boolean,
+}
+export type TickFacts = { Connected: boolean, Alive: boolean, Jailed: boolean, InArea: boolean }
+type Config = {
+	HoldSeconds: number,
+	Reward: number,
+	CooldownSeconds: number,
+	PromptDistance: number,
+	DistanceSlack: number,
+	MaxEscapeSeconds: number,
+}
+
+function RobberyRules.newStore(): StoreState
+	return { CooldownUntil = -math.huge, ActiveSession = nil }
+end
+
+function RobberyRules.canStart(store: StoreState, facts: StartFacts, now: number, config: Config): (boolean, Types.RobberyStartError?)
+	if not facts.Alive then
+		return false, "Dead"
+	end
+	if facts.Jailed then
+		return false, "Jailed"
+	end
+	if facts.InSafeZone then
+		return false, "InSafeZone"
+	end
+	if facts.InVehicle then
+		return false, "InVehicle"
+	end
+	if facts.HasActiveSession then
+		return false, "AlreadyRobbing"
+	end
+	if not (facts.DistanceToRegister <= config.PromptDistance + config.DistanceSlack) then
+		return false, "TooFar" -- also catches NaN distances
+	end
+	if store.ActiveSession ~= nil then
+		return false, "StoreBusy"
+	end
+	if now < store.CooldownUntil then
+		return false, "StoreCooldown"
+	end
+	return true, nil
+end
+
+-- Opens a session (call only after canStart). The store cools down from now.
+function RobberyRules.start(store: StoreState, sessionId: string, userId: number, storeId: string, now: number, config: Config): Session
+	store.ActiveSession = sessionId
+	store.CooldownUntil = now + config.CooldownSeconds
+	return {
+		Id = sessionId,
+		UserId = userId,
+		StoreId = storeId,
+		Phase = "Holding",
+		StartedAt = now,
+		HoldEndsAt = now + config.HoldSeconds,
+		EscapeDeadline = math.huge,
+		Reward = config.Reward,
+		FailReason = nil,
+	}
+end
+
+local function fail(session: Session, store: StoreState?, reason: Types.RobberyFailReason): (string, Types.RobberyFailReason)
+	session.Phase = "Failed"
+	session.FailReason = reason
+	if store and store.ActiveSession == session.Id then
+		store.ActiveSession = nil
+	end
+	return "Failed", reason
+end
+
+-- Advances a live session. Returns ("HoldComplete" | "Failed" | nil, failReason?).
+function RobberyRules.tick(session: Session, store: StoreState?, facts: TickFacts, now: number, config: Config): (string?, Types.RobberyFailReason?)
+	if session.Phase == "Holding" then
+		if not facts.Connected then
+			return fail(session, store, "Disconnected")
+		elseif not facts.Alive then
+			return fail(session, store, "Died")
+		elseif facts.Jailed then
+			return fail(session, store, "Busted")
+		elseif not facts.InArea then
+			return fail(session, store, "LeftArea")
+		elseif now >= session.HoldEndsAt then
+			session.Phase = "Escaping"
+			session.EscapeDeadline = now + config.MaxEscapeSeconds
+			if store and store.ActiveSession == session.Id then
+				store.ActiveSession = nil
+			end
+			return "HoldComplete", nil
+		end
+	elseif session.Phase == "Escaping" then
+		if not facts.Connected then
+			return fail(session, store, "Disconnected")
+		elseif facts.Jailed then
+			return fail(session, store, "Busted")
+		elseif not facts.Alive then
+			return fail(session, store, "Died")
+		elseif now > session.EscapeDeadline then
+			return fail(session, store, "EscapeTimedOut")
+		end
+	end
+	return nil, nil
+end
+
+-- The player escaped the police. Pays exactly once, and only from the Escaping phase.
+function RobberyRules.onEscaped(session: Session): boolean
+	if session.Phase ~= "Escaping" then
+		return false
+	end
+	session.Phase = "Paid"
+	return true
+end
+
+function RobberyRules.isLive(session: Session): boolean
+	return session.Phase == "Holding" or session.Phase == "Escaping"
+end
+
+return RobberyRules
