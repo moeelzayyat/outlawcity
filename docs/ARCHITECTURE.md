@@ -290,7 +290,7 @@ Rules:
   - Granted cash is stored at the moment it is granted (write-through).
 - **Client:** `RobberyHudController` shows "ROBBING THE STORE Ns / Stay inside" while holding, "ESCAPE TO KEEP $2,000 / Break line of sight, then stay hidden until your stars are gone" while escaping ("Stars fading..." while `WantedEvading`) (from server attributes), and toasts for the alarm, rejections, failure reasons and the cash reward. It can't start, finish or pay anything.
 - **Tuning:** `RobberyConfig` (hold, reward, cooldown, ranges, escape limit) and `WantedConfig.Crimes.StoreRobbery` are the only places to change values.
-- **Failed-robbery cooldown (audit 4 trial):** `RobberyConfig.FailedCooldownSeconds = 90`. A robbery that fails (died, busted, left, disconnected, timed out) shortens the store's cooldown to its start + 90 s, but only while it is still the store's latest robbery (`StoreState.LastSession`), so an old getaway failing late never cuts a newer robbery's cooldown. Successful robberies keep 180 s. `nil` restores the old behaviour.
+- **Failed-robbery cooldown (EXPERIMENTAL, audit 4 trial):** a session fails at most once: `RobberyRules.tick` does nothing once a session is Failed or Paid, and `RobberyService.failSession` ignores an entry that already ended. `RobberyConfig.FailedCooldownSeconds = 90`. A robbery that fails (died, busted, left, disconnected, timed out) shortens the store's cooldown to its start + 90 s, but only while it is still the store's latest robbery (`StoreState.LastSession`), so an old getaway failing late never cuts a newer robbery's cooldown. Successful robberies keep 180 s. `nil` restores the old behaviour.
 - **Not built (by owner decision):** banks, more stores, gangs, weapons, new vehicles, monetization. Police stay at one NPC unit.
 
 ### Police pursuit tuning (audit remediation, EXPERIMENTAL; owner/auditor review pending)
@@ -323,9 +323,9 @@ See PROGRESS.md for the details. It's a small solo sample, so human playtests sh
 ## New-player guidance (audit 4 onboarding batch)
 
 Display only: nothing here changes rewards, prices, police, validation or who decides a robbery start or purchase. Values live in `OnboardingConfig`; logic in `OnboardingRules` (`OnboardingRules.spec`).
-- **P1 spawn shortcut:** Spawn Car (and its tap on phones) spawns the car directly when the player owns one; with 2+ cars it opens the garage window. The server still checks ownership on every spawn.
+- **P1 spawn shortcut:** `OnboardingRules.spawnChoice(owned, StarterVehicles)`. One candidate: Spawn Car (and its tap on phones) spawns that car and makes it the selection, so a stale earlier pick is never sent. 2+ cars: the garage window opens. While the owned list is empty (data not loaded or unavailable) only the starter Coupe counts, which the server always accepts. No candidates: nothing is sent. The server still checks ownership on every spawn.
 - **P2 markers:** client `BillboardGui`s over `StoreSign` and `DealerSign`, 190x46 px, drawn through buildings, shown 35-450 studs from the sign, with the distance and a status line.
-- **P3 tip:** once per session after the first spawn, at the left under the HUD row (12, 92), 250x84. Closes after 15 s, with X, or when a robbery starts. Only X takes input.
+- **P3 tip:** once per session after the first spawn, at the left under the HUD row (12, 92), 250x84. Closes after 15 s, with X, or when `RobberyPhase` becomes `Holding` or `Escaping` (`OnboardingRules.isActiveRobbery`); other phase changes leave it. Only X takes input.
 - **P4 escape hint:** matches `WantedRules`: heat decays only after `DecayDelay` (8 s) with no sighting and no new crime; the escape counts when the stars reach 0.
 - **P5 store status:** the store marker shows Open / Being robbed / Reopens in m:ss from the server's store attributes; the register prompt shows "Reopens in m:ss" while cooling down.
 - **P6 Muscle progress:** the dealership window's message line shows "Muscle: $X of $15,000. About N more successful robberies." (`ceil((price - cash) / RobberyConfig.Reward)`: 8 from the $500 start).

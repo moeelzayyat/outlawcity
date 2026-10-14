@@ -196,6 +196,7 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] Phone (666x374): robbery panel 260x64 at y 92, text fits, no overlap with the top HUD row
 - [ ] Studio Output prints `[Milestone] ... FirstCar / FirstRobbery / FirstEscape` once each
 - [ ] **Owner, real phone:** panel, tip and markers readable; nothing blocks the touch controls
+- [ ] Conditions: stale selection + one car spawns the owned car; not-loaded spawns the starter Coupe; the tip stays for PayoutPending/cleared and closes for Holding; repeated/overlapping failures change the cooldown once (`RobberyRules.spec`)
 
 ## Police pursuit tuning (audit remediation, EXPERIMENTAL)
 - [ ] With SightRange 130 / ChaseSpeed 100 / ChaseGain 0.25: rob, drive away normally, lose the police -> paid once
