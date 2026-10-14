@@ -1,0 +1,4 @@
+git diff --name-status eb27673..HEAD -- src docs
+
+A	docs/CITY_NAVIGATION_WORLD_AUDIT.md
+M	docs/PROGRESS.md
