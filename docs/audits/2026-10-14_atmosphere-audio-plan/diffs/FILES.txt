@@ -1,0 +1,6 @@
+git diff --name-status dabaf48..HEAD -- src docs
+
+A	docs/ATMOSPHERE_AUDIO_PLAN.md
+A	docs/PLAYTEST_CHECKLIST.docx
+M	docs/PROGRESS.md
+M	docs/ROADMAP.md

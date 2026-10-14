@@ -1,0 +1,230 @@
+diff --git a/docs/ATMOSPHERE_AUDIO_PLAN.md b/docs/ATMOSPHERE_AUDIO_PLAN.md
+new file mode 100644
+index 0000000..cba64d5
+--- /dev/null
++++ b/docs/ATMOSPHERE_AUDIO_PLAN.md
+@@ -0,0 +1,125 @@
++# OUTLAW CITY: city atmosphere and audio audit (PLAN ONLY)
++
++Status: **plan for owner review and independent audit. Nothing has been changed in Studio.** Prepared 2026-10-14 while the owner's playtest is pending.
++
++These proposals don't change the gameplay loop, economy, robbery rewards, cooldowns, police pursuit balance, vehicle prices, driving physics or police AI. They add no vehicles, stores, police units, weapons, gangs, properties, monetization or map area, and vehicle validation stays monitor-only. A backup comes before any approved step.
++
++## How this was inspected
++- Read-only queries in Studio, place 132163592957463 only.
++- A code search of `src/`.
++- `Lighting.Technology` can't be read from my tools (Roblox capability limit). The owner can check it in Studio's Lighting properties; the plan doesn't change it.
++
++## What exists now (measured)
++| Area | Now |
++|---|---|
++| Lighting | Roblox template defaults: `ClockTime 14.5` (fixed; no script changes it), `Brightness 3`, `Ambient`/`OutdoorAmbient` grey 70, `GlobalShadows` on, `FogEnd 100000`, `ExposureCompensation 0` |
++| Effects in Lighting | `Sky` (template), `SunRays` (0.01), `Atmosphere` (Density 0.30, Offset 0.25, Haze 0, Glare 0), `Bloom` (Intensity 1, Size 24, Threshold 2), `DepthOfField` (**disabled**). No `ColorCorrection` |
++| Sound | **0 Sound objects in the whole place.** SoundService has no children and `AmbientReverb = NoReverb` |
++| Lights | 3 PointLights (jail, store and dealership roofs; range 24–30) |
++| Vehicles | Neon headlight and taillight parts. The police unit has a static red/blue Neon `LightBar` (`PoliceService`); it doesn't flash and has no light or sound |
++| Robbery feedback | Text only: toasts "Alarm tripped!", "Got the cash!", "Escaped! +$2,000"; the panel countdown; the cash badge updates |
++| Roads | 18 road parts; 120 marking parts: yellow centre lines between intersections (12 east–west segments plus north–south), white highway edges and dashes. **No stop lines, crosswalks or intersection cues** |
++| Particles / beams / trails | None |
++| Performance setting | `StreamingEnabled = true`; 257 parts in total; template Baseplate texture and SpawnLocation decal |
++
++## Proposals
++Order: no-asset changes first (A1, A5), then audio (A2–A4), which needs Roblox-owned sounds. Each item is small and can be switched off on its own.
++
++### A1. Consistent city lighting (no assets)
++- **Now:** template defaults; flat grey ambient at a fixed 14:30; bloom makes the Neon lights glow strongly.
++- **Change:** one tuned set of `Lighting` values:
++  - `ClockTime` 16.5 (late afternoon, longer shadows), still fixed with no day/night cycle;
++  - `Ambient` (80, 80, 90) and `OutdoorAmbient` (120, 115, 110) for a slightly warmer look;
++  - `Atmosphere` Density 0.32, Haze 1, Glare 0.2;
++  - `Bloom` Intensity 1 → 0.4;
++  - a new `ColorCorrection` with Contrast +0.08 and Saturation +0.12.
++  - `Technology`, shadows and fog distance stay as they are.
++- **Why it helps gameplay:** clearer depth and contrast between road, buildings and cars, so the road, the police car and the markers stand out. Less bloom keeps the brake lights and light bar readable instead of washed out.
++- **Performance:** negligible; ColorCorrection is a cheap full-screen pass. No new lights or shadows.
++- **Assets:** none.
++- **Test:** the same camera spots before and after (plaza, store, dealership, highway) on PC and the phone simulator; the owner judges by eye. 3D captures render white on this machine, so this needs the owner's eyes or a retry. Check that the HUD and markers stay readable.
++- **Rollback:** the old values are listed in this table; restore them, or disable the ColorCorrection.
++
++### A2. Engine audio for the Coupe and Muscle (needs 1–2 Roblox-owned sounds)
++- **Now:** silent cars.
++- **Change:** a new client-only `EngineAudioController`.
++  - It loops one engine Sound on each nearby car's chassis.
++  - Pitch (`PlaybackSpeed`) rises from about 0.8 at idle to about 1.6 at top speed, using the car's speed against its `MaxForwardSpeed`.
++  - The Muscle uses a lower base pitch and slightly more volume than the Coupe.
++  - The sound is only on the player's own car and the 3 nearest others within 150 studs, and fades out beyond that (`RollOffMaxDistance` 150).
++  - Driving physics is not touched; the controller only reads speed.
++- **Why it helps gameplay:** speed and acceleration can be heard, the two cars feel different, and you can hear a car coming.
++- **Performance:** at most 4 looping sounds per client; no server cost. Low.
++- **Assets:** yes, 1–2 engine-loop sounds. **Only Roblox-owned audio from the Creator Store (creator "Roblox")**, so there are no licence or privacy problems. I'll list the candidate asset IDs for the owner to approve before inserting anything.
++- **Test:** drive both cars and listen for pitch rising with speed. Park and walk away: the sound fades. Check several cars on the phone simulator for FPS.
++- **Rollback:** a flag `AudioConfig.EngineEnabled = false`, or remove the one controller.
++
++### A3. Police siren and pursuit lights (needs 1 Roblox-owned sound)
++- **Now:** a static red/blue Neon bar; no sound. The unit only exists while dispatched or chasing; it despawns after a bust or escape.
++- **Change, client-only:**
++  - The light bar alternates red/blue brightness every 0.25 s.
++  - One PointLight (range 14, flashing the same way) is added on the client copy.
++  - A looping siren Sound (`RollOffMaxDistance` about 250) plays while the unit exists.
++  - It is driven by the existing `NpcVehicles.PoliceUnit` model appearing and disappearing. No police AI change and no new server attribute.
++- **Why it helps gameplay:** you can hear the police coming and how close they are, which makes "break line of sight, stay hidden" readable. When the siren fades it's a natural cue that you're getting away. It also makes the chase exciting.
++- **Performance:** one sound, one flashing light, one unit. Low.
++- **Assets:** one siren loop, Roblox-owned only, approved by the owner first.
++- **Test:** rob and get chased; the siren gets louder as the unit closes and quieter as it falls behind; it stops on bust/escape despawn. Check it doesn't drown out the engine.
++- **Rollback:** a flag, or remove the controller. The server `LightBar` is unchanged.
++
++### A4. Store alarm and payout feedback (needs 2–3 Roblox-owned sounds)
++- **Now:** text toasts only.
++- **Change, client-only:**
++  - A looping alarm bell at the register while the store is being robbed, driven by the existing server attribute `City.Store.RobberyBusy`. It stops when the holdout ends, and others nearby hear it too.
++  - A short "cash" sound and a brief green pulse on the cash badge when the server's `Paid` notice arrives.
++  - A short "busted" sting on jail.
++  - No timing, reward or rule changes.
++- **Why it helps gameplay:** the robbery becomes an event; the alarm makes the 15 s holdout tense instead of silent waiting; the payout feels rewarding; the player knows what happened without reading.
++- **Performance:** short one-shot sounds and one loop during a holdout. Negligible.
++- **Assets:** an alarm loop, a cash sound and a bust sting, Roblox-owned only, approved by the owner first.
++- **Test:** rob and listen: the alarm plays during the holdout only. Escape and be paid: the cash sound plays once. Get busted: the sting plays. A failed robbery stops the alarm.
++- **Rollback:** a flag, or remove the controller.
++
++### A5. Road and intersection readability (no assets; small geometry inside the existing map)
++- **Now:** yellow centre lines only between intersections; nothing marks where an intersection starts.
++- **Change:** in `CityLayout` (data only):
++  - a white stop line across each approach at the 16 grid intersections (up to 64 thin parts; edge intersections have fewer approaches);
++  - optional zebra crosswalks at the 4 intersections around the plaza (about 40 more).
++  - They are the same kind of `Markings` slabs as today: no collision, no queries, no shadows. They stay on the existing roads (no map expansion) and must pass `CityLayout.spec`.
++- **Why it helps gameplay:** players (and getaway drivers) see the junctions coming, so they turn earlier and crash less. It makes the city read as a city.
++- **Performance:** up to about 104 static anchored parts with shadows off. Low, and streaming is already on.
++- **Assets:** none.
++- **Test:** drive the grid on PC and phone; check the markings are visible and don't flicker. The new `CityLayout.spec` cases keep markings on the road surface. Check police navigation is unaffected (markings have no collision or queries).
++- **Rollback:** remove the new marking specs; the place is rebuilt from `CityLayout`.
++
++### A6. Mobile performance guardrails (applies to all of the above)
++- **Now:** no particles, no sounds, 3 lights; DepthOfField already disabled.
++- **Change:** rules, not features:
++  - no particle emitters, beams, trails or extra shadow-casting lights in this batch;
++  - DepthOfField stays off;
++  - at most 4 engine sounds plus 1 siren plus 1 alarm at a time;
++  - every sound has a roll-off distance;
++  - every new client feature has an on/off flag in one config (`AudioConfig` / `AtmosphereConfig`).
++- **Why it helps gameplay:** phones keep a steady frame rate, and a smooth chase matters more than effects.
++- **Performance:** a measured budget: client FPS and the Stats panel on PC and the phone simulator before and after each step. The owner checks a real phone.
++- **Assets:** none.
++- **Test / rollback:** compare the before and after numbers per step; switch off any flag that costs more than about 5% FPS on the phone.
++
++## Not proposed
++Each of these is map expansion, an AI or physics change, or too costly for phones:
++- a day/night cycle or weather;
++- street lamps across the map;
++- new buildings or props;
++- particle smoke, skid marks or dust;
++- music;
++- any third-party or paid asset;
++- police behaviour changes.
++
++## Recommended order (after approval, one at a time, backup first)
++1. **A1** lighting (no assets).
++2. **A5** stop lines (no assets).
++3. **A3** siren and flashing lights.
++4. **A4** alarm and payout sounds.
++5. **A2** engine audio.
++
++A6 applies throughout. Before A2–A4, I'll list the exact Roblox-owned sound asset IDs for the owner to approve.
+diff --git a/docs/PLAYTEST_CHECKLIST.docx b/docs/PLAYTEST_CHECKLIST.docx
+new file mode 100644
+index 0000000..2297526
+--- /dev/null
++++ b/docs/PLAYTEST_CHECKLIST.docx
+@@ -0,0 +1,68 @@
++
++
++    
++    OUTLAW CITY: 10-minute playtest (owner, no dev tools)
++
++    Play like a new player. Don't open the F8 dev panel and don't run any commands. Use Studio Play (place 132163592957463) or a phone. Write one short line per step: what happened and how it felt. Studio's Output prints [Milestone] ... FirstCar / FirstRobbery / FirstEscape ... s after join; copy those three lines too.
++
++    #
++Minutes
++Do this
++Note down
++1
++0:00
++Join and read the tip on the left.
++Did you know what to do? Did the tip get in the way?
++2
++0:30
++Get a car (the Spawn Car button, or V on PC).
++How many clicks or taps? Were you seated?
++3
++1:00
++Drive to the 24/7 MART using the floating marker.
++Easy to find? Did the markers clutter the screen?
++4
++2:00
++Rob the register: hold E, or tap the prompt on a phone. Stay inside for the countdown.
++Was it clear what to do and how long to wait?
++5
++2:30
++Get back in your car and try to lose the police.
++Did "break line of sight, stay hidden" make sense? Did you escape? Fair, too easy or too hard?
++6
++4:00
++If you were caught: sit out the jail time and look at the store marker's "Reopens in" timer.
++Did jail or the wait make you want to stop?
++7
++5:30
++While driving, press Spawn Car again (with 2 cars, pick the other one in the garage).
++Were you seated in the new car, able to drive right away, with the camera behind the car?
++8
++6:30
++Drive to OUTLAW MOTORS, walk to the desk, open the window.
++Does the Muscle at $15,000 feel worth working for? Is the "robberies left" line clear?
++9
++8:00
++Rob again and try a different escape route.
++Better or worse than the first time?
++10
++9:30
++Leave and rejoin.
++Is your cash the same as when you left?
++
++    On a phone, also note: - Can you read the robbery panel, the tip and the markers? - Do they cover the driving buttons or the thumbstick?
++
++    Send back: the three [Milestone] lines, one line per step, and your call on: - the 90 s store reopen after a failed robbery; - the $15,000 Muscle price.
++
++    
++    
++      
++        
++                
++        
++        
++              
++      
++    
++  
++
+diff --git a/docs/PROGRESS.md b/docs/PROGRESS.md
+index b52be00..c3fc163 100644
+--- a/docs/PROGRESS.md
++++ b/docs/PROGRESS.md
+@@ -230,6 +230,7 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
+ - ~~Final targeted audit fixes~~ — APPROVED WITH CONDITIONS by the auditor; the six conditions are done (solo)
+ - ~~Five-minute player-experience plan~~ — reviewed (audit 4: APPROVE on Part A)
+ - ~~Onboarding batch~~ — APPROVED WITH CONDITIONS by the auditor; the four conditions are done (solo)
+-- Playability gate — re-spawn-while-driving fix + regression done (solo); auditor: APPROVE WITH CONDITIONS (follow-ups 8t tracked). **Next: the owner's 10-minute playtest (`PLAYTEST_CHECKLIST.md`)**; no new implementation until that feedback; the next decisions follow that feedback. No broad Phase 5 content or monetization
++- Playability gate — re-spawn-while-driving fix + regression done (solo); auditor: APPROVE WITH CONDITIONS (follow-ups 8t tracked). **Next: the owner's 10-minute playtest (`PLAYTEST_CHECKLIST.md`)**; no new implementation until that feedback
++- City atmosphere and audio audit — **PLAN ONLY** (`ATMOSPHERE_AUDIO_PLAN.md`, A1–A6), awaiting owner review and audit; nothing changed in Studio; the next decisions follow that feedback. No broad Phase 5 content or monetization
+ - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
+ - 3F Studio-only test tools — maintained throughout
+diff --git a/docs/ROADMAP.md b/docs/ROADMAP.md
+index 6c5d96d..09659fe 100644
+--- a/docs/ROADMAP.md
++++ b/docs/ROADMAP.md
+@@ -55,6 +55,7 @@ Out of scope for Phase 3: robberies, weapons, gangs, helicopters, new districts,
+ - **Five-minute player-experience plan ✅ reviewed** (audit 4: APPROVE on Part A), `docs/PLAYER_EXPERIENCE_AUDIT.md`.
+ - **Onboarding batch ✅ (solo; awaiting owner/auditor review):** one-car spawn shortcut, store/dealership markers, first-spawn tip, escape hint, store reopen time + 90 s failed-robbery cooldown trial, Muscle progress (price unchanged), compact phone robbery panel, Studio-only milestone timings; reward timestamps reject ±infinity. Auditor: APPROVE WITH CONDITIONS; conditions done (solo).
+ - **Playability gate ✅ (solo):** re-spawn-while-driving fixed; regression passed. Next: the owner's 10-minute playtest (`docs/PLAYTEST_CHECKLIST.md`); further development follows that feedback, not feature count.
++- **City atmosphere and audio audit (plan only, awaiting review):** `docs/ATMOSPHERE_AUDIO_PLAN.md`: lighting preset, stop lines, siren and flashing lights, alarm and payout sounds, engine audio, mobile guardrails. Roblox-owned audio only.
+ - **4C ✅ (solo; awaiting owner review):** OUTLAW MOTORS dealership, the $15,000 Muscle (faster, heavier handling), server purchase API (atomic cash + ownership, duplicate-safe), persistent ownership in profile v2 with safe migration from cash-only profiles, garage window, ownership-checked spawning, PC + mobile UI.
+ - Original line: cash, server-authoritative rewards for arrests and robberies, DataStore persistence.
+ - A first purchasable vehicle.
