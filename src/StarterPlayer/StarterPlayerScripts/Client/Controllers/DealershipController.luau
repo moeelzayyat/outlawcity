@@ -30,6 +30,8 @@ local RESULT_TEXT: { [string]: string } = {
 	DuplicateTransaction = "That purchase was already processed.",
 	TooManyVehicles = "Your garage is full.",
 	SaveFailed = "Couldn't save your purchase right now. Nothing was charged; try again.",
+	SaveUnconfirmed = "We couldn't confirm your purchase. If it went through, the car will appear in your garage; you'll never be charged twice.",
+	SessionClosed = "Your data is no longer active on this server. Please rejoin.",
 	NetworkError = "Couldn't reach the server. Nothing was charged.",
 }
 

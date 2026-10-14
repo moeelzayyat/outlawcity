@@ -174,6 +174,13 @@ Read results on the server: `ServerStorage.Diagnostics` attributes `Samples`, `O
 - [ ] `SimulateDataStoreFailure` = true during an escape -> pending (not recorded); set it false -> paid once
 - [ ] Idle 3+ minutes in game: Output shows no lock problems; rejoin works (heartbeat keeps the lock fresh)
 
+## Final audit fixes (solo; Workspace attributes are Studio-only)
+- [ ] `ProfileSession.spec`, `RewardLedger.spec`, `EconomyRules.spec` pass
+- [ ] `SimulateCommitThenError_OutlawCity_PlayerData_v1` = 1, dev grant -> Output `reconciled from the store` and `(stored, AlreadyApplied)`; cash +amount once in the store
+- [ ] Same switch, buy a car -> charged once, owned; a heartbeat afterwards doesn't undo it
+- [ ] `SimulatePurchaseError` = true, buy -> "couldn't confirm" message; switch off, buy again within 2 s -> works (no "Busy")
+- [ ] Dev `AddLedgerReward` 500, restart with `SimulateStoreFailure_OutlawCity_PendingRewards_v1` set -> "ledger unreadable; retrying later" (backing off); clear it -> paid once. **Clear the attribute afterwards.**
+
 ## Police pursuit tuning (audit remediation, EXPERIMENTAL)
 - [ ] With SightRange 130 / ChaseSpeed 100 / ChaseGain 0.25: rob, drive away normally, lose the police -> paid once
 - [ ] Police still catch a robber who stops or crashes nearby (bust within 18 studs, slow for 2.5 s)

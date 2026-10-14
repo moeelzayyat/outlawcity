@@ -152,7 +152,7 @@ function RobberyRules.payoutOutcome(ok: boolean, err: string?): Types.PayoutOutc
 		return "Paid"
 	elseif err == "DuplicateTransaction" then
 		return "AlreadyPaid"
-	elseif err == "DataNotLoaded" or err == "SaveFailed" then
+	elseif err == "DataNotLoaded" or err == "SaveFailed" or err == "SaveUnconfirmed" or err == "SessionClosed" or err == "RewardHistoryFull" then
 		return "Retry" -- temporary: the data isn't loaded, or the write didn't go through
 	end
 	return "Rejected"

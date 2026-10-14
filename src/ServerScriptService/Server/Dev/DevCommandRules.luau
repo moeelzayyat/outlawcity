@@ -20,6 +20,7 @@ export type Command =
 	| { Name: "ClearRobberyCooldown" }
 	| { Name: "SetCashUnavailable", Value: boolean } -- simulates losing cash data mid-session
 	| { Name: "TryRobStore" }
+	| { Name: "AddLedgerReward", Value: number } -- writes a reward straight into the ledger
 	| { Name: "WriteLegacyProfile" } -- stores a v1 cash-only record; rejoin to test migration -- same server checks as the register prompt, minus the prompt's own range limit
 
 local function finite(value: any): boolean
@@ -73,6 +74,11 @@ function DevCommandRules.parse(name: any, value: any): (Command?, string?)
 			return nil, "SetCashUnavailable needs true or false"
 		end
 		return { Name = "SetCashUnavailable", Value = value }, nil
+	elseif name == "AddLedgerReward" then
+		if not finite(value) or value <= 0 or value % 1 ~= 0 then
+			return nil, "AddLedgerReward needs a whole positive amount"
+		end
+		return { Name = "AddLedgerReward", Value = value }, nil
 	elseif name == "WriteLegacyProfile" then
 		return { Name = "WriteLegacyProfile" }, nil
 	elseif name == "TryRobStore" then

@@ -85,3 +85,8 @@ Mark each item with the date and result when finally run.
 - [ ] A robbery reward recorded in the ledger on server A is paid on server B after A shuts down mid-outage
 - [ ] DataStore request budgets with many players (one write per cash change + 60 s heartbeat each)
 - [ ] Police tuning with real human drivers and latency: escapes are possible but not trivial
+
+## Final audit fixes
+- [ ] Player leaves mid-purchase on a live server: nothing queued runs after the release-save; rejoin elsewhere shows a consistent profile
+- [ ] Two real servers: server B takes the lock while server A has a queued grant -> A refuses it (SessionClosed); B's data untouched
+- [ ] Ledger reward paid exactly once when two servers both try to claim it around a hand-over
