@@ -28,6 +28,7 @@ local WorldService = require(Services.WorldService)
 local WantedService = require(Services.WantedService)
 local JailService = require(Services.JailService)
 local EconomyService = require(Services.EconomyService)
+local PoliceService = require(Services.PoliceService)
 
 local RobberyService = {}
 
@@ -84,6 +85,7 @@ local function endSession(player: Player, entry: Live)
 	if live[player] == entry then
 		live[player] = nil
 	end
+	PoliceService.setDispatchHold(player, false)
 	publish(player, nil)
 end
 
@@ -123,6 +125,9 @@ function RobberyService.tryStart(player: Player, storeId: string): (boolean, Typ
 	local session = RobberyRules.start(store.State, HttpService:GenerateGUID(false), player.UserId, storeId, t, RobberyConfig)
 	local entry: Live = { Session = session, Character = character :: Model, LastInProgressReport = t }
 	live[player] = entry
+	if RobberyConfig.PoliceDispatchAtHoldEnd then
+		PoliceService.setDispatchHold(player, true)
+	end
 	WantedService.reportCrime(player, RobberyConfig.WantedCrime)
 	publish(player, session)
 	notify(player, "Started", { Id = session.Id, HoldEndsAt = session.HoldEndsAt, Reward = session.Reward })
@@ -148,6 +153,7 @@ local function tick()
 		if event == "Failed" then
 			failSession(player, entry, reason :: Types.RobberyFailReason)
 		elseif event == "HoldComplete" then
+			PoliceService.setDispatchHold(player, false) -- police respond now
 			publish(player, session)
 			notify(player, "Escape", { Id = session.Id, Reward = session.Reward, Deadline = session.EscapeDeadline })
 			print(`[Robbery] {player.Name} {session.Id} holdout complete; escaping`)
