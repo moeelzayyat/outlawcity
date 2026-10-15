@@ -1,0 +1,68 @@
+diff --git a/src/ServerScriptService/Server/World/CityLayout.luau b/src/ServerScriptService/Server/World/CityLayout.luau
+index 2b1c18d..e441cd0 100644
+--- a/src/ServerScriptService/Server/World/CityLayout.luau
++++ b/src/ServerScriptService/Server/World/CityLayout.luau
+@@ -120,6 +120,48 @@ function CityLayout.stretches(): { { number } }
+ 	return result
+ end
+ 
++CityLayout.STOP_LINE_GAP = 2 -- studs between the stop line and the intersection square
++CityLayout.STOP_LINE_DEPTH = 1.2 -- along the road
++CityLayout.STOP_LINE_INNER = 0.6 -- clearance from the centre of the road (the yellow line is 0.8 wide)
++CityLayout.STOP_LINE_CURB = 1 -- clearance from the curb
++
++export type StopLineArm = { Name: string, Center: Vector3, SizeX: number, SizeZ: number, Side: string, X: number, Z: number }
++
++-- The road arms entering each grid intersection: north (-Z), south (+Z), west (-X), east (+X).
++-- An arm exists where a road continues past the intersection square: inside the grid, plus the
++-- connector roads north of the z = -300 line. The connector-highway joins are not included.
++function CityLayout.stopLineApproaches(): { StopLineArm }
++	local half = CityLayout.ROAD_WIDTH / 2
++	local lines = CityLayout.GRID_LINES
++	local first, last = lines[1], lines[#lines]
++	local offset = half + CityLayout.STOP_LINE_GAP + CityLayout.STOP_LINE_DEPTH / 2
++	local across = half - CityLayout.STOP_LINE_INNER - CityLayout.STOP_LINE_CURB
++	local lateral = CityLayout.STOP_LINE_INNER + across / 2
++	local arms = {}
++	for _, X in lines do
++		for _, Z in lines do
++			local function arm(side: string, dx: number, dz: number, sizeX: number, sizeZ: number)
++				table.insert(arms, { Name = `StopLine_{X}_{Z}_{side}`, Center = Vector3.new(X + dx, 0, Z + dz), SizeX = sizeX, SizeZ = sizeZ, Side = side, X = X, Z = Z })
++			end
++			-- Right-hand traffic: a car heading +Z keeps to -X, heading -Z to +X, heading +X to +Z,
++			-- heading -X to -Z (Roblox right vectors).
++			if Z > first or table.find(CityLayout.CONNECTOR_XS, X) then
++				arm("N", -lateral, -offset, across, CityLayout.STOP_LINE_DEPTH) -- arriving northbound side, heading +Z
++			end
++			if Z < last then
++				arm("S", lateral, offset, across, CityLayout.STOP_LINE_DEPTH) -- heading -Z
++			end
++			if X > first then
++				arm("W", -offset, lateral, CityLayout.STOP_LINE_DEPTH, across) -- heading +X
++			end
++			if X < last then
++				arm("E", offset, -lateral, CityLayout.STOP_LINE_DEPTH, across) -- heading -X
++			end
++		end
++	end
++	return arms
++end
++
+ -- Splits [from, to] into pieces that skip the given openings ({centre, halfWidth}).
+ local function withOpenings(from: number, to: number, openings: { { number } }): { { number } }
+ 	local pieces = {}
+@@ -320,6 +362,14 @@ function CityLayout.createBlueprint(): Blueprint
+ 		end
+ 	end
+ 
++	-- Stop lines (N5, stop-line Batch 1): one per road arm entering a grid intersection, 2 studs
++	-- before the 36x36 intersection square, across the incoming half of the arm only (right-hand
++	-- traffic), from 0.6 studs off the centre line to 1 stud inside the curb. Visual only: built
++	-- non-colliding (CityBuilder then also turns off query, touch and shadow).
++	for _, arm in CityLayout.stopLineApproaches() do
++		add(slab(arm.Name, "Markings", arm.Center.X, arm.Center.Z, arm.SizeX, arm.SizeZ, MARK_TOP, MARK_THICKNESS, COLORS.White, Enum.Material.SmoothPlastic, false))
++	end
++
+ 	-- City blocks: the centre block is a flat plaza with vehicle spawns, the rest are raised sidewalks.
+ 	local rng = Random.new(BUILDING_SEED)
+ 	for bi, sx in stretches do
