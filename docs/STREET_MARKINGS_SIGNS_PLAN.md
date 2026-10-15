@@ -1,6 +1,6 @@
 # OUTLAW CITY: stop lines (N5) and street-name signs (N4), PLAN ONLY
 
-Status: **PLAN AWAITING ARCHITECT REVIEW. Nothing has been changed in Studio.** Prepared 2026-10-15 from `src/ServerScriptService/Server/World/CityLayout.luau` and read-only Studio queries (place 132163592957463; evidence in `docs/audits/2026-10-15_markings-signs-plan/TEST_EVIDENCE.md`).
+Status: **Batch 1 (N5 stop lines) IMPLEMENTED 2026-10-15, awaiting Architect review** (`docs/audits/2026-10-15_stop-lines-batch1/`). The Architect approved N5 only; **N4 and the connector-highway joins are not started.** Originally: Prepared 2026-10-15 from `src/ServerScriptService/Server/World/CityLayout.luau` and read-only Studio queries (place 132163592957463; evidence in `docs/audits/2026-10-15_markings-signs-plan/TEST_EVIDENCE.md`).
 
 **Deduplication:** this is the single plan for intersection stop lines. It **replaces** atmosphere proposal **P-E** (`CITY_ATMOSPHERE_AUDIO_AUDIT.md`) and navigation proposal **N5** (`CITY_NAVIGATION_WORLD_AUDIT.md`), which both point here. Street-name signs are navigation **N4**. Crosswalks (mentioned as optional in P-E) are **not** proposed now.
 
@@ -17,10 +17,11 @@ Status: **PLAN AWAITING ARCHITECT REVIEW. Nothing has been changed in Studio.** 
   - 16 intersections, each a 36×36 square owned by the east–west road.
   - North–south roads are split between intersections, so the yellow centre lines (`LineEW_*` / `LineNS_*`, 0.8 wide, top 0.25) stop at each square's edge.
 - **Approaches (road arms entering an intersection):** **50** in total.
-  - 4 arms: the 8 intersections at x = ±100.
-  - 3 arms: the 6 edge intersections (x = ±300, z = ±100) and (±100, 300).
-  - 2 arms: the 4 corners.
-  - The intersections at (±100, −300) also get the connector arm north to the highway.
+  - **6 four-arm intersections:** (±100, −300), (±100, −100), (±100, 100). The two at z = −300 get their fourth arm from the connector road north to the highway.
+  - **6 three-arm intersections:** (±300, −100), (±300, 100), (±100, 300).
+  - **4 two-arm corners:** (±300, ±300).
+  - 6 × 4 + 6 × 3 + 4 × 2 = 50.
+  - Corrected 2026-10-15 per the Architect: the earlier text wrongly said eight four-arm intersections.
 - **No stop lines, crosswalks or street names exist.**
 - **Markings today:** 120 parts, all `CanCollide = false`, `CanQuery = false`, `CanTouch = false`, `CastShadow = false` (CityBuilder sets these for every non-colliding spec).
 
