@@ -1,0 +1,6 @@
+git diff --name-status be0e1f3..HEAD -- src docs
+
+M	docs/CITY_ATMOSPHERE_AUDIO_AUDIT.md
+M	docs/CITY_NAVIGATION_WORLD_AUDIT.md
+M	docs/PROGRESS.md
+A	docs/STREET_MARKINGS_SIGNS_PLAN.md
