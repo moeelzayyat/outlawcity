@@ -42,6 +42,9 @@ function CityBuilder.build(blueprint: CityLayout.Blueprint, parent: Instance): F
 		part.Color = spec.Color
 		part.Material = spec.Material
 		part.CanCollide = spec.CanCollide
+		if spec.PhysicsMaterial then
+			part.CustomPhysicalProperties = PhysicalProperties.new(spec.PhysicsMaterial)
+		end
 		part.TopSurface = Enum.SurfaceType.Smooth
 		part.BottomSurface = Enum.SurfaceType.Smooth
 		if not spec.CanCollide then
