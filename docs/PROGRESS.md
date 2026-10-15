@@ -278,6 +278,14 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
     - phone performance NOT TESTED;
     - other players' view MULTIPLAYER UNVERIFIED.
   - Siren OFF, anti-cheat MONITOR-ONLY, one NPC police unit. The appearance stays as approved (the dark-ground question isn't approved for change).
-- Stop lines (N5, merged with atmosphere P-E) and street-name signs (N4) (`STREET_MARKINGS_SIGNS_PLAN.md`): the Architect approved Stop-Line Batch 1 = N5 only. **Stop-line Batch 1 done (solo), AWAITING ARCHITECT REVIEW** (`docs/audits/2026-10-15_stop-lines-batch1/`). **N4 street signs and the two connector-highway joins are NOT started** and need their own approval. Still open: phone readability and performance NOT TESTED; other players' view MULTIPLAYER UNVERIFIED. No broad Phase 5 content or monetization
+- Stop lines (N5, merged with atmosphere P-E) — **N5 APPROVED WITH CONDITIONS by the Architect (2026-10-15, reviewed `832711b`)** for the solo-Studio prototype; the geometry stays as implemented. Recorded:
+  - 50 stop lines; 316 BaseParts, 114 colliding;
+  - 211/211 automated tests;
+  - the scripted drive-over and police A/B regressions are accepted;
+  - desktop FPS is accepted for the measured conditions;
+  - **memory comparison PARTIAL:** about 183 MB higher in a later Studio session, not causally attributed (fresh-session closeout: `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/`);
+  - phone readability and performance NOT TESTED;
+  - other players' view MULTIPLAYER UNVERIFIED.
+- Street-name signs (N4) — **ONE-SIGN PROTOTYPE PLAN AWAITING ARCHITECT REVIEW** (`STREET_SIGN_PROTOTYPE_PLAN.md`). No sign is built; the other 15 signs, the connector-highway joins and any new markings are not authorized. No broad Phase 5 content or monetization
 - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
 - 3F Studio-only test tools — maintained throughout
