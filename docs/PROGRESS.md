@@ -264,12 +264,17 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
   - (4) owner gameplay feedback (`PLAYTEST_CHECKLIST.md`).
   
   **Batch 2 (P-B, P-D, P-E) is not started.** It waits for owner feedback and the next Architect-approved task.
-- City navigation and world polish audit — Architect: APPROVE WITH CONDITIONS. **World polish Batch 1 (N3 + N2 + N1) done (solo), awaiting audit.** Open items:
-  - pursuit FPS PARTIAL (Studio throttled when backgrounded);
-  - phone NOT TESTED;
-  - other players' view MULTIPLAYER UNVERIFIED;
-  - the dark ground lowers contrast with the far grid roads a little (owner eyeball).
-  
-  N4 / N5 not started; they need Architect review and owner approval.; the next decisions follow that feedback. No broad Phase 5 content or monetization
+- City navigation and world polish — **World polish Batch 1 APPROVED WITH CONDITIONS by the Architect (2026-10-15, reviewed `be0e1f3`)** for the solo-Studio prototype. Recorded:
+  - N3: dealership clearance accepted (2-stud gap, west edge unchanged).
+  - N2: Baseplate appearance accepted.
+  - N1: district colours and materials accepted; the original RNG sequence is preserved.
+  - 209/209 tests passed per the Studio evidence; the rollback evidence is accepted.
+  - **Still open:**
+    - pursuit FPS is PARTIAL, not PASS;
+    - destination-marker visual readability is unverified;
+    - phone performance NOT TESTED;
+    - other players' view MULTIPLAYER UNVERIFIED.
+  - Siren OFF, anti-cheat MONITOR-ONLY, one NPC police unit. The appearance stays as approved (the dark-ground question isn't approved for change).
+- Stop lines (N5, merged with atmosphere P-E) and street-name signs (N4) — **PLAN AWAITING ARCHITECT REVIEW** (`STREET_MARKINGS_SIGNS_PLAN.md`). Recommended first batch: 50 stop lines only. Nothing changed in Studio; the next decisions follow that feedback. No broad Phase 5 content or monetization
 - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
 - 3F Studio-only test tools — maintained throughout

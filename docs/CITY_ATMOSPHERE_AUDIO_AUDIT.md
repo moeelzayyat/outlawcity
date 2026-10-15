@@ -94,6 +94,8 @@ All new code would be **client-only** and read state that already exists. Every 
 - **Rollback:** the `RobberyAudio` flag off.
 
 ### P-E. Road visibility, intersections and navigation
+> **Merged:** stop lines are now planned once, in `STREET_MARKINGS_SIGNS_PLAN.md` (as N5). Crosswalks aren't proposed for now.
+
 - **Now / weak:** centre lines stop at each junction but nothing marks the junction itself; the markers point to the store and dealership, but junctions come up suddenly at speed.
 - **Change:**
   - In `CityLayout` (data only), white stop lines on each approach to the 16 grid intersections: up to 64 thin `Markings` slabs, no collision, no queries, no shadows, on the existing road surface.

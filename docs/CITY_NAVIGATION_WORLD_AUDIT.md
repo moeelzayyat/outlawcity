@@ -121,6 +121,8 @@ Each lists the exact object, its current state, the change, the benefit, the ris
 - **Rollback:** remove `StreetSigns` from `CityLayout`; the builder skips it.
 
 ### N5. Intersection stop lines (same item as atmosphere P-E)
+> **Superseded by `STREET_MARKINGS_SIGNS_PLAN.md`**, which details N5 (stop lines) and N4 (street-name signs).
+
 - **Object:** `City.Markings` (new `StopLine_*` slabs).
 - **Now:** centre lines stop at junctions; nothing marks the junction itself.
 - **Change and details:** as in `CITY_ATMOSPHERE_AUDIO_AUDIT.md` P-E: up to 64 non-colliding, non-shadow slabs on the existing roads.
