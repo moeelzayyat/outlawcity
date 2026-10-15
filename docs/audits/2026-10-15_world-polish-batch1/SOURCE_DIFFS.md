@@ -1,0 +1,168 @@
+# Source diffs: 2026-10-15_world-polish-batch1
+
+Commit range `96cce64..ea579b9` (source). Studio matches `src/` for every changed script (hash-checked).
+
+## `src/ServerScriptService/Server/World/CityBuilder.luau`
+
+```diff
+diff --git a/src/ServerScriptService/Server/World/CityBuilder.luau b/src/ServerScriptService/Server/World/CityBuilder.luau
+index c71cdb5..38f7661 100644
+--- a/src/ServerScriptService/Server/World/CityBuilder.luau
++++ b/src/ServerScriptService/Server/World/CityBuilder.luau
+@@ -42,6 +42,9 @@ function CityBuilder.build(blueprint: CityLayout.Blueprint, parent: Instance): F
+ 		part.Color = spec.Color
+ 		part.Material = spec.Material
+ 		part.CanCollide = spec.CanCollide
++		if spec.PhysicsMaterial then
++			part.CustomPhysicalProperties = PhysicalProperties.new(spec.PhysicsMaterial)
++		end
+ 		part.TopSurface = Enum.SurfaceType.Smooth
+ 		part.BottomSurface = Enum.SurfaceType.Smooth
+ 		if not spec.CanCollide then
+```
+
+## `src/ServerScriptService/Server/World/CityLayout.luau`
+
+```diff
+diff --git a/src/ServerScriptService/Server/World/CityLayout.luau b/src/ServerScriptService/Server/World/CityLayout.luau
+index 51e607b..2b1c18d 100644
+--- a/src/ServerScriptService/Server/World/CityLayout.luau
++++ b/src/ServerScriptService/Server/World/CityLayout.luau
+@@ -11,6 +11,8 @@ export type PartSpec = {
+ 	Color: Color3,
+ 	Material: Enum.Material,
+ 	CanCollide: boolean,
++	-- Optional: collision physics as if made of this material (keeps the feel when only the look changes).
++	PhysicsMaterial: Enum.Material?,
+ }
+ export type SpawnSpec = { Name: string, CFrame: CFrame }
+ -- Spawns: vehicle spawn pads. CivilianSpawns: where player characters appear.
+@@ -43,6 +45,8 @@ local COLORS = {
+ 	White = Color3.fromRGB(235, 235, 235),
+ 	Barrier = Color3.fromRGB(175, 175, 168),
+ }
++-- The original building colours. No longer drawn, but their count still sets the range of the
++-- seeded colour roll, so the RNG call sequence (and therefore every building's size) is unchanged.
+ local BUILDING_COLORS = {
+ 	Color3.fromRGB(120, 110, 100),
+ 	Color3.fromRGB(90, 100, 115),
+@@ -50,6 +54,18 @@ local BUILDING_COLORS = {
+ 	Color3.fromRGB(105, 85, 80),
+ 	Color3.fromRGB(175, 170, 160),
+ }
++-- World polish Batch 1 (N1): one look per block column, built-in materials only. West (column 1,
++-- the 24/7 MART side) "Old Town" brick, centre "Civic" stone, east (OUTLAW MOTORS side)
++-- "Downtown" slate. Collision physics stays SmoothPlastic (PhysicsMaterial).
++CityLayout.DISTRICTS = table.freeze({
++	table.freeze({ Name = "Old Town", Material = Enum.Material.Brick, Colors = table.freeze({ Color3.fromRGB(140, 70, 55), Color3.fromRGB(120, 60, 50), Color3.fromRGB(155, 95, 70) }) }),
++	table.freeze({ Name = "Civic", Material = Enum.Material.Concrete, Colors = table.freeze({ Color3.fromRGB(185, 180, 170), Color3.fromRGB(165, 160, 150), Color3.fromRGB(200, 195, 185) }) }),
++	table.freeze({ Name = "Downtown", Material = Enum.Material.Slate, Colors = table.freeze({ Color3.fromRGB(85, 95, 110), Color3.fromRGB(70, 80, 95), Color3.fromRGB(100, 110, 125) }) }),
++})
++-- World polish Batch 1 (N3): the one approved geometry exception. Building_3_3_1 ran 0.5 stud into
++-- OUTLAW MOTORS' west wall; its east edge moves in by 2.5 studs (west edge unchanged), leaving a
++-- 2-stud gap. Every other building keeps its exact generated geometry.
++CityLayout.BUILDING_EAST_INSET = table.freeze({ Building_3_3_1 = 2.5 })
+ 
+ local function slab(
+ 	name: string,
+@@ -321,8 +337,14 @@ function CityLayout.createBlueprint(): Blueprint
+ 						local w = rng:NextInteger(36, 62)
+ 						local d = rng:NextInteger(36, 62)
+ 						local h = rng:NextInteger(24, 110)
+-						local color = BUILDING_COLORS[rng:NextInteger(1, #BUILDING_COLORS)]
+-						add(slab(`Building_{bi}_{bj}_{q}`, "Buildings", cx + offset.X * quarter, cz + offset.Y * quarter, w, d, curb + h, h, color, Enum.Material.SmoothPlastic, true))
++						local roll = rng:NextInteger(1, #BUILDING_COLORS) -- kept: preserves the RNG sequence
++						local district = CityLayout.DISTRICTS[bi]
++						local color = district.Colors[(roll - 1) % #district.Colors + 1]
++						local name = `Building_{bi}_{bj}_{q}`
++						local inset = CityLayout.BUILDING_EAST_INSET[name] or 0
++						local spec = slab(name, "Buildings", cx + offset.X * quarter - inset / 2, cz + offset.Y * quarter, w - inset, d, curb + h, h, color, district.Material, true)
++						spec.PhysicsMaterial = Enum.Material.SmoothPlastic
++						add(spec)
+ 					end
+ 				end
+ 			end
+```
+
+## `src/ServerStorage/Tests/CityLayout.spec.luau`
+
+```diff
+diff --git a/src/ServerStorage/Tests/CityLayout.spec.luau b/src/ServerStorage/Tests/CityLayout.spec.luau
+index cfb1438..9123eca 100644
+--- a/src/ServerStorage/Tests/CityLayout.spec.luau
++++ b/src/ServerStorage/Tests/CityLayout.spec.luau
+@@ -4,6 +4,11 @@ local Assert = require(script.Parent.Assert)
+ 
+ local blueprint = CityLayout.createBlueprint()
+ 
++-- Recorded from the place before World Polish Batch 1 (blueprint signature 8b66ade9 over 186 parts; see docs/audits/2026-10-15_world-polish-batch1).
++local BASELINE_ROWS = 186
++local BASELINE_GEOMETRY_HASH = "8b66ade9"
++local BASELINE_3_3_1_HEIGHT = 46
++
+ local function rect(spec)
+ 	local c, s = spec.Center, spec.Size
+ 	return c.X - s.X / 2, c.X + s.X / 2, c.Z - s.Z / 2, c.Z + s.Z / 2
+@@ -87,4 +92,61 @@ return {
+ 			end
+ 		end
+ 	end,
++	["world polish: every generated part keeps its baseline geometry except Building_3_3_1"] = function()
++		-- Signature of all generated parts (name, group, centre, size, collision) except the one
++		-- approved exception, recorded from the place before World Polish Batch 1.
++		local rows = {}
++		for _, spec in blueprint.Parts do
++			if spec.Name ~= "Building_3_3_1" then
++				table.insert(rows, string.format("%s|%s|%.3f,%.3f,%.3f|%.3f,%.3f,%.3f|%s", spec.Name, spec.Group, spec.Center.X, spec.Center.Y, spec.Center.Z, spec.Size.X, spec.Size.Y, spec.Size.Z, tostring(spec.CanCollide)))
++			end
++		end
++		table.sort(rows)
++		local text = table.concat(rows, "\n")
++		local h = 2166136261
++		for i = 1, #text do
++			h = bit32.bxor(h, string.byte(text, i))
++			local lo = bit32.band(h, 0xFFFF) * 16777619
++			local hi = bit32.rshift(h, 16) * 16777619
++			h = bit32.band(lo + bit32.lshift(bit32.band(hi, 0xFFFF), 16), 0xFFFFFFFF)
++		end
++		Assert.equal(#rows, BASELINE_ROWS, "part count without the exception")
++		Assert.equal(string.format("%08x", h), BASELINE_GEOMETRY_HASH, "generated geometry changed")
++	end,
++	["world polish: Building_3_3_1 keeps its west edge and clears the dealership by at least 1 stud"] = function()
++		local building
++		local count = 0
++		for _, spec in blueprint.Parts do
++			if spec.Group == "Buildings" then
++				count += 1
++			end
++			if spec.Name == "Building_3_3_1" then
++				building = spec
++			end
++		end
++		Assert.equal(count, 24, "no buildings added or removed")
++		Assert.truthy(building ~= nil, "Building_3_3_1 exists")
++		local x1, x2, z1, z2 = rect(building)
++		Assert.equal(x1, 138.5, "west edge unchanged")
++		Assert.equal(x2, 177, "east edge moved in by 2.5")
++		Assert.equal(building.Size.Y, BASELINE_3_3_1_HEIGHT, "height unchanged")
++		for _, part in CityLayout.dealership().Parts do
++			local dx1, dx2, dz1, dz2 = rect(part)
++			local gapX = math.max(dx1 - x2, x1 - dx2)
++			local gapZ = math.max(dz1 - z2, z1 - dz2)
++			Assert.truthy(math.max(gapX, gapZ) >= 1, `{part.Name} within 1 stud of Building_3_3_1`)
++		end
++	end,
++	["world polish: districts by column, built-in materials, collision physics unchanged"] = function()
++		for _, spec in blueprint.Parts do
++			if spec.Group == "Buildings" then
++				local column = tonumber(spec.Name:match("^Building_(%d)_"))
++				local district = CityLayout.DISTRICTS[column]
++				Assert.equal(spec.Material, district.Material, spec.Name)
++				Assert.truthy(table.find(district.Colors, spec.Color) ~= nil, `{spec.Name} colour`)
++				Assert.equal(spec.PhysicsMaterial, Enum.Material.SmoothPlastic, `{spec.Name} physics`)
++				Assert.truthy(spec.Material ~= Enum.Material.Glass, "no glass")
++			end
++		end
++	end,
+ }
+```

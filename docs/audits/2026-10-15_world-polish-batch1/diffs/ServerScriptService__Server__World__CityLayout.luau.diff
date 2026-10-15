@@ -1,0 +1,58 @@
+diff --git a/src/ServerScriptService/Server/World/CityLayout.luau b/src/ServerScriptService/Server/World/CityLayout.luau
+index 51e607b..2b1c18d 100644
+--- a/src/ServerScriptService/Server/World/CityLayout.luau
++++ b/src/ServerScriptService/Server/World/CityLayout.luau
+@@ -11,6 +11,8 @@ export type PartSpec = {
+ 	Color: Color3,
+ 	Material: Enum.Material,
+ 	CanCollide: boolean,
++	-- Optional: collision physics as if made of this material (keeps the feel when only the look changes).
++	PhysicsMaterial: Enum.Material?,
+ }
+ export type SpawnSpec = { Name: string, CFrame: CFrame }
+ -- Spawns: vehicle spawn pads. CivilianSpawns: where player characters appear.
+@@ -43,6 +45,8 @@ local COLORS = {
+ 	White = Color3.fromRGB(235, 235, 235),
+ 	Barrier = Color3.fromRGB(175, 175, 168),
+ }
++-- The original building colours. No longer drawn, but their count still sets the range of the
++-- seeded colour roll, so the RNG call sequence (and therefore every building's size) is unchanged.
+ local BUILDING_COLORS = {
+ 	Color3.fromRGB(120, 110, 100),
+ 	Color3.fromRGB(90, 100, 115),
+@@ -50,6 +54,18 @@ local BUILDING_COLORS = {
+ 	Color3.fromRGB(105, 85, 80),
+ 	Color3.fromRGB(175, 170, 160),
+ }
++-- World polish Batch 1 (N1): one look per block column, built-in materials only. West (column 1,
++-- the 24/7 MART side) "Old Town" brick, centre "Civic" stone, east (OUTLAW MOTORS side)
++-- "Downtown" slate. Collision physics stays SmoothPlastic (PhysicsMaterial).
++CityLayout.DISTRICTS = table.freeze({
++	table.freeze({ Name = "Old Town", Material = Enum.Material.Brick, Colors = table.freeze({ Color3.fromRGB(140, 70, 55), Color3.fromRGB(120, 60, 50), Color3.fromRGB(155, 95, 70) }) }),
++	table.freeze({ Name = "Civic", Material = Enum.Material.Concrete, Colors = table.freeze({ Color3.fromRGB(185, 180, 170), Color3.fromRGB(165, 160, 150), Color3.fromRGB(200, 195, 185) }) }),
++	table.freeze({ Name = "Downtown", Material = Enum.Material.Slate, Colors = table.freeze({ Color3.fromRGB(85, 95, 110), Color3.fromRGB(70, 80, 95), Color3.fromRGB(100, 110, 125) }) }),
++})
++-- World polish Batch 1 (N3): the one approved geometry exception. Building_3_3_1 ran 0.5 stud into
++-- OUTLAW MOTORS' west wall; its east edge moves in by 2.5 studs (west edge unchanged), leaving a
++-- 2-stud gap. Every other building keeps its exact generated geometry.
++CityLayout.BUILDING_EAST_INSET = table.freeze({ Building_3_3_1 = 2.5 })
+ 
+ local function slab(
+ 	name: string,
+@@ -321,8 +337,14 @@ function CityLayout.createBlueprint(): Blueprint
+ 						local w = rng:NextInteger(36, 62)
+ 						local d = rng:NextInteger(36, 62)
+ 						local h = rng:NextInteger(24, 110)
+-						local color = BUILDING_COLORS[rng:NextInteger(1, #BUILDING_COLORS)]
+-						add(slab(`Building_{bi}_{bj}_{q}`, "Buildings", cx + offset.X * quarter, cz + offset.Y * quarter, w, d, curb + h, h, color, Enum.Material.SmoothPlastic, true))
++						local roll = rng:NextInteger(1, #BUILDING_COLORS) -- kept: preserves the RNG sequence
++						local district = CityLayout.DISTRICTS[bi]
++						local color = district.Colors[(roll - 1) % #district.Colors + 1]
++						local name = `Building_{bi}_{bj}_{q}`
++						local inset = CityLayout.BUILDING_EAST_INSET[name] or 0
++						local spec = slab(name, "Buildings", cx + offset.X * quarter - inset / 2, cz + offset.Y * quarter, w - inset, d, curb + h, h, color, district.Material, true)
++						spec.PhysicsMaterial = Enum.Material.SmoothPlastic
++						add(spec)
+ 					end
+ 				end
+ 			end

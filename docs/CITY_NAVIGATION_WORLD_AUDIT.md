@@ -1,6 +1,6 @@
 # OUTLAW CITY: city navigation and world polish audit (PLAN ONLY)
 
-Status: **PLAN AWAITING ARCHITECT REVIEW. Nothing has been changed in Studio or in gameplay code.** Prepared 2026-10-14 from read-only Studio inspection of place 132163592957463 (every query asserted the place ID) and the `src/` snapshot.
+Status: **Batch 1 (N3 + N2 + N1) implemented 2026-10-15 under the Architect's APPROVE WITH CONDITIONS, awaiting audit.** The only geometry exception is `Building_3_3_1`. N4 and N5 are not started. Results are in `PROGRESS.md`. The original plan follows. Prepared 2026-10-14 from read-only Studio inspection of place 132163592957463 (every query asserted the place ID) and the `src/` snapshot.
 
 **Boundaries:**
 - No map expansion or new districts.
