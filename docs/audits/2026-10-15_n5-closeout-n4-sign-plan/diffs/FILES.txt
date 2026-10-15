@@ -1,0 +1,4 @@
+git diff --name-status 832711b..HEAD -- src docs
+
+M	docs/PROGRESS.md
+A	docs/STREET_SIGN_PROTOTYPE_PLAN.md

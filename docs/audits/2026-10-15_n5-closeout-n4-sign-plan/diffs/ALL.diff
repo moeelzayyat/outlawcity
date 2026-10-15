@@ -1,0 +1,133 @@
+diff --git a/docs/PROGRESS.md b/docs/PROGRESS.md
+index 2efe1bc..d52aa8b 100644
+--- a/docs/PROGRESS.md
++++ b/docs/PROGRESS.md
+@@ -278,6 +278,14 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
+     - phone performance NOT TESTED;
+     - other players' view MULTIPLAYER UNVERIFIED.
+   - Siren OFF, anti-cheat MONITOR-ONLY, one NPC police unit. The appearance stays as approved (the dark-ground question isn't approved for change).
+-- Stop lines (N5, merged with atmosphere P-E) and street-name signs (N4) (`STREET_MARKINGS_SIGNS_PLAN.md`): the Architect approved Stop-Line Batch 1 = N5 only. **Stop-line Batch 1 done (solo), AWAITING ARCHITECT REVIEW** (`docs/audits/2026-10-15_stop-lines-batch1/`). **N4 street signs and the two connector-highway joins are NOT started** and need their own approval. Still open: phone readability and performance NOT TESTED; other players' view MULTIPLAYER UNVERIFIED. No broad Phase 5 content or monetization
++- Stop lines (N5, merged with atmosphere P-E) — **N5 APPROVED WITH CONDITIONS by the Architect (2026-10-15, reviewed `832711b`)** for the solo-Studio prototype; the geometry stays as implemented. Recorded:
++  - 50 stop lines; 316 BaseParts, 114 colliding;
++  - 211/211 automated tests;
++  - the scripted drive-over and police A/B regressions are accepted;
++  - desktop FPS is accepted for the measured conditions;
++  - **memory comparison PARTIAL:** about 183 MB higher in a later Studio session, not causally attributed (fresh-session closeout: `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/`);
++  - phone readability and performance NOT TESTED;
++  - other players' view MULTIPLAYER UNVERIFIED.
++- Street-name signs (N4) — **ONE-SIGN PROTOTYPE PLAN AWAITING ARCHITECT REVIEW** (`STREET_SIGN_PROTOTYPE_PLAN.md`). No sign is built; the other 15 signs, the connector-highway joins and any new markings are not authorized. No broad Phase 5 content or monetization
+ - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
+ - 3F Studio-only test tools — maintained throughout
+diff --git a/docs/STREET_SIGN_PROTOTYPE_PLAN.md b/docs/STREET_SIGN_PROTOTYPE_PLAN.md
+new file mode 100644
+index 0000000..03e1696
+--- /dev/null
++++ b/docs/STREET_SIGN_PROTOTYPE_PLAN.md
+@@ -0,0 +1,107 @@
++# OUTLAW CITY: one street-name sign prototype (N4), PLAN ONLY
++
++Status: **PLAN AWAITING ARCHITECT REVIEW. No sign has been created.** Prepared 2026-10-15 from `CityLayout.luau`, `STREET_MARKINGS_SIGNS_PLAN.md` (section 3) and a read-only Studio query (place 132163592957463; output in `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/TEST_EVIDENCE.md`).
++
++**Scope:** exactly ONE sign. The other 15 signs, the connector–highway joins and any new markings are out of scope and need their own approval.
++
++**Boundaries:**
++- No changes to vehicles, police AI, pursuit (130 / 100 / 0.25 / 8), robbery, economy, dealership, jail or anti-cheat (monitor-only).
++- Siren off; one police NPC; no external assets or scripts (built-in materials and fonts only).
++- Studio is the source of truth. Multiplayer is MULTIPLAYER UNVERIFIED.
++
++## 1. Location
++- **Intersection: (100, 100)**, from the plan's measured table (`STREET_MARKINGS_SIGNS_PLAN.md` §3).
++  - It is a four-arm interior junction next to the plaza (spawn) on the way to OUTLAW MOTORS.
++  - It is already one of the four N5 camera views, so before/after captures exist.
++- **Sign position: (122, 0.6, 122)**, the south-east corner of the junction, on `Sidewalks.Block_3_3` (sidewalk top 0.6). That is 22 studs from the junction centre on both axes, 4 studs inside the sidewalk.
++- **Read-only clearances** (any City part within 12 studs of (122, 122)):
++  - `Block_3_3` (under the sign);
++  - `RoadNS_100_3` and `RoadEW_100`, 4.00 studs away;
++  - `StopLine_100_100_S`, 5.06 studs away.
++  - No building, store, dealership or spawn pad is within 12 studs.
++
++## 2. Names (owner decision)
++- **Proposed (plain, from the approved plan):**
++  - east–west streets from the highway side (z = −300, −100, 100, 300) are **1st St, 2nd St, 3rd St, 4th St**;
++  - north–south avenues west to east (x = −300, −100, 100, 300) are **A Ave, B Ave, C Ave, D Ave**.
++  - This sign shows **3rd St** (z = 100) and **C Ave** (x = 100).
++- **Alternative:** themed names, chosen by the owner for all 8 streets at once. The prototype only needs the two names here.
++- **Instance names:** Model `City.StreetSigns.StreetSign_100_100` holding `Post`, `Blade_EW` (text "3rd St") and `Blade_NS` (text "C Ave"). Future signs would follow `StreetSign_<X>_<Z>`.
++
++## 3. Parts, sizes, materials, SurfaceGuis
++| Part | Size (studs) | Centre | Material / colour |
++|---|---|---|---|
++| `Post` | 0.4 × 10.4 × 0.4 | (122, 5.8, 122): from the sidewalk top 0.6 to 11.0 | SmoothPlastic, grey (110, 110, 110) |
++| `Blade_EW` ("3rd St") | 7 × 1.5 × 0.2: long along X, parallel to 3rd St; faces ±Z | (122, 8.6, 122) | SmoothPlastic, dark green (0, 102, 51) |
++| `Blade_NS` ("C Ave") | 0.2 × 1.5 × 7: long along Z, parallel to C Ave; faces ±X | (122, 10.2, 122) | SmoothPlastic, dark green (0, 102, 51) |
++
++- **Totals:** 3 parts and **4 SurfaceGuis**, one on each face of each blade (front and back), so the name reads from both driving directions.
++- **Each SurfaceGui:** `SizingMode = PixelsPerStud` 50, `LightInfluence = 0`, `AlwaysOnTop = false`, `MaxDistance = 150`. It holds one `TextLabel`: white, `Font = GothamBold` (built-in), `TextScaled = true`, 8% padding, transparent background.
++- **Blade size change:** the blade is 7 × 1.5, not the 6 × 1.2 in the earlier plan, because the estimate in section 5 shows 1.2 is too small at 60 studs. The blade's road-side edge stays over the sidewalk (118.5 vs the road edge at 118).
++
++## 4. Collision, query, touch, shadow, streaming
++- **All 3 parts:**
++  - Anchored;
++  - `CanCollide = false`, `CanQuery = false`, `CanTouch = false`, `CastShadow = false`;
++  - cars, police raycasts, prompts and vehicle validation can't hit or see them.
++- **Streaming:** `Workspace.StreamingEnabled` is true. The sign is a Model with `ModelStreamingMode = Atomic`, so the post, both blades and their SurfaceGuis arrive and leave together. The text never appears without its blade.
++- **Build path:**
++  - data in `CityLayout.streetSigns()` (one entry);
++  - parts and SurfaceGuis built by a new `CityBuilder.buildStreetSigns`;
++  - this adds no new runtime script (a SurfaceGui is not a script).
++- **One-time creation in the existing place:** CityBuilder only builds a missing City, so the existing place gets the sign once by an Edit script with the same properties, as with N5.
++
++## 5. Readability at 30 and 60 studs (estimate, to be verified by capture)
++**Viewport:** Studio Play is 2004 × 935 px with a 70° vertical field of view, so 1 stud at distance d covers about 668 / d px. The iPhone 7 simulator (374 px tall) gets about 267 / d px.
++
++**Text:** cap height about 1.2 studs (80% of the 1.5 blade).
++
++| Distance | Desktop | Phone simulator |
++|---|---|---|
++| 30 studs | ~27 px | ~11 px |
++| 60 studs | ~13 px | ~5 px (expected to FAIL) |
++
++**Pass:** the full name is legible in the capture without zooming.
++
++**Expected result:** desktop passes at 30 and 60. Phone passes at 30. Phone at 60 is likely unreadable at any blade size that fits a sidewalk sign, so it is reported, not hidden.
++
++## 6. Camera views (both driving directions per blade)
++Driver eye height y = 5, in the incoming (right-hand) lane. Each camera looks at the blade centre. Distances are measured along the road from the sign post; the straight-line distance is in brackets.
++
++| Blade read | Direction | 30 studs | 60 studs |
++|---|---|---|---|
++| "C Ave" (`Blade_NS`), from 3rd St | heading +X (from the west) | (92, 5, 108.8) [33] | (62, 5, 108.8) [62] |
++| | heading −X (from the east) | (152, 5, 91.2) [43] | (182, 5, 91.2) [68] |
++| "3rd St" (`Blade_EW`), from C Ave | heading +Z (from the north) | (91.2, 5, 92) [43] | (91.2, 5, 62) [68] |
++| | heading −Z (from the south) | (108.8, 5, 152) [33] | (108.8, 5, 182) [62] |
++
++- **8 views, 2 captures each** (the first capture after a camera jump can miss SurfaceGui text). Play mode, player at the plaza, Batch 1 atmosphere lighting.
++- **The same 8 views are captured before**, to show nothing else changes.
++- **Note:** the 30-stud view heading +X and the one heading +Z sit inside the intersection square, because the sign is on the far side for those drivers.
++
++## 7. Acceptance criteria
++1. **Parts:**
++   - BaseParts 316 → 319, colliding 114 unchanged;
++   - the City hash of all other parts stays `6527bae1`;
++   - the stop-line signature stays `f958ecfa`;
++   - the 186-part signature `8b66ade9` passes.
++2. **Properties, read in Studio:** the 3 parts as in sections 3–4, the 4 SurfaceGuis with the right text and faces, and the Model `ModelStreamingMode = Atomic`.
++3. **Spec (`CityLayout.spec`):**
++   - exactly one sign, 3 parts;
++   - the post fully on a `Sidewalks` part and at least 4 studs from every road edge;
++   - at least 3 studs from Buildings, Store, Dealership and VehicleSpawns parts;
++   - no overlap with any marking;
++   - all parts non-colliding;
++   - the names match the convention.
++4. **Visuals:** section 6, before and after. Desktop is readable at 30 and 60 studs from all 4 directions. The phone simulator is readable at 30 studs; 60 studs is recorded as found.
++5. **Gameplay:** drive past the corner in all four lanes with no contact (speed and height unchanged); the police A/B and robbery, jail, vehicle and dealership regressions as in N5; vehicle validation monitor-only.
++6. **Performance:**
++   - desktop: idle and pursuit 3 + 3 runs before and after, Studio in front, 60 fps cap kept;
++   - memory: the fresh-session alternating protocol used for the N5 closeout, with the result stated as within run-to-run noise or not;
++   - **phone simulator:** idle FPS facing the sign with the owner switching on Device Simulator (I can't toggle it myself). A real phone is NOT TESTED unless the owner runs it.
++7. **Rollback:** delete `City.StreetSigns` and remove the `streetSigns` entry and builder call. Then 316 / 114, hash `6527bae1`, stop-line signature `f958ecfa` and 211 tests must come back exactly.
++
++## 8. Not included
++- The other 15 signs.
++- Signs at the connector–highway joins.
++- Any new marking, road, building or gameplay.
