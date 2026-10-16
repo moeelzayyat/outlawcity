@@ -1,0 +1,164 @@
+diff --git a/docs/N4_STAGE_B_PLAN.md b/docs/N4_STAGE_B_PLAN.md
+new file mode 100644
+index 0000000..f5e23fc
+--- /dev/null
++++ b/docs/N4_STAGE_B_PLAN.md
+@@ -0,0 +1,123 @@
++# OUTLAW CITY: N4 Stage B readiness (PLAN ONLY) and the Device Simulator test
++
++**Status:** PLAN AWAITING ARCHITECT REVIEW. No Studio edits; no sign built.
++
++**Stage B is blocked until all four hold:**
++1. The owner authorizes it.
++2. The Architect reviews this plan.
++3. The four current signs pass the phone-simulator readability check in section 4.
++4. Owner navigation feedback is obtained (rollout gate item 6).
++
++**Source of the measurements:** the read-only Studio inspection recorded at `6031627` (`docs/audits/2026-10-16_n4-rollout-readiness/TEST_EVIDENCE.md`).
++- Nothing near these junctions has changed since then. Stage A's three signs are at the plaza ring, 180+ studs away.
++- **A fresh re-check could not be run for this plan:** no Studio instance was connected to my tools at the time (`list_roblox_studios` returned none). The re-check is listed as the first implementation step (section 3).
++
++**Boundaries:**
++- No other signs, renaming, roads or gameplay changes.
++- Pursuit 130 / 100 / 0.25 / 8; one police unit; siren off; anti-cheat monitor-only; no external assets.
++- Multiplayer is MULTIPLAYER UNVERIFIED.
++
++## 1. The two junctions
++Both are 4-arm junctions on 1st St (z = −300). Their north arm is the connector road to the highway, so these are the first junctions a driver meets coming off the highway, and the last before getting onto it.
++
++### (100, −300): "1st St" / "C Ave"
++| Corner | Post | Sidewalk | Road / marking / nearest solid | Approach scores (N S W E, out of 4) | Verdict |
++|---|---|---|---|---|---|
++| **(+,+)** | **(122, −278)** | Block_3_1 (all 3 parts) | 3.80 / 4.84 / 62.99 (Building_2_1_2) | **N4 S3 W4 E1** | **Proposed.** Weak approach E (from the grid edge); the highway connector (N) scores 4/4 |
++| (−,+) | (78, −278) | Block_2_1 | 3.80 / 4.84 / 15.73 | N4 S1 W3 E4 | Valid, but weak on S (traffic from the plaza ring heading to the highway). Not chosen |
++| (+,−), (−,−) | (122, −322), (78, −322) | none (off grid) | — | — | Rejected |
++
++### (−100, −300): "1st St" / "B Ave"
++| Corner | Post | Sidewalk | Road / marking / nearest solid | Approach scores | Verdict |
++|---|---|---|---|---|---|
++| **(+,+)** | **(−78, −278)** | Block_2_1 | 3.80 / 4.84 / 60.68 (Building_1_1_2) | **N4 S3 W4 E1** | **Proposed.** Weak approach E (the 200-stud link from the (100, −300) junction, which is itself signed) |
++| (−,+) | (−122, −278) | Block_1_1 | 3.80 / 4.84 / 15.90 | N4 S1 W3 E4 | Valid, but weak on S (plaza-ring traffic). Not chosen |
++| (+,−), (−,−) | (−78, −322), (−122, −322) | none (off grid) | — | — | Rejected |
++
++**Why both use corner (+,+):**
++- Both highway connector approaches (N) and both plaza-ring approaches (S) score 3–4.
++- No fitting corner puts the weak approach on the west perimeter at (−100, −300): the only corners with a weak west approach are off-grid.
++- The scores are the geometric planning screen. Rendered views are the acceptance evidence (section 3).
++
++## 2. Geometry, labels, counts
++- **Design:** the approved design unchanged.
++  - Post 0.4 × 10.4 × 0.4.
++  - Blades 7 × 1.5 × 0.2, cantilevered away from the junction (+X and +Z from a (+,+) corner).
++  - 4 SurfaceGuis per sign (GothamBold, PPS 50, LightInfluence 0, MaxDistance 150).
++  - Atomic model; all parts anchored with CanCollide, CanQuery, CanTouch and CastShadow false.
++- **Blade footprints:**
++
++  | Sign | Blade_EW centre | Blade_NS centre |
++  |---|---|---|
++  | (100, −300) | (125.7, 8.6, −278), x 122.2..129.2 | (122, 10.2, −274.3), z −277.8..−270.8 |
++  | (−100, −300) | (−74.3, 8.6, −278), x −77.8..−70.8 | (−78, 10.2, −274.3), z −277.8..−270.8 |
++
++  These are all on the stated block, 3.9 studs from the road.
++- **Labels** (plain names, as approved so far):
++  - `StreetSign_100_-300` = "1st St" / "C Ave";
++  - `StreetSign_-100_-300` = "1st St" / "B Ave".
++
++  Themed names remain an open owner choice; choosing them would rename all signs in a separate approved change.
++- **Counts after Stage B:**
++  - 6 signs;
++  - BaseParts 328 → **334**;
++  - colliding **114**;
++  - sign SurfaceGuis 16 → **24**.
++
++## 3. Implementation steps (when unblocked)
++1. **Backup** (owner, verified in the Studio log), then a read-only re-check of the two corners in the current place, repeating section 1.
++2. **Data:** add two entries to `CityLayout.STREET_SIGNS`: `{X=100, Z=-300, CornerX=22, CornerZ=22}` and `{X=-100, Z=-300, CornerX=22, CornerZ=22}`.
++3. **Spec:** extend the existing street-sign tests: count 6, expected names, exact posts. All the per-sign checks already loop over every sign.
++4. **Studio:** `buildStreetSigns` adds only the two missing models; the existing four are skipped by name.
++5. **Verify:**
++   - 334 / 114, 24 sign GUIs;
++   - City `6527bae1`, stop-line `f958ecfa`, buildings `8b66ade9` and prototype `87d79268` unchanged;
++   - the Stage A signature `18eef2d0` unchanged;
++   - footprints and clearances read from the place;
++   - all tests pass.
++6. **Evidence:**
++   - rendered views from all 4 incoming approaches of each junction at 30 and 60 studs, including from the highway connector;
++   - no hidden letters;
++   - drive past and walk through (no bump or touch);
++   - police, jail, robbery, vehicle and dealership regressions;
++   - 3 + 3 FPS and memory runs before and after;
++   - duplicate checks (restart, repeated builder calls, rebuild).
++7. **Rollback:** remove the two entries, delete `StreetSign_100_-300` and `StreetSign_-100_-300`, and restore the spec. It must return exactly 328 / 114, 16 sign GUIs, the four signs with signatures `87d79268` and `18eef2d0`, and 216 tests.
++
++## 4. Device Simulator test for the four existing signs (short, targeted)
++**Who:** I can't switch on Studio's Device Simulator myself.
++1. The owner clicks **Test → Device** in Studio (Device Simulator) and picks **iPhone 7 (667 × 375, landscape)**.
++2. The owner starts Play and tells me.
++3. Then I drive the camera and take the captures.
++4. Repeat with one larger phone (e.g. iPhone 14 Pro Max, landscape).
++
++**Views:** for each of the four signs, the two strongest approaches at 30 and 60 studs, from the same positions as the desktop evidence. Driver eye at y 5 in the incoming lane, aimed at the cross-street blade.
++
++| Sign | Approach A (30, 60) | Approach B (30, 60) |
++|---|---|---|
++| (100, 100) 3rd St / C Ave | from N: (91.2, 5, 70) / (91.2, 5, 40) → "3rd St" | from W: (70, 5, 108.8) / (40, 5, 108.8) → "C Ave" |
++| (−100, −100) 2nd St / B Ave | from N: (−108.8, 5, −130) / (−108.8, 5, −160) → "2nd St" | from E: (−70, 5, −108.8) / (−40, 5, −108.8) → "B Ave" |
++| (100, −100) 2nd St / C Ave | from S: (108.8, 5, −70) / (108.8, 5, −40) → "2nd St" | from W: (70, 5, −91.2) / (40, 5, −91.2) → "C Ave" |
++| (−100, 100) 3rd St / B Ave | from N: (−108.8, 5, 70) / (−108.8, 5, 40) → "3rd St" | from E: (−70, 5, 91.2) / (−40, 5, 91.2) → "B Ave" |
++
++That is 16 captures per device. Each is taken twice; the second is kept, because the first after a camera jump can miss SurfaceGui text.
++
++**Also record:**
++- whether the HUD (touch controls, Spawn Car button, cash) covers the sign in any view;
++- idle FPS facing the plaza ring for 10 s per device (simulator FPS is indicative only, not a real-phone measurement).
++
++**Pass (provisional, per the Architect):**
++- **30 studs:** every name fully legible on both devices, with no letter clipped and no HUD overlap.
++- **60 studs:** the result is recorded as legible, marginal or illegible. It is not a pass criterion, but an illegible 60-stud result is reported plainly.
++
++**If the simulator can't be run:** the result is **PHONE SIMULATOR NOT TESTED**, and Stage B stays blocked by gate 3.
++
++**Real phone:** NOT TESTED unless the owner runs it. Navigation feedback (gate 4) comes from the owner driving around the plaza ring and the highway route.
++
++## 5. Not in this plan
++- Building any sign.
++- Stages C and D.
++- Connector–highway join signs at (±100, −492).
++- Second signs.
++- Renaming.
++- Any gameplay change.
+diff --git a/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md b/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md
+index d6e5d40..02391b8 100644
+--- a/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md
++++ b/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md
+@@ -1,6 +1,6 @@
+ # OUTLAW CITY: N4 street-sign rollout readiness (PLAN ONLY)
+ 
+-**Status:** APPROVED WITH CONDITIONS for Stage A only (Architect, reviewed `6031627`). **Stage A built, awaiting review** (`docs/audits/2026-10-16_n4-stage-a/`); Stages B–D not authorized. Originally: plan only, nothing changed in Studio. Prepared 2026-10-16 from `CityLayout.luau` and one read-only Studio query against place 132163592957463 (exact output in `docs/audits/2026-10-16_n4-rollout-readiness/TEST_EVIDENCE.md`).
++**Status:** APPROVED WITH CONDITIONS for Stage A only (Architect, reviewed `6031627`). **Stage A APPROVED** (reviewed `fe693f1`). Stage B readiness plan: `N4_STAGE_B_PLAN.md` (plan only; blocked by the gate). Stages C–D not authorized. Originally: plan only, nothing changed in Studio. Prepared 2026-10-16 from `CityLayout.luau` and one read-only Studio query against place 132163592957463 (exact output in `docs/audits/2026-10-16_n4-rollout-readiness/TEST_EVIDENCE.md`).
+ 
+ **Starting point:**
+ - One approved sign: `StreetSign_100_100` (Architect APPROVE, `dc32b76`), at corner (122, 122), cantilevered, "3rd St" / "C Ave". It stays unchanged.
+diff --git a/docs/PROGRESS.md b/docs/PROGRESS.md
+index a005363..f89a7ab 100644
+--- a/docs/PROGRESS.md
++++ b/docs/PROGRESS.md
+@@ -303,6 +303,17 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
+   - phone simulator and real phone NOT TESTED;
+   - other players' view MULTIPLAYER UNVERIFIED.
+ 
+-  The approved prototype stays unchanged; plain names apply to this prototype only. **Full N4 rollout NOT AUTHORIZED.** The rollout readiness plan was APPROVED WITH CONDITIONS (reviewed `6031627`) for **Stage A only**. **Stage A (3 plaza-ring signs) done (solo), AWAITING ARCHITECT REVIEW** (`docs/audits/2026-10-16_n4-stage-a/`). **Stages B, C, D, connector-highway signs, second signs and any new markings are NOT authorized.** Still open: phone simulator and real phone NOT TESTED; MULTIPLAYER UNVERIFIED. No broad Phase 5 content or monetization
++  The approved prototype stays unchanged; plain names apply to this prototype only. **Full N4 rollout NOT AUTHORIZED.** The rollout readiness plan was APPROVED WITH CONDITIONS (reviewed `6031627`) for **Stage A only**. **Stage A APPROVED by the Architect (2026-10-16, reviewed `fe693f1`, implementation `87b6198`)** for the solo-Studio build. Recorded:
++  - four approved street signs; 328 BaseParts, 114 colliding, 16 sign SurfaceGuis;
++  - 216/216 automated tests reported passing;
++  - existing city, stop-line, building and prototype signatures unchanged;
++  - cantilever geometry, collision safety, duplication and rollback checks accepted;
++  - desktop FPS accepted under the measured conditions;
++  - memory INCONCLUSIVE;
++  - static desktop readability accepted; **moving-camera navigation value unverified**;
++  - phone simulator and real phone NOT TESTED;
++  - multiplayer MULTIPLAYER UNVERIFIED.
++
++  Next: **Stage B readiness, PLAN ONLY, AWAITING ARCHITECT REVIEW** (`N4_STAGE_B_PLAN.md`, with the Device Simulator test for the four existing signs). **Stage B stays blocked** until: the owner authorizes it; the Architect reviews the plan; the current signs pass a phone-simulator readability check; owner navigation feedback is obtained. Stages C and D, connector-highway signs, second signs, renaming and new markings are NOT authorized. No broad Phase 5 content or monetization
+ - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
+ - 3F Studio-only test tools — maintained throughout
