@@ -4,7 +4,7 @@
 - Date: 2026-10-16
 - Commit range: `6031627..` the package commit (code and docs `87b6198`); GitHub `moeelzayyat/outlawcity`, branch `main`
 - Prepared by: Claude (sole implementation agent)
-- Status: Stage A done (solo), awaiting audit. **Stages B, C and D are not started.**
+- Status: **APPROVED by the Architect (2026-10-16, reviewed `fe693f1`).** Stage B blocked (see `N4_STAGE_B_PLAN.md`). Originally: Stage A done (solo), awaiting audit. **Stages B, C and D are not started.**
 
 ## 1. What was asked
 Implement exactly three more street signs with the approved cantilever design:

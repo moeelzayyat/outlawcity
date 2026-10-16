@@ -303,6 +303,17 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
   - phone simulator and real phone NOT TESTED;
   - other players' view MULTIPLAYER UNVERIFIED.
 
-  The approved prototype stays unchanged; plain names apply to this prototype only. **Full N4 rollout NOT AUTHORIZED.** The rollout readiness plan was APPROVED WITH CONDITIONS (reviewed `6031627`) for **Stage A only**. **Stage A (3 plaza-ring signs) done (solo), AWAITING ARCHITECT REVIEW** (`docs/audits/2026-10-16_n4-stage-a/`). **Stages B, C, D, connector-highway signs, second signs and any new markings are NOT authorized.** Still open: phone simulator and real phone NOT TESTED; MULTIPLAYER UNVERIFIED. No broad Phase 5 content or monetization
+  The approved prototype stays unchanged; plain names apply to this prototype only. **Full N4 rollout NOT AUTHORIZED.** The rollout readiness plan was APPROVED WITH CONDITIONS (reviewed `6031627`) for **Stage A only**. **Stage A APPROVED by the Architect (2026-10-16, reviewed `fe693f1`, implementation `87b6198`)** for the solo-Studio build. Recorded:
+  - four approved street signs; 328 BaseParts, 114 colliding, 16 sign SurfaceGuis;
+  - 216/216 automated tests reported passing;
+  - existing city, stop-line, building and prototype signatures unchanged;
+  - cantilever geometry, collision safety, duplication and rollback checks accepted;
+  - desktop FPS accepted under the measured conditions;
+  - memory INCONCLUSIVE;
+  - static desktop readability accepted; **moving-camera navigation value unverified**;
+  - phone simulator and real phone NOT TESTED;
+  - multiplayer MULTIPLAYER UNVERIFIED.
+
+  Next: **Stage B readiness, PLAN ONLY, AWAITING ARCHITECT REVIEW** (`N4_STAGE_B_PLAN.md`, with the Device Simulator test for the four existing signs). **Stage B stays blocked** until: the owner authorizes it; the Architect reviews the plan; the current signs pass a phone-simulator readability check; owner navigation feedback is obtained. Stages C and D, connector-highway signs, second signs, renaming and new markings are NOT authorized. No broad Phase 5 content or monetization
 - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
 - 3F Studio-only test tools — maintained throughout

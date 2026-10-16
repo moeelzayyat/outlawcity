@@ -1,6 +1,6 @@
 # OUTLAW CITY: N4 street-sign rollout readiness (PLAN ONLY)
 
-**Status:** APPROVED WITH CONDITIONS for Stage A only (Architect, reviewed `6031627`). **Stage A built, awaiting review** (`docs/audits/2026-10-16_n4-stage-a/`); Stages B–D not authorized. Originally: plan only, nothing changed in Studio. Prepared 2026-10-16 from `CityLayout.luau` and one read-only Studio query against place 132163592957463 (exact output in `docs/audits/2026-10-16_n4-rollout-readiness/TEST_EVIDENCE.md`).
+**Status:** APPROVED WITH CONDITIONS for Stage A only (Architect, reviewed `6031627`). **Stage A APPROVED** (reviewed `fe693f1`). Stage B readiness plan: `N4_STAGE_B_PLAN.md` (plan only; blocked by the gate). Stages C–D not authorized. Originally: plan only, nothing changed in Studio. Prepared 2026-10-16 from `CityLayout.luau` and one read-only Studio query against place 132163592957463 (exact output in `docs/audits/2026-10-16_n4-rollout-readiness/TEST_EVIDENCE.md`).
 
 **Starting point:**
 - One approved sign: `StreetSign_100_100` (Architect APPROVE, `dc32b76`), at corner (122, 122), cantilevered, "3rd St" / "C Ave". It stays unchanged.
