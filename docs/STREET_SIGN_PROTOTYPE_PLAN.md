@@ -1,6 +1,19 @@
 # OUTLAW CITY: one street-name sign prototype (N4), PLAN ONLY
 
-Status: **PLAN AWAITING ARCHITECT REVIEW. No sign has been created.** Prepared 2026-10-15 from `CityLayout.luau`, `STREET_MARKINGS_SIGNS_PLAN.md` (section 3) and a read-only Studio query (place 132163592957463; output in `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/TEST_EVIDENCE.md`).
+Status: **APPROVED WITH CONDITIONS (Architect, 2026-10-16, reviewed `c81f00f`); the one sign is IMPLEMENTED and awaiting review** (`docs/audits/2026-10-16_n4-one-sign/`).
+
+**Architect corrections, applied:**
+1. The post is **3.8 studs** from the nearest road edge (measured to its face), not 4.
+2. Each blade's closest edge is **0.5 stud** from the road edge.
+3. The spec checks full footprints, not centre points.
+4. The approach views from outside the intersection were added on all four incoming routes.
+5. The section 5 text sizes are estimates only. The measured values are in the audit's TEST_EVIDENCE: about half the estimate.
+6. Phone readability at 30 studs is the provisional minimum; 60 studs is recorded either way.
+7. Plain names are approved for this prototype only.
+
+**Found in testing:** the post runs through the blade centres and hides about one letter on each face.
+
+Originally (plan text below unchanged): prepared 2026-10-15 from `CityLayout.luau`, `STREET_MARKINGS_SIGNS_PLAN.md` (section 3) and a read-only Studio query (place 132163592957463; output in `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/TEST_EVIDENCE.md`).
 
 **Scope:** exactly ONE sign. The other 15 signs, the connector–highway joins and any new markings are out of scope and need their own approval.
 

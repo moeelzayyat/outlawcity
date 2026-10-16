@@ -27,6 +27,9 @@ function WorldService.init()
 	if city and not city:FindFirstChild("Dealership") then
 		CityBuilder.buildDealership(city)
 	end
+	if city then
+		CityBuilder.buildStreetSigns(city) -- adds only missing signs
+	end
 end
 
 -- The dealership folder (City.Dealership), if built.
