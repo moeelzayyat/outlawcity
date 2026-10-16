@@ -11,7 +11,17 @@ Status: **APPROVED WITH CONDITIONS (Architect, 2026-10-16, reviewed `c81f00f`); 
 6. Phone readability at 30 studs is the provisional minimum; 60 studs is recorded either way.
 7. Plain names are approved for this prototype only.
 
-**Found in testing:** the post runs through the blade centres and hides about one letter on each face.
+**Found in testing:** the post ran through the blade centres and hid about one letter on each face.
+
+**Fixed (Architect option B, 2026-10-16):** the blades are cantilevered from the post faces, away from the junction:
+- `Blade_EW` centre (125.7, 8.6, 122);
+- `Blade_NS` centre (122, 10.2, 125.7).
+
+Clearances: both blades are 3.9 studs from the road edge instead of 0.5. Section 3's centre positions and section 1's 0.5-stud blade note are superseded.
+
+Unchanged: post, sizes, text and materials.
+
+The fix is awaiting review (`docs/audits/2026-10-16_n4-sign-cantilever/`).
 
 Originally (plan text below unchanged): prepared 2026-10-15 from `CityLayout.luau`, `STREET_MARKINGS_SIGNS_PLAN.md` (section 3) and a read-only Studio query (place 132163592957463; output in `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/TEST_EVIDENCE.md`).
 

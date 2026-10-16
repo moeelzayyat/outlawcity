@@ -353,6 +353,7 @@ Presentation only, all on the client (`Client.Controllers.AtmosphereController`)
   - **Model `StreetSign_<X>_<Z>`:** `ModelStreamingMode = Atomic`, PrimaryPart `Post`. `Post` is 0.4 × 10.4 × 0.4, standing on the sidewalk top (0.6). Two blades sit on the post's axis, each running along the street it names: `Blade_EW` 7 × 1.5 × 0.2 at y 8.6 (faces ±Z) and `Blade_NS` 0.2 × 1.5 × 7 at y 10.2 (faces ±X).
   - **Text:** each blade has a `SurfaceGui` on both faces (`Label_<Face>`: PixelsPerStud 50, LightInfluence 0, MaxDistance 150), each with one white GothamBold `TextScaled` label.
   - **Collision:** all parts are anchored, with CanCollide, CanQuery, CanTouch and CastShadow false.
-  - **Known issue:** the post passes through the blade centres and hides about one letter on each face.
+  - **Cantilevered blades (Architect option B, 2026-10-16):** each blade starts at a post face and extends 7 studs away from the junction (`Blade_EW` centre (125.7, 8.6, 122), `Blade_NS` centre (122, 10.2, 125.7)). No blade shares volume with the post or the other blade, so the post covers no text; the blades sit 3.9 studs from the road edge. This replaced the first prototype, whose blades ran through the post.
+  - **Changing an existing sign:** `buildStreetSigns` skips a sign whose model already exists, so changing the spec doesn't change the place. A geometry change needs that one model replaced in Studio (as done for this fix); there's no general migration.
   - **Rollback:** remove `streetSigns`, `buildStreetSigns` and the WorldService call, and delete `City.StreetSigns`.
 
