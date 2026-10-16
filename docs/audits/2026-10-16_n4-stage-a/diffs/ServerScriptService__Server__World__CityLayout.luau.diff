@@ -1,0 +1,22 @@
+diff --git a/src/ServerScriptService/Server/World/CityLayout.luau b/src/ServerScriptService/Server/World/CityLayout.luau
+index ce2b5f1..665dca9 100644
+--- a/src/ServerScriptService/Server/World/CityLayout.luau
++++ b/src/ServerScriptService/Server/World/CityLayout.luau
+@@ -331,8 +331,15 @@ end
+ -- full-city rollout needs its own approval. East-west streets count from the highway side.
+ CityLayout.STREET_NAMES_EW = table.freeze({ [-300] = "1st St", [-100] = "2nd St", [100] = "3rd St", [300] = "4th St" })
+ CityLayout.STREET_NAMES_NS = table.freeze({ [-300] = "A Ave", [-100] = "B Ave", [100] = "C Ave", [300] = "D Ave" })
+--- Junction and sidewalk-corner offset of every sign. Prototype: ONE sign, at (100, 100).
+-CityLayout.STREET_SIGNS = table.freeze({ { X = 100, Z = 100, CornerX = 22, CornerZ = 22 } })
++-- Junction and sidewalk-corner offset of every sign: the approved prototype at (100, 100), then
++-- Stage A (the rest of the plaza ring). Each corner puts the sign's one weak approach on the grid
++-- edge side (docs/N4_STREET_SIGN_ROLLOUT_PLAN.md).
++CityLayout.STREET_SIGNS = table.freeze({
++	{ X = 100, Z = 100, CornerX = 22, CornerZ = 22 },
++	{ X = -100, Z = -100, CornerX = -22, CornerZ = -22 },
++	{ X = 100, Z = -100, CornerX = 22, CornerZ = 22 },
++	{ X = -100, Z = 100, CornerX = -22, CornerZ = -22 },
++})
+ CityLayout.STREET_SIGN_POST = Vector3.new(0.4, 10.4, 0.4)
+ CityLayout.STREET_SIGN_BLADE_LENGTH = 7
+ CityLayout.STREET_SIGN_BLADE_HEIGHT = 1.5

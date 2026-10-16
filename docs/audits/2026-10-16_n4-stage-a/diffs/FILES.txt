@@ -1,0 +1,7 @@
+git diff --name-status 6031627..HEAD -- src docs
+
+M	docs/ARCHITECTURE.md
+M	docs/N4_STREET_SIGN_ROLLOUT_PLAN.md
+M	docs/PROGRESS.md
+M	src/ServerScriptService/Server/World/CityLayout.luau
+M	src/ServerStorage/Tests/CityLayout.spec.luau

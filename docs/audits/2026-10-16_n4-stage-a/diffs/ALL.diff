@@ -1,0 +1,330 @@
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 6290cfe..0c4edb9 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -348,7 +348,7 @@ Presentation only, all on the client (`Client.Controllers.AtmosphereController`)
+ 
+ - **Stop lines (N5, stop-line Batch 1):** `CityLayout.stopLineApproaches()` lists the 50 road arms entering the 16 grid intersections (6 four-arm, 6 three-arm, 4 two-arm; the four-arm ones at z = -300 get their north arm from the highway connectors). Each gets one `Markings.StopLine_<X>_<Z>_<side>` part (side N = -Z, S = +Z, W = -X, E = +X): white (235, 235, 235) SmoothPlastic, 16.4 x 1.2 x 0.05, top at `MARK_TOP` 0.25, its near edge 2 studs before the 36x36 intersection square. It covers only the incoming (right-hand) half of the road, from 0.6 studs off the centre of the road (0.2 studs clear of the yellow line) to 1 stud inside the curb. The parts are axis-aligned with the size swapped for W/E arms instead of rotated. They are built non-colliding, so `CityBuilder` also turns off CanQuery, CanTouch and CastShadow; cars, police raycasts and vehicle validation can't see them. The connector-highway joins and the plaza edges have none. `CityLayout.spec` checks the count, the 6/6/4 split, the footprint, the side and the centre-line clearance. Rollback: remove the loop in `createBlueprint` and delete `City.Markings.StopLine_*`.
+ - **Street-name signs (N4, one-sign prototype):**
+-  - **Data:** `CityLayout.streetSigns()` builds one spec per entry in `CityLayout.STREET_SIGNS` (prototype: junction (100, 100), corner offset (+22, +22)). Names come from `STREET_NAMES_EW` (z → "1st St"…"4th St", counted from the highway side) and `STREET_NAMES_NS` (x → "A Ave"…"D Ave"). Plain names are approved for this prototype only.
++  - **Data:** `CityLayout.streetSigns()` builds one spec per entry in `CityLayout.STREET_SIGNS`: the approved prototype (100, 100) corner (+22, +22), then Stage A (−100, −100) and (−100, 100) at corner (−22, −22) and (100, −100) at (+22, +22). Each corner puts the sign's one weak approach on the grid-edge side (`N4_STREET_SIGN_ROLLOUT_PLAN.md`). Names come from `STREET_NAMES_EW` (z → "1st St"…"4th St", counted from the highway side) and `STREET_NAMES_NS` (x → "A Ave"…"D Ave"). Plain names are approved for this prototype only.
+   - **Build:** signs are not part of `createBlueprint`, so the 186-part signature and the stop lines are untouched. `CityBuilder.buildStreetSigns(city)` creates `City.StreetSigns` if needed and adds only signs whose model is missing, so calling it again never duplicates. `WorldService.init` calls it at every server start, which also covers a full rebuild of a missing City.
+   - **Model `StreetSign_<X>_<Z>`:** `ModelStreamingMode = Atomic`, PrimaryPart `Post`. `Post` is 0.4 × 10.4 × 0.4, standing on the sidewalk top (0.6). Two blades sit on the post's axis, each running along the street it names: `Blade_EW` 7 × 1.5 × 0.2 at y 8.6 (faces ±Z) and `Blade_NS` 0.2 × 1.5 × 7 at y 10.2 (faces ±X).
+   - **Text:** each blade has a `SurfaceGui` on both faces (`Label_<Face>`: PixelsPerStud 50, LightInfluence 0, MaxDistance 150), each with one white GothamBold `TextScaled` label.
+diff --git a/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md b/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md
+index 2889343..d6e5d40 100644
+--- a/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md
++++ b/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md
+@@ -1,6 +1,6 @@
+ # OUTLAW CITY: N4 street-sign rollout readiness (PLAN ONLY)
+ 
+-**Status:** PLAN AWAITING ARCHITECT REVIEW. Nothing was changed in Studio, and no sign was built. Prepared 2026-10-16 from `CityLayout.luau` and one read-only Studio query against place 132163592957463 (exact output in `docs/audits/2026-10-16_n4-rollout-readiness/TEST_EVIDENCE.md`).
++**Status:** APPROVED WITH CONDITIONS for Stage A only (Architect, reviewed `6031627`). **Stage A built, awaiting review** (`docs/audits/2026-10-16_n4-stage-a/`); Stages B–D not authorized. Originally: plan only, nothing changed in Studio. Prepared 2026-10-16 from `CityLayout.luau` and one read-only Studio query against place 132163592957463 (exact output in `docs/audits/2026-10-16_n4-rollout-readiness/TEST_EVIDENCE.md`).
+ 
+ **Starting point:**
+ - One approved sign: `StreetSign_100_100` (Architect APPROVE, `dc32b76`), at corner (122, 122), cantilevered, "3rd St" / "C Ave". It stays unchanged.
+diff --git a/docs/PROGRESS.md b/docs/PROGRESS.md
+index 7820fd5..a005363 100644
+--- a/docs/PROGRESS.md
++++ b/docs/PROGRESS.md
+@@ -20,7 +20,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ |---|---|
+ | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
+ | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
+-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 215 passed, 0 failed` (after the N4 sign cantilever fix) |
++| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 216 passed, 0 failed` (after N4 Stage A) |
+ | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
+ | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
+ | Chase camera | Playtest measurements above |
+@@ -137,6 +137,8 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ | N4 one-sign prototype: readability, regressions, performance, rollback | 8 planned views + 4 stop-line approach views, before and after (2 captures each after). Desktop: both names legible at ~33 studs (glyphs ~15 px) and still readable but small at 62–68 studs (~5–7 px). **Defect: the 0.4-wide post runs through the 0.2-thick blades' centre and hides about one letter on every face** ("C /ve", "3r| St"); geometry kept as approved, fix proposed for the Architect. From the east approach's stop line the sign is outside the field of view (it is read from 30–60 studs back). Phone simulator NOT TESTED (Device Simulator not available to me). Drives in all 4 lanes at 107–119 studs/s: no speed or height change; walking through the post: 0 Touched events; rays pass through. Bust → jail 12 s → release ×2; robbery start/holdout/escape (storefront stall 8g); Muscle spawn seated; dealership `AlreadyOwned`; vehicle validation 3 Teleport observations from the test's car placement (monitor-only). FPS before: idle and pursuit `60.0` ×6; after set 1 had two hitches (57.8 / 50.7 fps, 67–70 ms worst frame), repeat set `60.0` ×6. Rollback: 316 / 114, all hashes, `[Tests] 211 passed`; restored (319 / 114, 214 passed) |
+ | **N4 sign cantilever fix (Architect: option B; this one sign only)** | Backup `backups\OutlawCity_Sign2.rbxl` (Studio log 2026-10-16T10:55:01Z). Geometry calculated and checked against the place before any edit. `CityLayout.streetSigns()` now cantilevers each blade from a post face away from the junction: `Blade_EW` 122.2..129.2 × 121.9..122.1 (centre 125.7, 8.6, 122), `Blade_NS` 121.9..122.1 × 122.2..129.2 (centre 122, 10.2, 125.7); post, sizes, text, materials and Atomic streaming unchanged. Only `StreetSign_100_100` was replaced in Studio (old model kept for rollback, new one built by `buildStreetSigns`); the place matches the spec. Footprints fully on `Block_3_3`; post 3.80 and blades 3.90 from the road edge; nearest marking 4.84 / 5.25 / 5.00; 0 shared volume with the post. **319 / 114**; City `6527bae1`, stop-line `f958ecfa`, 186-part `8b66ade9` unchanged; sign signature `ec8b4ca0` → `87d79268`. `[Tests] 215 passed, 0 failed` (+1 cantilever spec). One sign after a server restart, two more builder calls and a fresh rebuild |
+ | N4 sign cantilever fix: readability, regressions, performance, rollback | Same 8 reading + 4 approach views, 2 captures each: **no letter hidden on any face from any view**; legible at ~30 studs, small at ~60 (unchanged sizes). Phone simulator NOT TESTED. Drives in all 4 lanes: no speed or height change; walks under both blades and through the post: 0 Touched events. Bust → jail → release ×2, robbery start/holdout/escape, Muscle spawn seated, dealership `AlreadyOwned`; vehicle validation 1 Teleport observation from the test's car placement (monitor-only). FPS before `60.0` ×6, after `60.0` ×6 (memory ~3020 → ~3111 MB in the same long session; not comparable). Rollback to the previous sign (`77667b94` / `01ab8c5f`, signature `ec8b4ca0`, 214 tests) exact; restored (215) |
++| **N4 Stage A: 3 more street signs (Architect: APPROVE WITH CONDITIONS on `6031627`)** | Backup `backups\OutlawCity_SignsA.rbxl` (Studio log 2026-10-16T13:29:50Z). Three entries added to `CityLayout.STREET_SIGNS`, no other code: `StreetSign_-100_-100` post (−122, −122) "2nd St"/"B Ave"; `StreetSign_100_-100` post (122, −78) "2nd St"/"C Ave"; `StreetSign_-100_100` post (−122, 78) "3rd St"/"B Ave". `buildStreetSigns` added only the three (prototype skipped by name). Read from the place: each 3 parts, 4 SurfaceGuis, Atomic, all CanCollide/CanQuery/CanTouch/CastShadow false; footprints fully on one sidewalk block; post 3.80 and blades 3.90 from the road; nearest marking ≥ 4.84; nearest building ≥ 10.90; no post/blade shared volume. **4 signs, 328 BaseParts, 114 colliding, 16 sign SurfaceGuis**; City `6527bae1`, stop-line `f958ecfa`, prototype `87d79268` unchanged; `CityLayout.spec` generalised to every sign. `[Tests] 216 passed, 0 failed`. One of each sign after a restart, two extra builder calls and a fresh rebuild; client sees all 4 complete |
++| N4 Stage A: rendered views, regressions, performance, rollback | Rendered views from all 4 incoming approaches of each new junction at 30 and 60 studs: no letter hidden on any face; the weak approach (W, E, W as planned) has the cross-street name edge-on at 30 but readable at 60, before the junction. Phone simulator NOT TESTED. Drives along 2nd St, B Ave, 3rd St and C Ave past all signs: no bump; walking through all 4 posts: 0 Touched events; rays pass through. Bust → jail → release ×2, robbery start/holdout/escape, Muscle spawn seated, dealership `AlreadyOwned`; vehicle validation Teleport observations only from the test's car placement (monitor-only). FPS before `60.0` ×6 (2982–2991 MB), after `60.0` ×6 (3125–3126 MB; same long session, memory not attributed). Rollback to the one-sign state exact (319 / 114, prototype `87d79268`, 215 tests); restored (216) |
+ | Onboarding regression | Robbery start/holdout/dispatch/bust/jail/release normal; vehicle validation 0 observations; no console errors. Studio and `src/` match for all 98 scripts (length + FNV-1a hash) |
+ | **Five-minute player-experience audit (measurements only)** | See `PLAYER_EXPERIENCE_AUDIT.md`: data ready ~2.0 s; first car PC 1 input, mobile 2 taps; store 150 / dealership 237 studs from spawns, signs in sight from 6/6 and 4/6 spawns, no hint or marker; on-foot HUD 5 elements (~8%), driving 9 elements (touch ~12%); robbery panel ~9% of a phone screen. Proposals P1–P8 await owner review (nothing implemented) |
+ | **Final audit fixes: pre-work** | Backup `backups\OutlawCity_Remediation1.rbxl` (Studio log: place file downloaded 16:35:06Z). Only the `Outlaw City (placeId: 132163592957463)` Studio was used; two Lighthouse Keepers Studios were also open and never touched |
+@@ -301,6 +303,6 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
+   - phone simulator and real phone NOT TESTED;
+   - other players' view MULTIPLAYER UNVERIFIED.
+ 
+-  The approved prototype stays unchanged; plain names apply to this prototype only. **Full N4 rollout NOT AUTHORIZED.** Next: **N4 rollout readiness audit, PLAN ONLY, AWAITING ARCHITECT REVIEW** (`N4_STREET_SIGN_ROLLOUT_PLAN.md`, `docs/audits/2026-10-16_n4-rollout-readiness/`). No other signs, connector-highway signs or new markings are built. No broad Phase 5 content or monetization
++  The approved prototype stays unchanged; plain names apply to this prototype only. **Full N4 rollout NOT AUTHORIZED.** The rollout readiness plan was APPROVED WITH CONDITIONS (reviewed `6031627`) for **Stage A only**. **Stage A (3 plaza-ring signs) done (solo), AWAITING ARCHITECT REVIEW** (`docs/audits/2026-10-16_n4-stage-a/`). **Stages B, C, D, connector-highway signs, second signs and any new markings are NOT authorized.** Still open: phone simulator and real phone NOT TESTED; MULTIPLAYER UNVERIFIED. No broad Phase 5 content or monetization
+ - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
+ - 3F Studio-only test tools — maintained throughout
+diff --git a/src/ServerScriptService/Server/World/CityLayout.luau b/src/ServerScriptService/Server/World/CityLayout.luau
+index ce2b5f1..665dca9 100644
+--- a/src/ServerScriptService/Server/World/CityLayout.luau
++++ b/src/ServerScriptService/Server/World/CityLayout.luau
+@@ -331,8 +331,15 @@ end
+ -- full-city rollout needs its own approval. East-west streets count from the highway side.
+ CityLayout.STREET_NAMES_EW = table.freeze({ [-300] = "1st St", [-100] = "2nd St", [100] = "3rd St", [300] = "4th St" })
+ CityLayout.STREET_NAMES_NS = table.freeze({ [-300] = "A Ave", [-100] = "B Ave", [100] = "C Ave", [300] = "D Ave" })
+--- Junction and sidewalk-corner offset of every sign. Prototype: ONE sign, at (100, 100).
+-CityLayout.STREET_SIGNS = table.freeze({ { X = 100, Z = 100, CornerX = 22, CornerZ = 22 } })
++-- Junction and sidewalk-corner offset of every sign: the approved prototype at (100, 100), then
++-- Stage A (the rest of the plaza ring). Each corner puts the sign's one weak approach on the grid
++-- edge side (docs/N4_STREET_SIGN_ROLLOUT_PLAN.md).
++CityLayout.STREET_SIGNS = table.freeze({
++	{ X = 100, Z = 100, CornerX = 22, CornerZ = 22 },
++	{ X = -100, Z = -100, CornerX = -22, CornerZ = -22 },
++	{ X = 100, Z = -100, CornerX = 22, CornerZ = 22 },
++	{ X = -100, Z = 100, CornerX = -22, CornerZ = -22 },
++})
+ CityLayout.STREET_SIGN_POST = Vector3.new(0.4, 10.4, 0.4)
+ CityLayout.STREET_SIGN_BLADE_LENGTH = 7
+ CityLayout.STREET_SIGN_BLADE_HEIGHT = 1.5
+diff --git a/src/ServerStorage/Tests/CityLayout.spec.luau b/src/ServerStorage/Tests/CityLayout.spec.luau
+index bc8fb88..699abcc 100644
+--- a/src/ServerStorage/Tests/CityLayout.spec.luau
++++ b/src/ServerStorage/Tests/CityLayout.spec.luau
+@@ -228,61 +228,82 @@ return {
+ 			end
+ 		end
+ 	end,
+-	["street signs: exactly one prototype sign, 3 parts, 4 labels (N4 one-sign prototype)"] = function()
++	["street signs: exactly four signs (prototype + Stage A), each 3 parts and 4 labels"] = function()
+ 		local signs = CityLayout.streetSigns()
+-		Assert.equal(#signs, 1)
+-		local sign = signs[1]
+-		Assert.equal(sign.Name, "StreetSign_100_100")
+-		Assert.equal(#sign.Parts, 3)
+-		local names = {}
+-		for _, part in sign.Parts do
+-			names[part.Name] = true
+-			Assert.equal(part.CanCollide, false, `{part.Name} collides`)
+-			Assert.equal(part.Material, Enum.Material.SmoothPlastic)
+-		end
+-		Assert.truthy(names.Post and names.Blade_EW and names.Blade_NS, "part names")
+-		local faces = 0
+-		for _, label in sign.Labels do
+-			faces += #label.Faces
++		Assert.equal(#signs, 4)
++		Assert.equal(signs[1].Name, "StreetSign_100_100", "the approved prototype stays first")
++		local expected = { StreetSign_100_100 = true, ["StreetSign_-100_-100"] = true, ["StreetSign_100_-100"] = true, ["StreetSign_-100_100"] = true }
++		local seen = {}
++		for _, sign in signs do
++			Assert.truthy(expected[sign.Name], `unexpected sign {sign.Name}`)
++			Assert.truthy(not seen[sign.Name], `duplicate sign {sign.Name}`)
++			seen[sign.Name] = true
++			Assert.equal(#sign.Parts, 3)
++			local names = {}
++			for _, part in sign.Parts do
++				names[part.Name] = true
++				Assert.equal(part.CanCollide, false, `{sign.Name} {part.Name} collides`)
++				Assert.equal(part.Material, Enum.Material.SmoothPlastic)
++			end
++			Assert.truthy(names.Post and names.Blade_EW and names.Blade_NS, `{sign.Name} part names`)
++			local faces = 0
++			for _, label in sign.Labels do
++				faces += #label.Faces
++			end
++			Assert.equal(faces, 4)
+ 		end
+-		Assert.equal(faces, 4)
+ 	end,
+ 	["street signs: sizes, heights, orientation and plain names"] = function()
+-		local sign = CityLayout.streetSigns()[1]
+-		local parts = {}
+-		for _, part in sign.Parts do
+-			parts[part.Name] = part
++		for _, sign in CityLayout.streetSigns() do
++			local parts = {}
++			for _, part in sign.Parts do
++				parts[part.Name] = part
++			end
++			local post, ew, ns = parts.Post, parts.Blade_EW, parts.Blade_NS
++			Assert.near(post.Size.X, 0.4, 1e-4, "post width")
++			Assert.near(post.Size.Y, 10.4, 1e-4, "post height")
++			Assert.near(post.Center.Y - post.Size.Y / 2, CityLayout.CURB_TOP, 1e-4, "post stands on the sidewalk")
++			-- Each blade runs along the street it names: EW along X (faces +-Z), NS along Z (faces +-X).
++			Assert.near(ew.Size.X, 7, 1e-4, "EW length")
++			Assert.near(ew.Size.Y, 1.5, 1e-4, "EW height")
++			Assert.near(ew.Size.Z, 0.2, 1e-4, "EW thickness")
++			Assert.near(ns.Size.Z, 7, 1e-4, "NS length")
++			Assert.near(ns.Size.Y, 1.5, 1e-4, "NS height")
++			Assert.near(ns.Size.X, 0.2, 1e-4, "NS thickness")
++			Assert.near(ew.Center.Y, 8.6, 1e-4, "EW height")
++			Assert.near(ns.Center.Y, 10.2, 1e-4, "NS height")
++			Assert.truthy(ns.Center.Y - ns.Size.Y / 2 > ew.Center.Y + ew.Size.Y / 2, "blades don't intersect")
++			Assert.truthy(ns.Center.Y + ns.Size.Y / 2 <= post.Center.Y + post.Size.Y / 2 + 1e-4, "post reaches the top blade")
++			for _, label in sign.Labels do
++				if label.Part == "Blade_EW" then
++					Assert.equal(label.Text, CityLayout.STREET_NAMES_EW[sign.Z], `{sign.Name} EW name`)
++					Assert.truthy(table.find(label.Faces, Enum.NormalId.Front) and table.find(label.Faces, Enum.NormalId.Back), "EW faces")
++				else
++					Assert.equal(label.Part, "Blade_NS")
++					Assert.equal(label.Text, CityLayout.STREET_NAMES_NS[sign.X], `{sign.Name} NS name`)
++					Assert.truthy(table.find(label.Faces, Enum.NormalId.Right) and table.find(label.Faces, Enum.NormalId.Left), "NS faces")
++				end
++			end
+ 		end
+-		local post, ew, ns = parts.Post, parts.Blade_EW, parts.Blade_NS
+-		Assert.near(post.Center.X, 122, 1e-4, "post x")
+-		Assert.near(post.Center.Z, 122, 1e-4, "post z")
+-		Assert.near(post.Size.X, 0.4, 1e-4, "post width")
+-		Assert.near(post.Size.Y, 10.4, 1e-4, "post height")
+-		Assert.near(post.Center.Y - post.Size.Y / 2, CityLayout.CURB_TOP, 1e-4, "post stands on the sidewalk")
+-		-- Each blade runs along the street it names: EW along X (faces +-Z), NS along Z (faces +-X).
+-		Assert.near(ew.Size.X, 7, 1e-4, "EW length")
+-		Assert.near(ew.Size.Y, 1.5, 1e-4, "EW height")
+-		Assert.near(ew.Size.Z, 0.2, 1e-4, "EW thickness")
+-		Assert.near(ns.Size.Z, 7, 1e-4, "NS length")
+-		Assert.near(ns.Size.Y, 1.5, 1e-4, "NS height")
+-		Assert.near(ns.Size.X, 0.2, 1e-4, "NS thickness")
+-		Assert.near(ew.Center.Y, 8.6, 1e-4, "EW height")
+-		Assert.near(ns.Center.Y, 10.2, 1e-4, "NS height")
+-		Assert.truthy(ns.Center.Y - ns.Size.Y / 2 > ew.Center.Y + ew.Size.Y / 2, "blades don't intersect")
+-		Assert.truthy(ns.Center.Y + ns.Size.Y / 2 <= post.Center.Y + post.Size.Y / 2 + 1e-4, "post reaches the top blade")
+-		for _, label in sign.Labels do
+-			if label.Part == "Blade_EW" then
+-				Assert.equal(label.Text, "3rd St")
+-				Assert.truthy(table.find(label.Faces, Enum.NormalId.Front) and table.find(label.Faces, Enum.NormalId.Back), "EW faces")
+-			else
+-				Assert.equal(label.Part, "Blade_NS")
+-				Assert.equal(label.Text, "C Ave")
+-				Assert.truthy(table.find(label.Faces, Enum.NormalId.Right) and table.find(label.Faces, Enum.NormalId.Left), "NS faces")
++	end,
++	["street signs: exact posts and names (prototype unchanged, Stage A as approved)"] = function()
++		local want = {
++			StreetSign_100_100 = { 122, 122, "3rd St", "C Ave" },
++			["StreetSign_-100_-100"] = { -122, -122, "2nd St", "B Ave" },
++			["StreetSign_100_-100"] = { 122, -78, "2nd St", "C Ave" },
++			["StreetSign_-100_100"] = { -122, 78, "3rd St", "B Ave" },
++		}
++		for _, sign in CityLayout.streetSigns() do
++			local w = want[sign.Name]
++			Assert.truthy(w ~= nil, sign.Name)
++			Assert.near(sign.Parts[1].Center.X, w[1], 1e-4, `{sign.Name} post x`)
++			Assert.near(sign.Parts[1].Center.Z, w[2], 1e-4, `{sign.Name} post z`)
++			for _, label in sign.Labels do
++				Assert.equal(label.Text, if label.Part == "Blade_EW" then w[3] else w[4], `{sign.Name} {label.Part}`)
+ 			end
+ 		end
+ 	end,
+ 	["street signs: full footprints on the sidewalk, clear of roads, markings, buildings and pads"] = function()
+-		local sign = CityLayout.streetSigns()[1]
+ 		local function inside(a, b)
+ 			local ax1, ax2, az1, az2 = rect(a)
+ 			local bx1, bx2, bz1, bz2 = rect(b)
+@@ -308,42 +329,39 @@ return {
+ 		for _, spec in CityLayout.dealership().Parts do
+ 			table.insert(others, spec)
+ 		end
+-		for _, part in sign.Parts do
+-			local onSidewalk = false
+-			for _, spec in blueprint.Parts do
+-				if spec.Group == "Sidewalks" and inside(part, spec) then
+-					onSidewalk = true
++		for _, sign in CityLayout.streetSigns() do
++			for _, part in sign.Parts do
++				local label = `{sign.Name} {part.Name}`
++				local onSidewalk = false
++				for _, spec in blueprint.Parts do
++					if spec.Group == "Sidewalks" and inside(part, spec) then
++						onSidewalk = true
++					end
+ 				end
+-			end
+-			Assert.truthy(onSidewalk, `{part.Name} footprint not fully on one sidewalk`)
+-			local nearestRoad = math.huge
+-			for _, spec in others do
+-				local g = gap(part, spec)
+-				if spec.Group == "Roads" or spec.Group == "Highway" or spec.Group == "Plaza" or spec.Group == "Markings" then
+-					Assert.truthy(g > 0, `{part.Name} overlaps {spec.Name}`)
+-					if spec.Group == "Roads" then
+-						nearestRoad = math.min(nearestRoad, g)
++				Assert.truthy(onSidewalk, `{label} footprint not fully on one sidewalk`)
++				local nearestRoad = math.huge
++				for _, spec in others do
++					local g = gap(part, spec)
++					if spec.Group == "Roads" or spec.Group == "Highway" or spec.Group == "Plaza" or spec.Group == "Markings" then
++						Assert.truthy(g > 0, `{label} overlaps {spec.Name}`)
++						if spec.Group == "Roads" then
++							nearestRoad = math.min(nearestRoad, g)
++						end
++					elseif spec.Group == "Buildings" or spec.Group == "Store" or spec.Group == "Dealership" then
++						Assert.truthy(g >= 3, `{label} within 3 studs of {spec.Name}`)
+ 					end
+-				elseif spec.Group == "Buildings" or spec.Group == "Store" or spec.Group == "Dealership" then
+-					Assert.truthy(g >= 3, `{part.Name} within 3 studs of {spec.Name}`)
+ 				end
++				-- Measured face to road edge: the post 3.8 studs, the cantilevered blades 3.9 studs.
++				Assert.near(nearestRoad, if part.Name == "Post" then 3.8 else 3.9, 1e-4, `{label} distance to the nearest road edge`)
++			end
++			local post = sign.Parts[1]
++			for _, spawn in blueprint.Spawns do
++				local d = (Vector3.new(spawn.CFrame.X, 0, spawn.CFrame.Z) - Vector3.new(post.Center.X, 0, post.Center.Z)).Magnitude
++				Assert.truthy(d >= 3 + 9, `{sign.Name} within reach of vehicle pad {spawn.Name}`) -- pad half-diagonal < 9
+ 			end
+-			-- Measured face to road edge: the post 3.8 studs, the cantilevered blades 3.9 studs.
+-			Assert.near(nearestRoad, if part.Name == "Post" then 3.8 else 3.9, 1e-4, `{part.Name} distance to the nearest road edge`)
+-		end
+-		local post = sign.Parts[1]
+-		for _, spawn in blueprint.Spawns do
+-			local d = (Vector3.new(spawn.CFrame.X, 0, spawn.CFrame.Z) - Vector3.new(post.Center.X, 0, post.Center.Z)).Magnitude
+-			Assert.truthy(d >= 3 + 9, `sign within reach of vehicle pad {spawn.Name}`) -- pad half-diagonal < 9
+ 		end
+ 	end,
+ 	["street signs: blades are cantilevered off the post, so the post covers no text"] = function()
+-		local sign = CityLayout.streetSigns()[1]
+-		local parts = {}
+-		for _, part in sign.Parts do
+-			parts[part.Name] = part
+-		end
+-		local post, ew, ns = parts.Post, parts.Blade_EW, parts.Blade_NS
+ 		local function box(p)
+ 			local c, s = p.Center, p.Size
+ 			return c.X - s.X / 2, c.X + s.X / 2, c.Y - s.Y / 2, c.Y + s.Y / 2, c.Z - s.Z / 2, c.Z + s.Z / 2
+@@ -353,23 +371,32 @@ return {
+ 			local bx1, bx2, by1, by2, bz1, bz2 = box(b)
+ 			return math.max(0, math.min(ax2, bx2) - math.max(ax1, bx1)) * math.max(0, math.min(ay2, by2) - math.max(ay1, by1)) * math.max(0, math.min(az2, bz2) - math.max(az1, bz1))
+ 		end
+-		Assert.near(sharedVolume(ew, post), 0, 1e-6, "EW blade passes through the post")
+-		Assert.near(sharedVolume(ns, post), 0, 1e-6, "NS blade passes through the post")
+-		Assert.near(sharedVolume(ew, ns), 0, 1e-6, "blades intersect")
+-		-- Each blade starts at the post face on the side away from the junction (the corner is +X/+Z).
+-		local px1, px2, _, _, pz1, pz2 = box(post)
+-		local ex1, _, _, _, ez1, ez2 = box(ew)
+-		local nx1, nx2, _, _, nz1 = box(ns)
+-		Assert.near(ex1, px2, 1e-4, "EW blade starts at the post's +X face")
+-		Assert.near(nz1, pz2, 1e-4, "NS blade starts at the post's +Z face")
+-		Assert.truthy(ez1 >= pz1 - 1e-4 and ez2 <= pz2 + 1e-4, "EW blade stays within the post's depth")
+-		Assert.truthy(nx1 >= px1 - 1e-4 and nx2 <= px2 + 1e-4, "NS blade stays within the post's width")
+-		-- Unchanged from the approved prototype: post position, blade and text sizes.
+-		Assert.near(post.Center.X, 122, 1e-4, "post x")
+-		Assert.near(post.Center.Z, 122, 1e-4, "post z")
+-		Assert.near(ew.Center.X, 125.7, 1e-4, "EW centre x")
+-		Assert.near(ew.Center.Z, 122, 1e-4, "EW centre z")
+-		Assert.near(ns.Center.X, 122, 1e-4, "NS centre x")
+-		Assert.near(ns.Center.Z, 125.7, 1e-4, "NS centre z")
++		for _, sign in CityLayout.streetSigns() do
++			local parts = {}
++			for _, part in sign.Parts do
++				parts[part.Name] = part
++			end
++			local post, ew, ns = parts.Post, parts.Blade_EW, parts.Blade_NS
++			Assert.near(sharedVolume(ew, post), 0, 1e-6, `{sign.Name} EW blade passes through the post`)
++			Assert.near(sharedVolume(ns, post), 0, 1e-6, `{sign.Name} NS blade passes through the post`)
++			Assert.near(sharedVolume(ew, ns), 0, 1e-6, `{sign.Name} blades intersect`)
++			-- Each blade starts at the post face on the side away from the junction.
++			local sx = math.sign(post.Center.X - sign.X)
++			local sz = math.sign(post.Center.Z - sign.Z)
++			local px1, px2, _, _, pz1, pz2 = box(post)
++			local ex1, ex2, _, _, ez1, ez2 = box(ew)
++			local nx1, nx2, _, _, nz1, nz2 = box(ns)
++			Assert.near(if sx > 0 then ex1 else ex2, if sx > 0 then px2 else px1, 1e-4, `{sign.Name} EW blade starts at the post face away from the junction`)
++			Assert.near(if sz > 0 then nz1 else nz2, if sz > 0 then pz2 else pz1, 1e-4, `{sign.Name} NS blade starts at the post face away from the junction`)
++			Assert.truthy(ez1 >= pz1 - 1e-4 and ez2 <= pz2 + 1e-4, "EW blade stays within the post's depth")
++			Assert.truthy(nx1 >= px1 - 1e-4 and nx2 <= px2 + 1e-4, "NS blade stays within the post's width")
++			if sign.Name == "StreetSign_100_100" then
++				-- The approved prototype is unchanged.
++				Assert.near(ew.Center.X, 125.7, 1e-4, "EW centre x")
++				Assert.near(ew.Center.Z, 122, 1e-4, "EW centre z")
++				Assert.near(ns.Center.X, 122, 1e-4, "NS centre x")
++				Assert.near(ns.Center.Z, 125.7, 1e-4, "NS centre z")
++			end
++		end
+ 	end,
+ }
