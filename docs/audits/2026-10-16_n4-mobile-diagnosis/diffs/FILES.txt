@@ -1,0 +1,4 @@
+git diff --name-status f0a103c..HEAD -- src docs
+
+A	docs/N4_MOBILE_READABILITY_DIAGNOSIS.md
+M	docs/PROGRESS.md
