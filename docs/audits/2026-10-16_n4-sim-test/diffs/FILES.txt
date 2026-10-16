@@ -1,0 +1,4 @@
+git diff --name-status 03420cb..HEAD -- src docs
+
+M	docs/N4_STAGE_B_PLAN.md
+M	docs/PROGRESS.md
