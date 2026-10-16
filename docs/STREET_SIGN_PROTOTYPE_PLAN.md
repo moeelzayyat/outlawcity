@@ -21,7 +21,7 @@ Clearances: both blades are 3.9 studs from the road edge instead of 0.5. Section
 
 Unchanged: post, sizes, text and materials.
 
-The fix is awaiting review (`docs/audits/2026-10-16_n4-sign-cantilever/`).
+The fix was **APPROVED** by the Architect on 2026-10-16 (reviewed `dc32b76`; `docs/audits/2026-10-16_n4-sign-cantilever/`). Full rollout is not authorized; see `N4_STREET_SIGN_ROLLOUT_PLAN.md`.
 
 Originally (plan text below unchanged): prepared 2026-10-15 from `CityLayout.luau`, `STREET_MARKINGS_SIGNS_PLAN.md` (section 3) and a read-only Studio query (place 132163592957463; output in `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/TEST_EVIDENCE.md`).
 

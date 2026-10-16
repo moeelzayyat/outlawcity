@@ -290,6 +290,17 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
   - **memory comparison PARTIAL:** about 183 MB higher in a later Studio session, not causally attributed (fresh-session closeout: `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/`);
   - phone readability and performance NOT TESTED;
   - other players' view MULTIPLAYER UNVERIFIED.
-- Street-name signs (N4) — one-sign plan APPROVED WITH CONDITIONS by the Architect (2026-10-16, reviewed `c81f00f`); N5 memory closeout accepted as PARTIAL. The prototype was APPROVED WITH CONDITIONS (reviewed `b8c27cf`); its rollout was blocked by the post hiding a letter. **Cantilever fix (option B) done (solo), AWAITING ARCHITECT REVIEW** (`docs/audits/2026-10-16_n4-sign-cantilever/`): the post no longer hides any text. Plain names are approved for this prototype only. **The other 15 signs, connector-highway signs and any new markings are NOT authorized.** Still open: phone readability and performance NOT TESTED; real phone NOT TESTED; other players' view MULTIPLAYER UNVERIFIED. No broad Phase 5 content or monetization
+- Street-name signs (N4) — one-sign plan APPROVED WITH CONDITIONS by the Architect (2026-10-16, reviewed `c81f00f`); N5 memory closeout accepted as PARTIAL. The prototype was APPROVED WITH CONDITIONS (reviewed `b8c27cf`); its rollout was blocked by the post hiding a letter. **Cantilever correction APPROVED by the Architect (2026-10-16, reviewed `dc32b76`)** for the solo-Studio prototype. Recorded:
+  - cantilevered geometry accepted;
+  - post occlusion corrected, based on the source geometry and the recorded visual tests;
+  - one street sign: 3 parts and 4 sign SurfaceGuis;
+  - 319 BaseParts, 114 colliding;
+  - 215/215 automated tests;
+  - desktop FPS accepted for the tested conditions;
+  - memory INCONCLUSIVE;
+  - phone simulator and real phone NOT TESTED;
+  - other players' view MULTIPLAYER UNVERIFIED.
+
+  The approved prototype stays unchanged; plain names apply to this prototype only. **Full N4 rollout NOT AUTHORIZED.** Next: **N4 rollout readiness audit, PLAN ONLY, AWAITING ARCHITECT REVIEW** (`N4_STREET_SIGN_ROLLOUT_PLAN.md`, `docs/audits/2026-10-16_n4-rollout-readiness/`). No other signs, connector-highway signs or new markings are built. No broad Phase 5 content or monetization
 - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
 - 3F Studio-only test tools — maintained throughout

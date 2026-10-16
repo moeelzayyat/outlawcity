@@ -4,7 +4,7 @@
 - Date: 2026-10-16
 - Commit range: `b8c27cf..` the package commit (code and docs `bb7cb55`); GitHub `moeelzayyat/outlawcity`, branch `main`
 - Prepared by: Claude (sole implementation agent)
-- Status: the fix to the one sign is done (solo) and awaiting audit. **No other signs.**
+- Status: **APPROVED by the Architect (2026-10-16, reviewed `dc32b76`).** Full N4 rollout not authorized. Originally: the fix to the one sign is done (solo) and awaiting audit. **No other signs.**
 
 ## 1. What was asked
 Correct only `City.StreetSigns.StreetSign_100_100` with option B, cantilevered blades, so both faces are unobstructed.
