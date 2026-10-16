@@ -1,0 +1,9 @@
+git diff --name-status c81f00f..HEAD -- src docs
+
+M	docs/ARCHITECTURE.md
+M	docs/PROGRESS.md
+M	docs/STREET_SIGN_PROTOTYPE_PLAN.md
+M	src/ServerScriptService/Server/Services/WorldService.luau
+M	src/ServerScriptService/Server/World/CityBuilder.luau
+M	src/ServerScriptService/Server/World/CityLayout.luau
+M	src/ServerStorage/Tests/CityLayout.spec.luau

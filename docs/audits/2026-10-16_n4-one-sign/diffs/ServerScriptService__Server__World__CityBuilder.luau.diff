@@ -1,0 +1,74 @@
+diff --git a/src/ServerScriptService/Server/World/CityBuilder.luau b/src/ServerScriptService/Server/World/CityBuilder.luau
+index 38f7661..848d0c6 100644
+--- a/src/ServerScriptService/Server/World/CityBuilder.luau
++++ b/src/ServerScriptService/Server/World/CityBuilder.luau
+@@ -338,4 +338,69 @@ function CityBuilder.buildDealership(city: Instance): Folder
+ 	return folder
+ end
+ 
++-- Adds every missing street-name sign under City.StreetSigns and leaves existing ones alone, so
++-- calling it again (at every server start, or after a rebuild) never creates duplicates.
++-- Each sign is an Atomic-streamed model: the post, both blades and their text arrive together.
++function CityBuilder.buildStreetSigns(city: Instance): Folder
++	local folder = city:FindFirstChild("StreetSigns")
++	if not (folder and folder:IsA("Folder")) then
++		folder = Instance.new("Folder")
++		folder.Name = "StreetSigns"
++		folder.Parent = city
++	end
++	local signsFolder = folder :: Folder
++	for _, spec in CityLayout.streetSigns() do
++		if signsFolder:FindFirstChild(spec.Name) then
++			continue
++		end
++		local model = Instance.new("Model")
++		model.Name = spec.Name
++		model.ModelStreamingMode = Enum.ModelStreamingMode.Atomic
++		local parts: { [string]: BasePart } = {}
++		for _, partSpec in spec.Parts do
++			local part = Instance.new("Part")
++			part.Name = partSpec.Name
++			part.Anchored = true
++			part.CanCollide = false
++			part.CanQuery = false
++			part.CanTouch = false
++			part.CastShadow = false
++			part.Size = partSpec.Size
++			part.CFrame = CFrame.new(partSpec.Center)
++			part.Color = partSpec.Color
++			part.Material = partSpec.Material
++			part.TopSurface = Enum.SurfaceType.Smooth
++			part.BottomSurface = Enum.SurfaceType.Smooth
++			part.Parent = model
++			parts[partSpec.Name] = part
++		end
++		model.PrimaryPart = parts.Post
++		for _, labelSpec in spec.Labels do
++			for _, face in labelSpec.Faces do
++				local gui = Instance.new("SurfaceGui")
++				gui.Name = `Label_{face.Name}`
++				gui.Face = face
++				gui.SizingMode = Enum.SurfaceGuiSizingMode.PixelsPerStud
++				gui.PixelsPerStud = 50
++				gui.LightInfluence = 0
++				gui.AlwaysOnTop = false
++				gui.MaxDistance = 150
++				local label = Instance.new("TextLabel")
++				label.Name = "Name"
++				label.Size = UDim2.fromScale(0.92, 0.84)
++				label.Position = UDim2.fromScale(0.04, 0.08)
++				label.BackgroundTransparency = 1
++				label.Text = labelSpec.Text
++				label.TextScaled = true
++				label.Font = Enum.Font.GothamBold
++				label.TextColor3 = Color3.fromRGB(255, 255, 255)
++				label.Parent = gui
++				gui.Parent = parts[labelSpec.Part]
++			end
++		end
++		model.Parent = signsFolder
++	end
++	return signsFolder
++end
++
+ return CityBuilder

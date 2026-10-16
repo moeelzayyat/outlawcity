@@ -1,0 +1,14 @@
+diff --git a/src/ServerScriptService/Server/Services/WorldService.luau b/src/ServerScriptService/Server/Services/WorldService.luau
+index 28aac38..c6dea4f 100644
+--- a/src/ServerScriptService/Server/Services/WorldService.luau
++++ b/src/ServerScriptService/Server/Services/WorldService.luau
+@@ -27,6 +27,9 @@ function WorldService.init()
+ 	if city and not city:FindFirstChild("Dealership") then
+ 		CityBuilder.buildDealership(city)
+ 	end
++	if city then
++		CityBuilder.buildStreetSigns(city) -- adds only missing signs
++	end
+ end
+ 
+ -- The dealership folder (City.Dealership), if built.

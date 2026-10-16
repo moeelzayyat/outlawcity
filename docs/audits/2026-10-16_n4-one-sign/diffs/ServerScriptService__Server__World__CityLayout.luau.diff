@@ -1,0 +1,58 @@
+diff --git a/src/ServerScriptService/Server/World/CityLayout.luau b/src/ServerScriptService/Server/World/CityLayout.luau
+index e441cd0..27bd98f 100644
+--- a/src/ServerScriptService/Server/World/CityLayout.luau
++++ b/src/ServerScriptService/Server/World/CityLayout.luau
+@@ -327,6 +327,53 @@ function CityLayout.dealership(): DealershipSpec
+ 	}
+ end
+ 
++-- Street-name signs (N4). Plain names are approved for the one-sign prototype only; a
++-- full-city rollout needs its own approval. East-west streets count from the highway side.
++CityLayout.STREET_NAMES_EW = table.freeze({ [-300] = "1st St", [-100] = "2nd St", [100] = "3rd St", [300] = "4th St" })
++CityLayout.STREET_NAMES_NS = table.freeze({ [-300] = "A Ave", [-100] = "B Ave", [100] = "C Ave", [300] = "D Ave" })
++-- Junction and sidewalk-corner offset of every sign. Prototype: ONE sign, at (100, 100).
++CityLayout.STREET_SIGNS = table.freeze({ { X = 100, Z = 100, CornerX = 22, CornerZ = 22 } })
++CityLayout.STREET_SIGN_POST = Vector3.new(0.4, 10.4, 0.4)
++CityLayout.STREET_SIGN_BLADE_LENGTH = 7
++CityLayout.STREET_SIGN_BLADE_HEIGHT = 1.5
++CityLayout.STREET_SIGN_BLADE_THICKNESS = 0.2
++CityLayout.STREET_SIGN_EW_Y = 8.6 -- centre height of the blade naming the east-west street
++CityLayout.STREET_SIGN_NS_Y = 10.2 -- centre height of the blade naming the north-south street
++
++export type StreetSignLabel = { Part: string, Text: string, Faces: { Enum.NormalId } }
++export type StreetSignSpec = { Name: string, X: number, Z: number, Parts: { PartSpec }, Labels: { StreetSignLabel } }
++
++-- One post and two perpendicular blades on a sidewalk corner. Each blade runs along the street
++-- it names and carries the name on both faces, so drivers read it from both directions. All
++-- parts are visual only (CityBuilder.buildStreetSigns turns off collision, query, touch, shadow).
++function CityLayout.streetSigns(): { StreetSignSpec }
++	local result = {}
++	local post = CityLayout.STREET_SIGN_POST
++	local length, height, thick = CityLayout.STREET_SIGN_BLADE_LENGTH, CityLayout.STREET_SIGN_BLADE_HEIGHT, CityLayout.STREET_SIGN_BLADE_THICKNESS
++	local postColor, bladeColor = Color3.fromRGB(110, 110, 110), Color3.fromRGB(0, 102, 51)
++	for _, sign in CityLayout.STREET_SIGNS do
++		local x, z = sign.X + sign.CornerX, sign.Z + sign.CornerZ
++		local function part(name: string, y: number, size: Vector3, color: Color3): PartSpec
++			return { Name = name, Group = "StreetSigns", Center = Vector3.new(x, y, z), Size = size, Color = color, Material = Enum.Material.SmoothPlastic, CanCollide = false }
++		end
++		table.insert(result, {
++			Name = `StreetSign_{sign.X}_{sign.Z}`,
++			X = sign.X,
++			Z = sign.Z,
++			Parts = {
++				part("Post", CityLayout.CURB_TOP + post.Y / 2, post, postColor),
++				part("Blade_EW", CityLayout.STREET_SIGN_EW_Y, Vector3.new(length, height, thick), bladeColor),
++				part("Blade_NS", CityLayout.STREET_SIGN_NS_Y, Vector3.new(thick, height, length), bladeColor),
++			},
++			Labels = {
++				{ Part = "Blade_EW", Text = CityLayout.STREET_NAMES_EW[sign.Z], Faces = { Enum.NormalId.Front, Enum.NormalId.Back } },
++				{ Part = "Blade_NS", Text = CityLayout.STREET_NAMES_NS[sign.X], Faces = { Enum.NormalId.Right, Enum.NormalId.Left } },
++			},
++		})
++	end
++	return result
++end
++
+ function CityLayout.createBlueprint(): Blueprint
+ 	local parts: { PartSpec } = {}
+ 	local spawns: { SpawnSpec } = {}
