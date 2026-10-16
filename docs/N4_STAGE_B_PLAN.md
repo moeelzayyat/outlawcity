@@ -1,6 +1,6 @@
 # OUTLAW CITY: N4 Stage B readiness (PLAN ONLY) and the Device Simulator test
 
-**Status:** PLAN AWAITING ARCHITECT REVIEW. No Studio edits; no sign built.
+**Status:** APPROVED WITH CONDITIONS as a design, PLAN ONLY (Architect, reviewed `03420cb`); Stage B implementation NOT AUTHORIZED. Corner recheck done (unchanged). **Device Simulator test run 2026-10-16: gate 3 NOT MET** (far-corner and 60-stud views unreadable on phones; HUD overlap on iPhone 7). See `docs/audits/2026-10-16_n4-sim-test/`. Originally: plan awaiting review; no Studio edits; no sign built.
 
 **Stage B is blocked until all four hold:**
 1. The owner authorizes it.

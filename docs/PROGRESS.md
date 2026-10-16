@@ -1,6 +1,6 @@
 # OUTLAW CITY — Progress
 
-Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing real players is marked **MULTIPLAYER UNVERIFIED** and listed in `MULTIPLAYER_TESTS.md`.
+Last updated 2026-10-16. Testing policy: solo Studio playtests; anything needing real players is marked **MULTIPLAYER UNVERIFIED** and listed in `MULTIPLAYER_TESTS.md`.
 
 ## Phase 2 — provisional sign-off (solo)
 
@@ -314,6 +314,16 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
   - phone simulator and real phone NOT TESTED;
   - multiplayer MULTIPLAYER UNVERIFIED.
 
-  Next: **Stage B readiness, PLAN ONLY, AWAITING ARCHITECT REVIEW** (`N4_STAGE_B_PLAN.md`, with the Device Simulator test for the four existing signs). **Stage B stays blocked** until: the owner authorizes it; the Architect reviews the plan; the current signs pass a phone-simulator readability check; owner navigation feedback is obtained. Stages C and D, connector-highway signs, second signs, renaming and new markings are NOT authorized. No broad Phase 5 content or monetization
+  **Stage B readiness plan APPROVED WITH CONDITIONS, PLAN ONLY (Architect, 2026-10-16, reviewed `03420cb`, docs `bb7dcac`):** the signs at (100, −300) and (−100, −300) are provisionally accepted as a design; **Stage B implementation is NOT AUTHORIZED.** Next authorized work: the Device Simulator test of the four existing signs (both phone landscape configurations, 30/60-stud views plus chase-camera approaches) and a read-only recheck of the two Stage B corners (`N4_STAGE_B_PLAN.md`).
+  - **Stage B corner recheck (read only, 2026-10-16):** identical to the `6031627` measurements (post 3.80 and blades 3.90 from the road, markings 4.84, nearest building 60.68 / 62.99); the prior clearances remain valid.
+  - **Device Simulator test of the 4 existing signs (simulator only, not a real phone):** iPhone 7 landscape (666 × 374) and iPhone 13 Pro Max landscape (831 × 427). **Gate 3 NOT MET.**
+    - Only the near-corner approaches (blade about 19 studs away) are readable.
+    - Every far-corner approach and every 60-stud view is unreadable: text about 3–7 px tall.
+    - On iPhone 7 the cash badge overlaps the avenue blade in all three readable views.
+    - In the chase camera the name is readable at about 25 studs, but at 45 studs it sits under the cash badge.
+    - No letter is clipped by the post.
+    - Indicative simulator FPS was about 60.
+    - Evidence: `docs/audits/2026-10-16_n4-sim-test/`.
+  - **Stage B stays blocked.** Real phone NOT TESTED; MULTIPLAYER UNVERIFIED. **Stage B stays blocked** until: the owner authorizes it; the Architect reviews the plan; the current signs pass a phone-simulator readability check; owner navigation feedback is obtained. Stages C and D, connector-highway signs, second signs, renaming and new markings are NOT authorized. No broad Phase 5 content or monetization
 - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
 - 3F Studio-only test tools — maintained throughout
