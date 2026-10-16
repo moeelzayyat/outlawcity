@@ -1,0 +1,164 @@
+diff --git a/docs/ARCHITECTURE.md b/docs/ARCHITECTURE.md
+index 77ac13a..6290cfe 100644
+--- a/docs/ARCHITECTURE.md
++++ b/docs/ARCHITECTURE.md
+@@ -353,6 +353,7 @@ Presentation only, all on the client (`Client.Controllers.AtmosphereController`)
+   - **Model `StreetSign_<X>_<Z>`:** `ModelStreamingMode = Atomic`, PrimaryPart `Post`. `Post` is 0.4 × 10.4 × 0.4, standing on the sidewalk top (0.6). Two blades sit on the post's axis, each running along the street it names: `Blade_EW` 7 × 1.5 × 0.2 at y 8.6 (faces ±Z) and `Blade_NS` 0.2 × 1.5 × 7 at y 10.2 (faces ±X).
+   - **Text:** each blade has a `SurfaceGui` on both faces (`Label_<Face>`: PixelsPerStud 50, LightInfluence 0, MaxDistance 150), each with one white GothamBold `TextScaled` label.
+   - **Collision:** all parts are anchored, with CanCollide, CanQuery, CanTouch and CastShadow false.
+-  - **Known issue:** the post passes through the blade centres and hides about one letter on each face.
++  - **Cantilevered blades (Architect option B, 2026-10-16):** each blade starts at a post face and extends 7 studs away from the junction (`Blade_EW` centre (125.7, 8.6, 122), `Blade_NS` centre (122, 10.2, 125.7)). No blade shares volume with the post or the other blade, so the post covers no text; the blades sit 3.9 studs from the road edge. This replaced the first prototype, whose blades ran through the post.
++  - **Changing an existing sign:** `buildStreetSigns` skips a sign whose model already exists, so changing the spec doesn't change the place. A geometry change needs that one model replaced in Studio (as done for this fix); there's no general migration.
+   - **Rollback:** remove `streetSigns`, `buildStreetSigns` and the WorldService call, and delete `City.StreetSigns`.
+ 
+diff --git a/docs/PROGRESS.md b/docs/PROGRESS.md
+index b12a772..0a1c36f 100644
+--- a/docs/PROGRESS.md
++++ b/docs/PROGRESS.md
+@@ -20,7 +20,7 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ |---|---|
+ | Typed Luau architecture (Shared / Server / Client / Tests) | Place boots with no errors |
+ | Network contract + server validation | `Remotes.spec`; spawn and exit requests behave in playtest |
+-| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 214 passed, 0 failed` (after the N4 one-sign prototype) |
++| Unit test runner (runs at the start of every Studio playtest) | `[Tests] 215 passed, 0 failed` (after the N4 sign cantilever fix) |
+ | City test map: grid, intersections, plaza, sidewalks, buildings, highway | `CityLayout.spec`; drive tests above; visual check in screenshots |
+ | Vehicle: spawn, drive, brake, reverse, steer, handbrake, exit/enter | Playtest logs (see Phase 2 table) |
+ | Chase camera | Playtest measurements above |
+@@ -135,6 +135,8 @@ Last updated 2026-10-14. Testing policy: solo Studio playtests; anything needing
+ | Stop-line Batch 1: visuals, performance, rollback | Four planned views before and after, 2 captures each: a white bar on the incoming half of every arm in view, no flicker with the road or the yellow line, HUD readable; at the connector view (~100 studs) the lines are thin. FPS (Studio in front, no focus waits): before idle `60.0 x3` (worst 18.2–24.2 ms), pursuit `60.0 x3` (18.1–19.0 ms); after idle `60.0 x3` (18.6–19.5 ms), pursuit `60.0 x3` (18.4–19.0 ms). Memory 2770–2778 MB before vs 2953–2956 MB after in the same Studio session after many playtests; not attributable to 50 parts and not a valid comparison. Rollback: code and parts removed -> CityLayout `2c85f303`, spec `85bce837`, 266 / 114, City hash `6527bae1`, geometry `18af160c`, `[Tests] 209 passed`; then restored (316 / 114, `[Tests] 211 passed`) |
+ | **N4 one-sign prototype (Architect: APPROVE WITH CONDITIONS; ONE sign only)** | Backup `backups\OutlawCity_Sign1.rbxl` (Studio log 2026-10-16T10:30:48Z). `CityLayout.streetSigns()` (data), idempotent `CityBuilder.buildStreetSigns` (adds only missing signs), one call in `WorldService.init`; no new runtime script. `City.StreetSigns.StreetSign_100_100` at (122, 0.6, 122): post 0.4 × 10.4 × 0.4, `Blade_EW` "3rd St" 7 × 1.5 × 0.2 (faces ±Z), `Blade_NS` "C Ave" 0.2 × 1.5 × 7 (faces ±X), 4 SurfaceGuis (GothamBold, PPS 50, LightInfluence 0, MaxDistance 150), Model `ModelStreamingMode = Atomic`; all parts CanCollide/CanQuery/CanTouch/CastShadow false. Read from the place: footprints fully on `Block_3_3`; post face 3.80 and blade edges 0.50 from the nearest road edge; nearest marking 1.66; nearest building 16.96. **319 BaseParts, 114 colliding**; City hash `6527bae1`, stop-line signature `f958ecfa`, 186-part `8b66ade9` unchanged. `[Tests] 214 passed, 0 failed` (+3 footprint/size/name specs). Server start and a fresh full rebuild with `buildStreetSigns` ×3 both give exactly 1 sign |
+ | N4 one-sign prototype: readability, regressions, performance, rollback | 8 planned views + 4 stop-line approach views, before and after (2 captures each after). Desktop: both names legible at ~33 studs (glyphs ~15 px) and still readable but small at 62–68 studs (~5–7 px). **Defect: the 0.4-wide post runs through the 0.2-thick blades' centre and hides about one letter on every face** ("C /ve", "3r| St"); geometry kept as approved, fix proposed for the Architect. From the east approach's stop line the sign is outside the field of view (it is read from 30–60 studs back). Phone simulator NOT TESTED (Device Simulator not available to me). Drives in all 4 lanes at 107–119 studs/s: no speed or height change; walking through the post: 0 Touched events; rays pass through. Bust → jail 12 s → release ×2; robbery start/holdout/escape (storefront stall 8g); Muscle spawn seated; dealership `AlreadyOwned`; vehicle validation 3 Teleport observations from the test's car placement (monitor-only). FPS before: idle and pursuit `60.0` ×6; after set 1 had two hitches (57.8 / 50.7 fps, 67–70 ms worst frame), repeat set `60.0` ×6. Rollback: 316 / 114, all hashes, `[Tests] 211 passed`; restored (319 / 114, 214 passed) |
++| **N4 sign cantilever fix (Architect: option B; this one sign only)** | Backup `backups\OutlawCity_Sign2.rbxl` (Studio log 2026-10-16T10:55:01Z). Geometry calculated and checked against the place before any edit. `CityLayout.streetSigns()` now cantilevers each blade from a post face away from the junction: `Blade_EW` 122.2..129.2 × 121.9..122.1 (centre 125.7, 8.6, 122), `Blade_NS` 121.9..122.1 × 122.2..129.2 (centre 122, 10.2, 125.7); post, sizes, text, materials and Atomic streaming unchanged. Only `StreetSign_100_100` was replaced in Studio (old model kept for rollback, new one built by `buildStreetSigns`); the place matches the spec. Footprints fully on `Block_3_3`; post 3.80 and blades 3.90 from the road edge; nearest marking 4.84 / 5.25 / 5.00; 0 shared volume with the post. **319 / 114**; City `6527bae1`, stop-line `f958ecfa`, 186-part `8b66ade9` unchanged; sign signature `ec8b4ca0` → `87d79268`. `[Tests] 215 passed, 0 failed` (+1 cantilever spec). One sign after a server restart, two more builder calls and a fresh rebuild |
++| N4 sign cantilever fix: readability, regressions, performance, rollback | Same 8 reading + 4 approach views, 2 captures each: **no letter hidden on any face from any view**; legible at ~30 studs, small at ~60 (unchanged sizes). Phone simulator NOT TESTED. Drives in all 4 lanes: no speed or height change; walks under both blades and through the post: 0 Touched events. Bust → jail → release ×2, robbery start/holdout/escape, Muscle spawn seated, dealership `AlreadyOwned`; vehicle validation 1 Teleport observation from the test's car placement (monitor-only). FPS before `60.0` ×6, after `60.0` ×6 (memory ~3020 → ~3111 MB in the same long session; not comparable). Rollback to the previous sign (`77667b94` / `01ab8c5f`, signature `ec8b4ca0`, 214 tests) exact; restored (215) |
+ | Onboarding regression | Robbery start/holdout/dispatch/bust/jail/release normal; vehicle validation 0 observations; no console errors. Studio and `src/` match for all 98 scripts (length + FNV-1a hash) |
+ | **Five-minute player-experience audit (measurements only)** | See `PLAYER_EXPERIENCE_AUDIT.md`: data ready ~2.0 s; first car PC 1 input, mobile 2 taps; store 150 / dealership 237 studs from spawns, signs in sight from 6/6 and 4/6 spawns, no hint or marker; on-foot HUD 5 elements (~8%), driving 9 elements (touch ~12%); robbery panel ~9% of a phone screen. Proposals P1–P8 await owner review (nothing implemented) |
+ | **Final audit fixes: pre-work** | Backup `backups\OutlawCity_Remediation1.rbxl` (Studio log: place file downloaded 16:35:06Z). Only the `Outlaw City (placeId: 132163592957463)` Studio was used; two Lighthouse Keepers Studios were also open and never touched |
+@@ -288,6 +290,6 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
+   - **memory comparison PARTIAL:** about 183 MB higher in a later Studio session, not causally attributed (fresh-session closeout: `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/`);
+   - phone readability and performance NOT TESTED;
+   - other players' view MULTIPLAYER UNVERIFIED.
+-- Street-name signs (N4) — one-sign plan APPROVED WITH CONDITIONS by the Architect (2026-10-16, reviewed `c81f00f`); N5 memory closeout accepted as PARTIAL. **One-sign prototype `StreetSign_100_100` done (solo), AWAITING ARCHITECT REVIEW** (`docs/audits/2026-10-16_n4-one-sign/`). Plain names are approved for this prototype only. **The other 15 signs, connector-highway signs and any new markings are NOT authorized.** Still open: the post hides one letter (fix proposed); phone readability and performance NOT TESTED; real phone NOT TESTED; other players' view MULTIPLAYER UNVERIFIED. No broad Phase 5 content or monetization
++- Street-name signs (N4) — one-sign plan APPROVED WITH CONDITIONS by the Architect (2026-10-16, reviewed `c81f00f`); N5 memory closeout accepted as PARTIAL. The prototype was APPROVED WITH CONDITIONS (reviewed `b8c27cf`); its rollout was blocked by the post hiding a letter. **Cantilever fix (option B) done (solo), AWAITING ARCHITECT REVIEW** (`docs/audits/2026-10-16_n4-sign-cantilever/`): the post no longer hides any text. Plain names are approved for this prototype only. **The other 15 signs, connector-highway signs and any new markings are NOT authorized.** Still open: phone readability and performance NOT TESTED; real phone NOT TESTED; other players' view MULTIPLAYER UNVERIFIED. No broad Phase 5 content or monetization
+ - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
+ - 3F Studio-only test tools — maintained throughout
+diff --git a/docs/STREET_SIGN_PROTOTYPE_PLAN.md b/docs/STREET_SIGN_PROTOTYPE_PLAN.md
+index e41b26c..f069a02 100644
+--- a/docs/STREET_SIGN_PROTOTYPE_PLAN.md
++++ b/docs/STREET_SIGN_PROTOTYPE_PLAN.md
+@@ -11,7 +11,17 @@ Status: **APPROVED WITH CONDITIONS (Architect, 2026-10-16, reviewed `c81f00f`);
+ 6. Phone readability at 30 studs is the provisional minimum; 60 studs is recorded either way.
+ 7. Plain names are approved for this prototype only.
+ 
+-**Found in testing:** the post runs through the blade centres and hides about one letter on each face.
++**Found in testing:** the post ran through the blade centres and hid about one letter on each face.
++
++**Fixed (Architect option B, 2026-10-16):** the blades are cantilevered from the post faces, away from the junction:
++- `Blade_EW` centre (125.7, 8.6, 122);
++- `Blade_NS` centre (122, 10.2, 125.7).
++
++Clearances: both blades are 3.9 studs from the road edge instead of 0.5. Section 3's centre positions and section 1's 0.5-stud blade note are superseded.
++
++Unchanged: post, sizes, text and materials.
++
++The fix is awaiting review (`docs/audits/2026-10-16_n4-sign-cantilever/`).
+ 
+ Originally (plan text below unchanged): prepared 2026-10-15 from `CityLayout.luau`, `STREET_MARKINGS_SIGNS_PLAN.md` (section 3) and a read-only Studio query (place 132163592957463; output in `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/TEST_EVIDENCE.md`).
+ 
+diff --git a/src/ServerScriptService/Server/World/CityLayout.luau b/src/ServerScriptService/Server/World/CityLayout.luau
+index 27bd98f..ce2b5f1 100644
+--- a/src/ServerScriptService/Server/World/CityLayout.luau
++++ b/src/ServerScriptService/Server/World/CityLayout.luau
+@@ -344,8 +344,10 @@ export type StreetSignLabel = { Part: string, Text: string, Faces: { Enum.Normal
+ export type StreetSignSpec = { Name: string, X: number, Z: number, Parts: { PartSpec }, Labels: { StreetSignLabel } }
+ 
+ -- One post and two perpendicular blades on a sidewalk corner. Each blade runs along the street
+--- it names and carries the name on both faces, so drivers read it from both directions. All
+--- parts are visual only (CityBuilder.buildStreetSigns turns off collision, query, touch, shadow).
++-- it names and carries the name on both faces, so drivers read it from both directions. The
++-- blades are cantilevered: each starts at a post face and extends away from the junction, so the
++-- post never covers the text. All parts are visual only (CityBuilder.buildStreetSigns turns off
++-- collision, query, touch, shadow).
+ function CityLayout.streetSigns(): { StreetSignSpec }
+ 	local result = {}
+ 	local post = CityLayout.STREET_SIGN_POST
+@@ -353,17 +355,20 @@ function CityLayout.streetSigns(): { StreetSignSpec }
+ 	local postColor, bladeColor = Color3.fromRGB(110, 110, 110), Color3.fromRGB(0, 102, 51)
+ 	for _, sign in CityLayout.STREET_SIGNS do
+ 		local x, z = sign.X + sign.CornerX, sign.Z + sign.CornerZ
+-		local function part(name: string, y: number, size: Vector3, color: Color3): PartSpec
+-			return { Name = name, Group = "StreetSigns", Center = Vector3.new(x, y, z), Size = size, Color = color, Material = Enum.Material.SmoothPlastic, CanCollide = false }
++		-- Away from the junction (towards the inside of the block).
++		local reachX = math.sign(sign.CornerX) * (post.X / 2 + length / 2)
++		local reachZ = math.sign(sign.CornerZ) * (post.Z / 2 + length / 2)
++		local function part(name: string, px: number, y: number, pz: number, size: Vector3, color: Color3): PartSpec
++			return { Name = name, Group = "StreetSigns", Center = Vector3.new(px, y, pz), Size = size, Color = color, Material = Enum.Material.SmoothPlastic, CanCollide = false }
+ 		end
+ 		table.insert(result, {
+ 			Name = `StreetSign_{sign.X}_{sign.Z}`,
+ 			X = sign.X,
+ 			Z = sign.Z,
+ 			Parts = {
+-				part("Post", CityLayout.CURB_TOP + post.Y / 2, post, postColor),
+-				part("Blade_EW", CityLayout.STREET_SIGN_EW_Y, Vector3.new(length, height, thick), bladeColor),
+-				part("Blade_NS", CityLayout.STREET_SIGN_NS_Y, Vector3.new(thick, height, length), bladeColor),
++				part("Post", x, CityLayout.CURB_TOP + post.Y / 2, z, post, postColor),
++				part("Blade_EW", x + reachX, CityLayout.STREET_SIGN_EW_Y, z, Vector3.new(length, height, thick), bladeColor),
++				part("Blade_NS", x, CityLayout.STREET_SIGN_NS_Y, z + reachZ, Vector3.new(thick, height, length), bladeColor),
+ 			},
+ 			Labels = {
+ 				{ Part = "Blade_EW", Text = CityLayout.STREET_NAMES_EW[sign.Z], Faces = { Enum.NormalId.Front, Enum.NormalId.Back } },
+diff --git a/src/ServerStorage/Tests/CityLayout.spec.luau b/src/ServerStorage/Tests/CityLayout.spec.luau
+index 6af5de3..bc8fb88 100644
+--- a/src/ServerStorage/Tests/CityLayout.spec.luau
++++ b/src/ServerStorage/Tests/CityLayout.spec.luau
+@@ -328,8 +328,8 @@ return {
+ 					Assert.truthy(g >= 3, `{part.Name} within 3 studs of {spec.Name}`)
+ 				end
+ 			end
+-			-- Measured face to road edge: the post 3.8 studs, the blades 0.5 stud (overhead).
+-			Assert.near(nearestRoad, if part.Name == "Post" then 3.8 else 0.5, 1e-4, `{part.Name} distance to the nearest road edge`)
++			-- Measured face to road edge: the post 3.8 studs, the cantilevered blades 3.9 studs.
++			Assert.near(nearestRoad, if part.Name == "Post" then 3.8 else 3.9, 1e-4, `{part.Name} distance to the nearest road edge`)
+ 		end
+ 		local post = sign.Parts[1]
+ 		for _, spawn in blueprint.Spawns do
+@@ -337,4 +337,39 @@ return {
+ 			Assert.truthy(d >= 3 + 9, `sign within reach of vehicle pad {spawn.Name}`) -- pad half-diagonal < 9
+ 		end
+ 	end,
++	["street signs: blades are cantilevered off the post, so the post covers no text"] = function()
++		local sign = CityLayout.streetSigns()[1]
++		local parts = {}
++		for _, part in sign.Parts do
++			parts[part.Name] = part
++		end
++		local post, ew, ns = parts.Post, parts.Blade_EW, parts.Blade_NS
++		local function box(p)
++			local c, s = p.Center, p.Size
++			return c.X - s.X / 2, c.X + s.X / 2, c.Y - s.Y / 2, c.Y + s.Y / 2, c.Z - s.Z / 2, c.Z + s.Z / 2
++		end
++		local function sharedVolume(a, b)
++			local ax1, ax2, ay1, ay2, az1, az2 = box(a)
++			local bx1, bx2, by1, by2, bz1, bz2 = box(b)
++			return math.max(0, math.min(ax2, bx2) - math.max(ax1, bx1)) * math.max(0, math.min(ay2, by2) - math.max(ay1, by1)) * math.max(0, math.min(az2, bz2) - math.max(az1, bz1))
++		end
++		Assert.near(sharedVolume(ew, post), 0, 1e-6, "EW blade passes through the post")
++		Assert.near(sharedVolume(ns, post), 0, 1e-6, "NS blade passes through the post")
++		Assert.near(sharedVolume(ew, ns), 0, 1e-6, "blades intersect")
++		-- Each blade starts at the post face on the side away from the junction (the corner is +X/+Z).
++		local px1, px2, _, _, pz1, pz2 = box(post)
++		local ex1, _, _, _, ez1, ez2 = box(ew)
++		local nx1, nx2, _, _, nz1 = box(ns)
++		Assert.near(ex1, px2, 1e-4, "EW blade starts at the post's +X face")
++		Assert.near(nz1, pz2, 1e-4, "NS blade starts at the post's +Z face")
++		Assert.truthy(ez1 >= pz1 - 1e-4 and ez2 <= pz2 + 1e-4, "EW blade stays within the post's depth")
++		Assert.truthy(nx1 >= px1 - 1e-4 and nx2 <= px2 + 1e-4, "NS blade stays within the post's width")
++		-- Unchanged from the approved prototype: post position, blade and text sizes.
++		Assert.near(post.Center.X, 122, 1e-4, "post x")
++		Assert.near(post.Center.Z, 122, 1e-4, "post z")
++		Assert.near(ew.Center.X, 125.7, 1e-4, "EW centre x")
++		Assert.near(ew.Center.Z, 122, 1e-4, "EW centre z")
++		Assert.near(ns.Center.X, 122, 1e-4, "NS centre x")
++		Assert.near(ns.Center.Z, 125.7, 1e-4, "NS centre z")
++	end,
+ }

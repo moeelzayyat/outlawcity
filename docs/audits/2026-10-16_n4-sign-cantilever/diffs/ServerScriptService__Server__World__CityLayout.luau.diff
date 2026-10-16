@@ -1,0 +1,43 @@
+diff --git a/src/ServerScriptService/Server/World/CityLayout.luau b/src/ServerScriptService/Server/World/CityLayout.luau
+index 27bd98f..ce2b5f1 100644
+--- a/src/ServerScriptService/Server/World/CityLayout.luau
++++ b/src/ServerScriptService/Server/World/CityLayout.luau
+@@ -344,8 +344,10 @@ export type StreetSignLabel = { Part: string, Text: string, Faces: { Enum.Normal
+ export type StreetSignSpec = { Name: string, X: number, Z: number, Parts: { PartSpec }, Labels: { StreetSignLabel } }
+ 
+ -- One post and two perpendicular blades on a sidewalk corner. Each blade runs along the street
+--- it names and carries the name on both faces, so drivers read it from both directions. All
+--- parts are visual only (CityBuilder.buildStreetSigns turns off collision, query, touch, shadow).
++-- it names and carries the name on both faces, so drivers read it from both directions. The
++-- blades are cantilevered: each starts at a post face and extends away from the junction, so the
++-- post never covers the text. All parts are visual only (CityBuilder.buildStreetSigns turns off
++-- collision, query, touch, shadow).
+ function CityLayout.streetSigns(): { StreetSignSpec }
+ 	local result = {}
+ 	local post = CityLayout.STREET_SIGN_POST
+@@ -353,17 +355,20 @@ function CityLayout.streetSigns(): { StreetSignSpec }
+ 	local postColor, bladeColor = Color3.fromRGB(110, 110, 110), Color3.fromRGB(0, 102, 51)
+ 	for _, sign in CityLayout.STREET_SIGNS do
+ 		local x, z = sign.X + sign.CornerX, sign.Z + sign.CornerZ
+-		local function part(name: string, y: number, size: Vector3, color: Color3): PartSpec
+-			return { Name = name, Group = "StreetSigns", Center = Vector3.new(x, y, z), Size = size, Color = color, Material = Enum.Material.SmoothPlastic, CanCollide = false }
++		-- Away from the junction (towards the inside of the block).
++		local reachX = math.sign(sign.CornerX) * (post.X / 2 + length / 2)
++		local reachZ = math.sign(sign.CornerZ) * (post.Z / 2 + length / 2)
++		local function part(name: string, px: number, y: number, pz: number, size: Vector3, color: Color3): PartSpec
++			return { Name = name, Group = "StreetSigns", Center = Vector3.new(px, y, pz), Size = size, Color = color, Material = Enum.Material.SmoothPlastic, CanCollide = false }
+ 		end
+ 		table.insert(result, {
+ 			Name = `StreetSign_{sign.X}_{sign.Z}`,
+ 			X = sign.X,
+ 			Z = sign.Z,
+ 			Parts = {
+-				part("Post", CityLayout.CURB_TOP + post.Y / 2, post, postColor),
+-				part("Blade_EW", CityLayout.STREET_SIGN_EW_Y, Vector3.new(length, height, thick), bladeColor),
+-				part("Blade_NS", CityLayout.STREET_SIGN_NS_Y, Vector3.new(thick, height, length), bladeColor),
++				part("Post", x, CityLayout.CURB_TOP + post.Y / 2, z, post, postColor),
++				part("Blade_EW", x + reachX, CityLayout.STREET_SIGN_EW_Y, z, Vector3.new(length, height, thick), bladeColor),
++				part("Blade_NS", x, CityLayout.STREET_SIGN_NS_Y, z + reachZ, Vector3.new(thick, height, length), bladeColor),
+ 			},
+ 			Labels = {
+ 				{ Part = "Blade_EW", Text = CityLayout.STREET_NAMES_EW[sign.Z], Faces = { Enum.NormalId.Front, Enum.NormalId.Back } },
