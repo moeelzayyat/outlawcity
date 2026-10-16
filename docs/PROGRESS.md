@@ -324,6 +324,8 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
     - No letter is clipped by the post.
     - Indicative simulator FPS was about 60.
     - Evidence: `docs/audits/2026-10-16_n4-sim-test/`.
-  - **Stage B stays blocked.** Real phone NOT TESTED; MULTIPLAYER UNVERIFIED. **Stage B stays blocked** until: the owner authorizes it; the Architect reviews the plan; the current signs pass a phone-simulator readability check; owner navigation feedback is obtained. Stages C and D, connector-highway signs, second signs, renaming and new markings are NOT authorized. No broad Phase 5 content or monetization
+  - **Stage B stays blocked.** Real phone NOT TESTED; MULTIPLAYER UNVERIFIED.
+  - **Simulator gate decision: APPROVED as a closed measurement task (Architect, reviewed `f0a103c`):** gate 3 correctly recorded as NOT MET; no additional N4 signs are authorized.
+  - **Mobile readability diagnosis, PLAN ONLY, AWAITING ARCHITECT REVIEW** (`N4_MOBILE_READABILITY_DIAGNOSIS.md`). One proposed correction: enlarge the four existing blades to 12 × 3 (post 13.1). Projected iPhone 7 text at the worst 30-stud views goes from 4.3–4.9 px to 8.6–9.8 px; clearances still pass (buildings ≥ 8.99); no HUD change. Not implemented. **Stage B stays blocked** until: the owner authorizes it; the Architect reviews the plan; the current signs pass a phone-simulator readability check; owner navigation feedback is obtained. Stages C and D, connector-highway signs, second signs, renaming and new markings are NOT authorized. No broad Phase 5 content or monetization
 - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
 - 3F Studio-only test tools — maintained throughout
