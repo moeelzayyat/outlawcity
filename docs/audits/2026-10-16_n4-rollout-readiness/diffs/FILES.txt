@@ -1,0 +1,5 @@
+git diff --name-status dc32b76..HEAD -- src docs
+
+A	docs/N4_STREET_SIGN_ROLLOUT_PLAN.md
+M	docs/PROGRESS.md
+M	docs/STREET_SIGN_PROTOTYPE_PLAN.md

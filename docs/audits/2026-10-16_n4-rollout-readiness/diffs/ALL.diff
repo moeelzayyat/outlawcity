@@ -1,0 +1,254 @@
+diff --git a/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md b/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md
+new file mode 100644
+index 0000000..2889343
+--- /dev/null
++++ b/docs/N4_STREET_SIGN_ROLLOUT_PLAN.md
+@@ -0,0 +1,212 @@
++# OUTLAW CITY: N4 street-sign rollout readiness (PLAN ONLY)
++
++**Status:** PLAN AWAITING ARCHITECT REVIEW. Nothing was changed in Studio, and no sign was built. Prepared 2026-10-16 from `CityLayout.luau` and one read-only Studio query against place 132163592957463 (exact output in `docs/audits/2026-10-16_n4-rollout-readiness/TEST_EVIDENCE.md`).
++
++**Starting point:**
++- One approved sign: `StreetSign_100_100` (Architect APPROVE, `dc32b76`), at corner (122, 122), cantilevered, "3rd St" / "C Ave". It stays unchanged.
++- **Full rollout is not authorized.** This plan asks which further signs, in which order, with which gates.
++
++**Boundaries:**
++- No new roads, buildings, districts or gameplay.
++- No changes to police (pursuit 130 / 100 / 0.25 / 8), vehicle physics, robbery, economy, dealership, jail or anti-cheat (monitor-only).
++- Siren off; one police unit; no external assets.
++- Multiplayer is MULTIPLAYER UNVERIFIED.
++
++## 1. Method
++For each of the 16 grid junctions (X, Z ∈ {−300, −100, 100, 300}) and each of its 4 corners, I applied the approved design unchanged:
++- **Post:** at (X ± 22, Z ± 22).
++- **Blades:** each 7 × 1.5 × 0.2, cantilevered from the post face away from the junction (`CityLayout.streetSigns()` already derives the direction from the corner's sign).
++
++Then I checked four things.
++
++1. **Footprints.** Each of the 3 parts' full rectangle must lie on one `Sidewalks` part. I measured the gaps to roads, the highway and the plaza; to every marking (stop lines and centre lines); to buildings, the store, the dealership, the jail and barriers (at least 3 studs required); and to vehicle and civilian spawns.
++2. **Arms.** Which road arms enter the junction (a road continues past the square). This matches the 50 approaches recorded for N5.
++3. **Sightlines (a computed screen, not a render).** A driver reads the **cross-street** blade:
++   - driving along an avenue (N/S), the driver reads the street blade (`Blade_EW`, faces ±Z);
++   - driving along a street (E/W), the driver reads the avenue blade (`Blade_NS`, faces ±X).
++
++   For each incoming approach I placed a driver eye at y = 5 in the incoming (right-hand) lane, 30, 45, 60 and 75 studs before the junction centre. A point counts if all three hold:
++   - the blade is within 40° of the driving direction;
++   - its face is turned at least 0.3 towards the driver;
++   - a ray from the eye to the blade hits nothing (buildings and the store block it).
++
++   The score is the number of passing distances out of 4.
++4. **Cross-check against recorded captures.** For the existing (100, 100) sign the screen gives N 4/4, S 3/4, W 4/4, E 1/4. This matches the approved captures: readable from the north, south and west; out of view from the east stop line.
++
++## 2. Results for all 64 corners
++**31 corners fit, 33 are rejected:**
++- **28 off-grid:** the corner is outside the outer roads, with no sidewalk.
++- **4 on the plaza:** the four corners facing the central plaza; the plaza is a drivable surface, not a sidewalk.
++- **1 overlapping the 24/7 MART** at (−100, −100) corner (−, +): it overlaps `StoreWallNorth` and is blocked from three approaches.
++
++**Every fitting corner has:**
++- post face 3.80 and blades 3.90 from the nearest road edge (the same as the approved sign);
++- nearest marking at least 4.84;
++- no vehicle or civilian spawn within 36 studs.
++
++The nearest solid object varies; the smallest is 6.40 studs (Building_3_2_3), all above the 3-stud minimum.
++
++**Sightline pattern** (the important finding):
++- With the cantilever design, one sign at a 4-arm junction serves **3 of 4 approaches** well (3–4 of 4 points).
++- The 4th approach is the lane that passes right beside the corner: the sign is far to the side until about 75 studs out (1 of 4).
++- A 3-arm junction gets 2 of 3 approaches; a 2-arm corner gets 1 of 2.
++
++So each junction has one weak approach, and the choice of corner decides **which** approach is weak.
++
++**Corner rule** (consistent with the approved sign): choose the corner whose weak approach comes from the **outer edge** of the grid, or along the perimeter road. Interior and destination traffic is then always served.
++
++**Do cantilever directions need to vary?** No new rule is needed. "Away from the junction" already flips per corner, and every chosen corner below keeps both blades on its sidewalk block.
++
++## 3. Ranked candidates (one sign per junction, best corner)
++Scores are approaches served (passing distances out of 4). "Nearest solid" is the closest building, store, dealership or jail part to any of the 3 sign parts.
++
++| Rank | Junction | Arms | Corner → post | Approach scores | Weak approach | Nearest solid | Tier |
++|---|---|---|---|---|---|---|---|
++| — | (100, 100) | NSWE | (+,+) → (122, 122) | N4 S3 W4 E1 | E (from the east edge) | 14.33 | **Existing, approved** |
++| 1 | (−100, −100) | NSWE | (−,−) → (−122, −122) | N3 S4 W1 E4 | W (edge) | 14.29 (Building_1_1_4) | A: plaza ring, by the 24/7 MART |
++| 2 | (100, −100) | NSWE | (+,+) → (122, −78) | N4 S3 W4 E1 | E (edge) | 10.90 (Building_3_2_1) | A: plaza ring |
++| 3 | (−100, 100) | NSWE | (−,−) → (−122, 78) | N3 S4 W1 E4 | W (edge) | 13.03 (Building_1_2_4) | A: plaza ring |
++| 4 | (100, −300) | NSWE | (+,+) → (122, −278) | N4 S3 W4 E1 | E (edge) | 62.99 | B: highway connector |
++| 5 | (−100, −300) | NSWE | (+,+) → (−78, −278) | N4 S3 W4 E1 | E (short link to the other connector) | 60.68 | B: highway connector |
++| 6 | (−100, 300) | NWE | (−,−) → (−122, 278) | N3 W1 E4 | W (perimeter) | 62.18 | C: south edge |
++| 7 | (100, 300) | NWE | (−,−) → (78, 278) | N3 W1 E4 | W (perimeter) | 18.25 | C: south edge |
++| 8 | (300, 100) | NSW | (−,+) → (278, 122) | N4 S1 W3 | S (perimeter) | 49.80 (DealerWallEast) | C: east edge |
++| 9 | (300, −100) | NSW | (−,+) → (278, −78) | N4 S1 W3 | S (perimeter) | 10.44 | C: east edge |
++| 10 | (−300, −100) | NSE | (+,−) → (−278, −122) | N1 S4 E3 | N (perimeter) | 62.41 | C: west edge |
++| 11 | (−300, 100) | NSE | (+,−) → (−278, 78) | N1 S4 E3 | N (perimeter) | 54.11 | C: west edge |
++| 12 | (−300, −300) | SE | (+,+) → (−278, −278) | S3 E1 | E | 92.21 | D: corner, only fitting corner |
++| 13 | (300, −300) | SW | (−,+) → (278, −278) | S1 W3 | S | 8.01 | D: corner, only fitting corner |
++| 14 | (−300, 300) | NE | (+,−) → (−278, 278) | N1 E3 | N | 17.06 | D: corner, only fitting corner |
++| 15 | (300, 300) | NW | (−,−) → (278, 278) | N3 W1 | W | 13.12 | D: corner, only fitting corner |
++
++**Notes on ranking:**
++- Ties between valid corners at the same junction were broken by the corner rule.
++- Rank 5's weak approach is the 200-stud link from the other connector junction, which has just been signed.
++- At (−100, 100) and (100, −100) a third corner is also valid; the chosen one follows the rule.
++
++**Where the current design does not work well without changes:**
++- **The four 2-arm corners (rank 12–15).** Only one corner has a sidewalk, and it serves only one of the two approaches. A better sign would need a sidewalk outside the grid (none exists) or a different design. **Not recommended.**
++- **(−100, −100) corner (−, +)** is unusable: it hits the store. The chosen corner (−, −) avoids it.
++- **The weak approach at every junction.** If every approach must read a sign, a junction needs a **second sign on the diagonally opposite corner**. That doubles the parts, and on most junctions the opposite corner is the plaza or off-grid. Not proposed.
++
++## 4. Counts
++Per sign: 3 BaseParts (non-colliding), 4 SurfaceGuis, 1 Atomic model.
++
++| Stage | Signs (total) | BaseParts | Colliding | Sign SurfaceGuis |
++|---|---|---|---|---|
++| Now | 1 | 319 | 114 | 4 |
++| After A (+3) | 4 | 328 | 114 | 16 |
++| After B (+2) | 6 | 334 | 114 | 24 |
++| After C (+6) | 12 | 352 | 114 | 48 |
++| After D (+4), full | 16 | 364 | 114 | 64 |
++
++The place's other SurfaceGuis (the store and dealership signs: 2) are not counted above.
++
++## 5. Navigation: does every junction need a sign?
++**No.**
++
++**The navigation targets are few:**
++- spawn on the central plaza;
++- the 24/7 MART on B Ave (x = −100) between z = −100 and 100;
++- OUTLAW MOTORS on 3rd St (z = 100), east of C Ave;
++- the highway via the two connectors north of z = −300.
++
++**What each stage gives:**
++- **A (the four plaza-ring junctions)** names every road a player uses between spawn, the store and the dealership.
++- **B (the two connectors)** names the way to and from the highway.
++- **Stages C and D** sit on the perimeter, where the grid itself is easy to read and traffic is light.
++
++**Recommendation:** stop after B (6 signs). Do C only if owner playtest feedback shows people get lost at the edges, and don't do D.
++
++## 6. Naming alternatives (owner decision; the prototype keeps "3rd St" / "C Ave")
++**Length limit:** names must stay short. `TextScaled` shrinks long names to fit the 7-stud blade, and the measured glyph height is only 5–7 px at about 60 studs on desktop with 5–6 characters. Keep names to 8 characters or fewer.
++
++| Road | Plain grid (extends the prototype) | Themed (OUTLAW CITY) | Why the themed name |
++|---|---|---|---|
++| z = −300 (by the highway) | 1st St | Rail St | Edge of town, towards the highway |
++| z = −100 | 2nd St | Gold St | Passes the robbable 24/7 MART side |
++| z = 100 | 3rd St | Main St | Plaza front and OUTLAW MOTORS |
++| z = 300 (towards the jail) | 4th St | Iron St | Nearest the jail |
++| x = −300 | A Ave | Colt Ave | West edge, "Old Town" (brick) district |
++| x = −100 | B Ave | Mesa Ave | The 24/7 MART avenue |
++| x = 100 | C Ave | Dust Ave | Downtown avenue to the dealership |
++| x = 300 | D Ave | Spur Ave | East edge |
++
++**Plain names:**
++- predictable, ordered by position, so they help mental mapping;
++- they match the approved prototype, so no change is needed.
++
++**Themed names:**
++- carry more flavour;
++- adopting them would rename the prototype (a separate, approved change);
++- they give no order cue.
++
++**My recommendation:** plain names for the rollout.
++
++## 7. Staged rollout
++### Stage A (first implementation batch, recommended)
++**Signs:**
++- (−100, −100), corner (−,−), post (−122, 0.6, −122): "2nd St" / "B Ave";
++- (100, −100), corner (+,+), post (122, 0.6, −78): "2nd St" / "C Ave";
++- (−100, 100), corner (−,−), post (−122, 0.6, 78): "3rd St" / "B Ave".
++
++**How:**
++1. **Backup first.** The owner saves the place and I check the Studio log.
++2. **Data:** add three entries to `CityLayout.STREET_SIGNS` (`{X, Z, CornerX, CornerZ}`). No new code: the builder and the cantilever rule already handle any corner.
++3. **Studio:** these are new model names, so `buildStreetSigns` adds exactly these three and skips the approved one. The prototype is untouched; I verify its signature `87d79268` stays.
++4. **Spec:** generalise the one-sign tests to every entry. For each sign check:
++   - 3 parts and 4 labels;
++   - full footprints on one sidewalk;
++   - post face 3.8 and blades 3.9 from the road;
++   - at least 3 studs from buildings, store and dealership;
++   - no overlap with markings;
++   - cantilever with no shared volume;
++   - names from the tables.
++
++   Also check that the total count is 4 and there are no duplicate names.
++
++**Desktop acceptance:**
++- BaseParts 328, colliding 114.
++- City `6527bae1`, stop-line `f958ecfa`, 186-part `8b66ade9` and prototype `87d79268` unchanged.
++- All tests pass.
++- For each new sign: the 4 incoming-approach captures (2 each) plus one 30-stud reading view per served approach. Every name is complete (no occlusion); the weak approach is recorded as expected.
++- Drive past each new sign in all lanes (no bump); walk through each post (no touch).
++- Police bust/jail, robbery, vehicle spawn and dealership regressions.
++- FPS and memory: 3 idle + 3 pursuit before and after, Studio in front. Memory alternating in fresh sessions, as in the N5 closeout.
++- **Pass:** 60 fps held, with no reproducible hitch. Memory change within the session noise band, otherwise reported as INCONCLUSIVE, not passed.
++
++**Phone simulator plan:**
++- The owner switches on Studio's Device Simulator (iPhone 7 666 × 374 and one larger phone).
++- I capture the same 30 and 60-stud views and read idle FPS facing the plaza ring.
++- **Pass:** names readable at 30 studs. The 60-stud result is recorded either way.
++- If the simulator isn't available, the check is marked **PHONE SIMULATOR NOT TESTED**; desktop captures are not substituted. A real phone stays NOT TESTED.
++
++**Streaming and duplicates:**
++- On the client: each new model is Atomic, with 3 parts and 4 GUIs present when in range.
++- One sign per name after a server restart, two extra builder calls and a fresh full rebuild.
++
++**Rollback:**
++- Remove the three entries and delete the three new models.
++- Must return exactly: 319 / 114, prototype signature `87d79268`, 215 tests. This is shown in Studio before sign-off.
++
++### Go / no-go gate before Stage B
++Proceed only if **all** hold:
++1. Every Stage A acceptance item passes, or is marked NOT TESTED with the reason.
++2. No letter is occluded on any new face.
++3. No reproducible FPS regression.
++4. Rollback is demonstrated exactly.
++5. The phone-simulator result is recorded, or explicitly NOT TESTED.
++6. The owner has played and says the signs help.
++7. The Architect approves.
++
++Stage B (connectors, 2 signs) then repeats the same acceptance with its own gate. Stages C and D each need their own approval and are not recommended now.
++
++## 8. Rollback (any stage)
++Delete the stage's entries from `STREET_SIGNS` and their models from `City.StreetSigns`. The builder never recreates removed entries. Earlier stages and the approved prototype stay intact.
++
++## 9. Not in this plan
++- Building any sign.
++- Signs at the connector–highway joins (±100, −492).
++- Second signs on opposite corners.
++- New markings or roads.
++- Renaming the prototype.
+diff --git a/docs/PROGRESS.md b/docs/PROGRESS.md
+index 0a1c36f..7820fd5 100644
+--- a/docs/PROGRESS.md
++++ b/docs/PROGRESS.md
+@@ -290,6 +290,17 @@ Permanent Police/Criminal teams were **superseded** by a civilian open-world des
+   - **memory comparison PARTIAL:** about 183 MB higher in a later Studio session, not causally attributed (fresh-session closeout: `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/`);
+   - phone readability and performance NOT TESTED;
+   - other players' view MULTIPLAYER UNVERIFIED.
+-- Street-name signs (N4) — one-sign plan APPROVED WITH CONDITIONS by the Architect (2026-10-16, reviewed `c81f00f`); N5 memory closeout accepted as PARTIAL. The prototype was APPROVED WITH CONDITIONS (reviewed `b8c27cf`); its rollout was blocked by the post hiding a letter. **Cantilever fix (option B) done (solo), AWAITING ARCHITECT REVIEW** (`docs/audits/2026-10-16_n4-sign-cantilever/`): the post no longer hides any text. Plain names are approved for this prototype only. **The other 15 signs, connector-highway signs and any new markings are NOT authorized.** Still open: phone readability and performance NOT TESTED; real phone NOT TESTED; other players' view MULTIPLAYER UNVERIFIED. No broad Phase 5 content or monetization
++- Street-name signs (N4) — one-sign plan APPROVED WITH CONDITIONS by the Architect (2026-10-16, reviewed `c81f00f`); N5 memory closeout accepted as PARTIAL. The prototype was APPROVED WITH CONDITIONS (reviewed `b8c27cf`); its rollout was blocked by the post hiding a letter. **Cantilever correction APPROVED by the Architect (2026-10-16, reviewed `dc32b76`)** for the solo-Studio prototype. Recorded:
++  - cantilevered geometry accepted;
++  - post occlusion corrected, based on the source geometry and the recorded visual tests;
++  - one street sign: 3 parts and 4 sign SurfaceGuis;
++  - 319 BaseParts, 114 colliding;
++  - 215/215 automated tests;
++  - desktop FPS accepted for the tested conditions;
++  - memory INCONCLUSIVE;
++  - phone simulator and real phone NOT TESTED;
++  - other players' view MULTIPLAYER UNVERIFIED.
++
++  The approved prototype stays unchanged; plain names apply to this prototype only. **Full N4 rollout NOT AUTHORIZED.** Next: **N4 rollout readiness audit, PLAN ONLY, AWAITING ARCHITECT REVIEW** (`N4_STREET_SIGN_ROLLOUT_PLAN.md`, `docs/audits/2026-10-16_n4-rollout-readiness/`). No other signs, connector-highway signs or new markings are built. No broad Phase 5 content or monetization
+ - Owner to do: human getaway playtest (with the new markers, tip and escape hint; read the `[Milestone]` lines); Muscle and the compact robbery panel on a real phone; decide whether to keep the experimental police tuning and the 90 s failed-robbery cooldown; Muscle price stays $15,000 until then
+ - 3F Studio-only test tools — maintained throughout
+diff --git a/docs/STREET_SIGN_PROTOTYPE_PLAN.md b/docs/STREET_SIGN_PROTOTYPE_PLAN.md
+index f069a02..ef35c93 100644
+--- a/docs/STREET_SIGN_PROTOTYPE_PLAN.md
++++ b/docs/STREET_SIGN_PROTOTYPE_PLAN.md
+@@ -21,7 +21,7 @@ Clearances: both blades are 3.9 studs from the road edge instead of 0.5. Section
+ 
+ Unchanged: post, sizes, text and materials.
+ 
+-The fix is awaiting review (`docs/audits/2026-10-16_n4-sign-cantilever/`).
++The fix was **APPROVED** by the Architect on 2026-10-16 (reviewed `dc32b76`; `docs/audits/2026-10-16_n4-sign-cantilever/`). Full rollout is not authorized; see `N4_STREET_SIGN_ROLLOUT_PLAN.md`.
+ 
+ Originally (plan text below unchanged): prepared 2026-10-15 from `CityLayout.luau`, `STREET_MARKINGS_SIGNS_PLAN.md` (section 3) and a read-only Studio query (place 132163592957463; output in `docs/audits/2026-10-15_n5-closeout-n4-sign-plan/TEST_EVIDENCE.md`).
+ 
